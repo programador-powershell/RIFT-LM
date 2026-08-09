@@ -2358,5 +2358,70 @@
       }
     },
     "notes": "BASE 2-bit packed. Q4_LINEAR_TEST não é MXFP4. Speedup nativo não pode ser reivindicado."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:02:39Z",
+    "run_id": "20260809T210231Z-6741884f",
+    "spec": "RIFT-LM v0.3.5",
+    "technology": "RIFT",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_Q4_LINEAR_BASE_PLUS_REF_4BIT",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": "primary",
+    "baseline_tok_s": null,
+    "rift_tok_s": null,
+    "baseline_ram_bytes": 42475520,
+    "rift_ram_bytes": 47718420,
+    "baseline_disk_bytes": 41943040,
+    "rift_disk_bytes": 5242900,
+    "candidate_tok_s": null,
+    "candidate_ram_bytes": 47718420,
+    "candidate_disk_bytes": 5242900,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": -12.343345060872712,
+      "disk_reduction_pct": 87.49995231628418,
+      "disk_compression_ratio_x": 7.99996948253829,
+      "overall_gain_pct": 37.578303627705736
+    },
+    "measurement_scope": "Single Linear op. RAM=estimated current reference working set; disk=real bytes on disk; Tok/s=model-level NOT_MEASURED.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "weight": {
+        "cosine": 0.7936241445985583,
+        "rmse": 0.021249203011393547,
+        "nrmse": 0.020644386986401322
+      },
+      "output": {
+        "cosine": 0.9187113138115022,
+        "rmse": 0.03212835267186165,
+        "nrmse": 0.012283181152570738
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.4349275,
+        "rift_median_ms": 79.69815399999999,
+        "speedup_x": 0.005457184114954533,
+        "speed_gain_pct": -99.45428158850454,
+        "rows_processed": 20,
+        "baseline_rows_s": 45984.67560685401,
+        "rift_rows_s": 250.9468412530609,
+        "IMPORTANT": "rows/s de uma única Linear NÃO é model Tok/s"
+      },
+      "storage": {
+        "baseline_bytes": 41943040,
+        "candidate_bytes": 5242900,
+        "compression_ratio_x": 7.99996948253829,
+        "disk_reduction_pct": 87.49995231628418
+      },
+      "ram": {
+        "baseline_working_set_bytes": 42475520,
+        "rift_working_set_bytes": 47718420,
+        "includes_reconstructed_fp32_weight": true
+      }
+    },
+    "notes": "BASE+REF 4-bit packed. Q4_LINEAR_TEST não é MXFP4. O path ainda materializa FP32 antes da GEMM."
   }
 ]
