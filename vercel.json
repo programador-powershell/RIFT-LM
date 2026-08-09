@@ -14,6 +14,10 @@
     {
       "source": "/aether/:model*",
       "destination": "/api/test?technology=aether&model=:model*"
+    },
+    {
+      "source": "/spectra/:model*",
+      "destination": "/api/test?technology=spectra&model=:model*"
     }
   ],
   "headers": [

@@ -90,10 +90,14 @@ function validatePayload(value) {
     const rift = normalizeTechnology(technologies.RIFT, "RIFT");
     const cascade = normalizeTechnology(technologies.CASCADE, "CASCADE");
     const aether = normalizeTechnology(technologies.AETHER, "AETHER");
-    if (!rift && !cascade && !aether) {
+    const spectra = normalizeTechnology(technologies.SPECTRA, "SPECTRA");
+    if (!rift && !cascade && !aether && !spectra) {
       throw new ApiError(`Modelo sem bateria principal: ${modelId}`, 400);
     }
-    return { model_id: modelId, technologies: { RIFT: rift, CASCADE: cascade, AETHER: aether } };
+    return {
+      model_id: modelId,
+      technologies: { RIFT: rift, CASCADE: cascade, AETHER: aether, SPECTRA: spectra },
+    };
   });
 }
 
@@ -152,6 +156,7 @@ function buildRanking(models) {
       model.technologies.RIFT,
       model.technologies.CASCADE,
       model.technologies.AETHER,
+      model.technologies.SPECTRA,
     ]) {
       if (technology) ranking.push(scoreTechnology(model.model_id, technology));
     }
@@ -178,7 +183,7 @@ const ANALYSIS_SCHEMA = {
         additionalProperties: false,
         properties: {
           model_id: { type: "string" },
-          recommendation: { type: "string", enum: ["RIFT", "CASCADE", "AETHER", "INCONCLUSIVO"] },
+          recommendation: { type: "string", enum: ["RIFT", "CASCADE", "AETHER", "SPECTRA", "INCONCLUSIVO"] },
           confidence: { type: "integer", minimum: 0, maximum: 100 },
           summary: { type: "string", description: "Veredito em português do Brasil, máximo 300 caracteres." },
           decisive_metrics: { type: "array", maxItems: 3, items: { type: "string" } },
@@ -201,12 +206,13 @@ function buildPrompt(models, ranking) {
   return [
     "Voce e um analista de benchmarks de compressao e execucao de LLMs.",
     "Analise SOMENTE os dados JSON fornecidos; nao use reputacao externa do modelo.",
-    "Para cada model_id, recomende RIFT, CASCADE, AETHER ou INCONCLUSIVO.",
+    "Para cada model_id, recomende RIFT, CASCADE, AETHER, SPECTRA ou INCONCLUSIVO.",
     "Compare somente tecnologias presentes. Se houver menos de duas, responda INCONCLUSIVO.",
     "Nunca recomende uma tecnologia sem bateria principal para o modelo.",
     "Priorize quality gate, output cosine/NRMSE, depois disco, RAM e speedup da operacao.",
     "Latencia de Linear nao e Tok/s. Prefetch simulado e kernel nao nativo devem aparecer nas ressalvas quando aplicavel.",
     "A bateria AETHER atual usa base ternaria 2-bit, mas HQR-ANS, P-IO e SRFA ainda nao sao implementacoes nativas.",
+    "A bateria SPECTRA atual mede Gate/TADDS e um proxy de drift de uma unica Linear; prefetch, fused kernel, compensacao de drift e speculative path nao sao nativos.",
     "O ranking composto e uma referencia deterministica, nao substitui a interpretacao das metricas.",
     "Responda em portugues do Brasil no schema solicitado.",
     JSON.stringify({ models, deterministic_ranking: compactRanking }),
@@ -261,10 +267,10 @@ function validateGeminiAnalysis(value, models) {
   const analyses = models.map((model) => {
     const source = byModel.get(model.model_id);
     if (!source) throw new ApiError(`Gemini omitiu o modelo ${model.model_id}`, 502);
-    let recommendation = ["RIFT", "CASCADE", "AETHER", "INCONCLUSIVO"].includes(source.recommendation)
+    let recommendation = ["RIFT", "CASCADE", "AETHER", "SPECTRA", "INCONCLUSIVO"].includes(source.recommendation)
       ? source.recommendation
       : "INCONCLUSIVO";
-    const available = ["RIFT", "CASCADE", "AETHER"].filter(
+    const available = ["RIFT", "CASCADE", "AETHER", "SPECTRA"].filter(
       (technology) => Boolean(model.technologies[technology]),
     );
     if (available.length < 2 || (recommendation !== "INCONCLUSIVO" && !available.includes(recommendation))) {

@@ -18,6 +18,11 @@ const TECHNOLOGIES = {
     script: "aether_m0_phase1_test_v100_auto_batteries.py",
     arguments: ["--mode", "phase1"],
   },
+  spectra: {
+    label: "SPECTRA",
+    script: "SPECTRA_Colab_Test_M0.py",
+    arguments: ["--mode", "phase1"],
+  },
 };
 
 const MODEL_ALIASES = {
@@ -39,7 +44,7 @@ class ApiError extends Error {
 function normalizeTechnology(value) {
   const key = String(value || "").trim().toLowerCase();
   if (!Object.hasOwn(TECHNOLOGIES, key)) {
-    throw new ApiError("Tecnologia inválida; use rift, cascade ou aether");
+    throw new ApiError("Tecnologia inválida; use rift, cascade, aether ou spectra");
   }
   return key;
 }

@@ -11,7 +11,7 @@ const match = html.match(/<script>([\s\S]*?)<\/script>/);
 assert.ok(match, "index.html precisa conter o script principal");
 new vm.Script(match[1], { filename: "index-inline.js" });
 assert.match(html, /America\/Sao_Paulo/);
-assert.match(html, /Comparador RIFT × CASCADE × AETHER/);
+assert.match(html, /Comparador RIFT × CASCADE × AETHER × SPECTRA/);
 assert.match(html, /Gemini 2\.5 Flash/);
 assert.match(html, /Ranking das baterias/);
 assert.match(html, /curl -fsSL/);
@@ -21,8 +21,9 @@ assert.doesNotMatch(html, /API_GOOGLE\s*=/);
 const rift = { run_id: "run-rift", battery_id: "P1", technology: "RIFT" };
 const cascade = { run_id: "run-cascade", battery_id: "P1", technology: "CASCADE" };
 const aether = { run_id: "run-aether", battery_id: "P1", technology: "AETHER" };
-assert.equal(api.validateHistory([rift, cascade, aether], "test").length, 3);
-assert.equal(api.mergeHistories([rift], [cascade, aether]).length, 3);
+const spectra = { run_id: "run-spectra", battery_id: "P1", technology: "SPECTRA" };
+assert.equal(api.validateHistory([rift, cascade, aether, spectra], "test").length, 4);
+assert.equal(api.mergeHistories([rift], [cascade, aether, spectra]).length, 4);
 
 const models = analysisApi.validatePayload({
   models: [{
@@ -58,12 +59,22 @@ const models = analysisApi.validatePayload({
         ram_reduction_pct: 60,
         operation_speedup_x: 0.583,
       },
+      SPECTRA: {
+        battery_id: "P1_SPECTRA",
+        status: "EXPERIMENTAL_PASS",
+        output_cosine: 0.991,
+        output_nrmse: 0.0038,
+        quality_gate_pass: true,
+        disk_reduction_pct: 90.8,
+        ram_reduction_pct: 63.1,
+        operation_speedup_x: 0.7,
+      },
     },
   }],
 });
 
 const ranking = analysisApi.buildRanking(models);
-assert.equal(ranking.length, 3);
+assert.equal(ranking.length, 4);
 assert.equal(ranking[0].position, 1);
 assert.ok(ranking.every((entry) => entry.score >= 0 && entry.score <= 100));
 assert.ok(ranking.every((entry) => entry.coverage_pct === 100));
@@ -150,13 +161,26 @@ const invalidLauncher = await testLauncher.fetch(new Request(
 ));
 assert.equal(invalidLauncher.status, 400);
 
+const spectraLauncherResponse = await testLauncher.fetch(new Request(
+  "https://rift-lm.vercel.app/api/test?technology=spectra&model=Qwen%2FQwen2.5-0.5B",
+));
+assert.equal(spectraLauncherResponse.status, 200);
+const spectraLauncher = await spectraLauncherResponse.text();
+assert.match(spectraLauncher, /SPECTRA_Colab_Test_M0\.py/);
+assert.match(spectraLauncher, /--mode.*phase1/s);
+
 const vercelConfig = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
 assert.ok(vercelConfig.rewrites.some((rewrite) => rewrite.source === "/aether/:model*"));
+assert.ok(vercelConfig.rewrites.some((rewrite) => rewrite.source === "/spectra/:model*"));
 const aetherScript = await readFile(
   new URL("../aether_m0_phase1_test_v100_auto_batteries.py", import.meta.url),
   "utf8",
 );
 assert.match(aetherScript, /technology": "AETHER"/);
 assert.match(aetherScript, /P1_AETHER_HQR_PLUS_TADDS_DYNAMIC/);
+const spectraScript = await readFile(new URL("../SPECTRA_Colab_Test_M0.py", import.meta.url), "utf8");
+assert.match(spectraScript, /technology": "SPECTRA"/);
+assert.match(spectraScript, /P1_SPECTRA_HQR_PLUS_TADDS_DYNAMIC/);
+assert.match(spectraScript, /P1_SPECTRA_DRIFT_CONTRACT_REF/);
 
 console.log("dashboard smoke test: PASS");

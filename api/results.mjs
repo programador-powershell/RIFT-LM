@@ -101,7 +101,7 @@ async function githubRequest(url, token, options = {}) {
       headers: {
         Accept: "application/vnd.github+json",
         Authorization: `Bearer ${token}`,
-        "User-Agent": "rift-cascade-aether-vercel-ingest/0.5",
+        "User-Agent": "rift-cascade-aether-spectra-vercel-ingest/0.6",
         "X-GitHub-Api-Version": GITHUB_API_VERSION,
         ...(options.body ? { "Content-Type": "application/json" } : {}),
         ...options.headers,

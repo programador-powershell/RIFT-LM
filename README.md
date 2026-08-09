@@ -1,6 +1,6 @@
-# RIFT-LM, CASCADE & AETHER Test Observatory
+# RIFT-LM, CASCADE, AETHER & SPECTRA Test Observatory
 
-Dashboard estático para executar, publicar e comparar baterias de referência das tecnologias RIFT-LM v0.3.5, CASCADE v0.3 e AETHER-LM v1.0.
+Dashboard estático para executar, publicar e comparar baterias de referência das tecnologias RIFT-LM v0.3.5, CASCADE v0.3, AETHER-LM v1.0 e SPECTRA-LM v0.1.
 
 ## O que o dashboard faz
 
@@ -9,7 +9,7 @@ Dashboard estático para executar, publicar e comparar baterias de referência d
 - aceita históricos JSON e CSV locais;
 - gera uma célula pronta para testar qualquer model ID ou URL do Hugging Face no Google Colab;
 - seleciona automaticamente uma camada `torch.nn.Linear` compatível entre famílias;
-- compara as baterias principais de RIFT, CASCADE e AETHER para o mesmo modelo;
+- compara as baterias principais de RIFT, CASCADE, AETHER e SPECTRA para o mesmo modelo;
 - calcula um ranking auditável de modelos e tecnologias a partir das métricas publicadas;
 - usa o Gemini 2.5 Flash para explicar qual tecnologia é mais adequada para cada modelo;
 - mantém métricas de operação Linear separadas de Tok/s do modelo;
@@ -68,6 +68,7 @@ As rotas amigáveis retornam um pequeno programa Python que baixa a bateria do m
 !curl -fsSL "https://rift-lm.vercel.app/rift/Qwen/Qwen2.5-0.5B" -o /content/rift_launcher.py && python /content/rift_launcher.py
 !curl -fsSL "https://rift-lm.vercel.app/cascade/Qwen/Qwen2.5-0.5B" -o /content/cascade_launcher.py && python /content/cascade_launcher.py
 !curl -fsSL "https://rift-lm.vercel.app/aether/Qwen/Qwen2.5-0.5B" -o /content/aether_launcher.py && python /content/aether_launcher.py
+!curl -fsSL "https://rift-lm.vercel.app/spectra/Qwen/Qwen2.5-0.5B" -o /content/spectra_launcher.py && python /content/spectra_launcher.py
 ```
 
 O alias pedido para Kimi também é aceito:
@@ -119,13 +120,24 @@ python aether_m0_phase1_test_v100_auto_batteries.py \
   --publish required
 ```
 
+### SPECTRA
+
+```bash
+python SPECTRA_Colab_Test_M0.py \
+  --mode phase1 \
+  --model microsoft/Phi-3.5-mini-instruct \
+  --target-layer auto \
+  --device cuda \
+  --publish required
+```
+
 Use `--trust-remote-code` somente quando o modelo realmente exigir e você confiar no código do repositório.
 
 ## Contrato das métricas
 
 Registros novos declaram:
 
-- `technology`: `RIFT`, `CASCADE` ou `AETHER`;
+- `technology`: `RIFT`, `CASCADE`, `AETHER` ou `SPECTRA`;
 - `candidate_tok_s`, `candidate_ram_bytes` e `candidate_disk_bytes`;
 - `comparison_role: primary` na bateria indicada ao comparador;
 - `quality`, `metrics`, `measurement_scope` e `notes`.
@@ -136,17 +148,18 @@ O dashboard continua compatível com registros RIFT anteriores que usam `rift_*`
 
 O score composto usa qualidade de saída (40%), quality gate (5%), redução em disco (20%), redução de RAM (15%) e speedup da operação Linear (20%). Métricas ausentes reduzem a cobertura e aplicam uma penalização explícita ao score. O ranking mede somente esta bateria de referência; não representa inteligência geral do modelo.
 
-O Gemini recebe as mesmas métricas e o ranking calculado pelo servidor. Ele pode recomendar `RIFT`, `CASCADE`, `AETHER` ou `INCONCLUSIVO`, com resumo, confiança, métricas decisivas e ressalvas. Com menos de duas tecnologias medidas, ou quando a resposta recomenda uma tecnologia ausente, o servidor força `INCONCLUSIVO`.
+O Gemini recebe as mesmas métricas e o ranking calculado pelo servidor. Ele pode recomendar `RIFT`, `CASCADE`, `AETHER`, `SPECTRA` ou `INCONCLUSIVO`, com resumo, confiança, métricas decisivas e ressalvas. Com menos de duas tecnologias medidas, ou quando a resposta recomenda uma tecnologia ausente, o servidor força `INCONCLUSIVO`.
 
 ## Limites atuais
 
-O teste RIFT usa o codec experimental `Q4_LINEAR_TEST`; ele não é MXFP4. O teste CASCADE usa decomposição low-rank, Gate heurístico e simulação lag-one do prefetch. O AETHER usa base ternária realmente empacotada em 2 bits e TADDS low-rank por entropia, mas não implementa HQR-ANS 0,85 bit, P-IO assíncrono nem o kernel SRFA. Nenhum dos scripts contém o kernel low-bit/fused nativo de produção.
+O teste RIFT usa o codec experimental `Q4_LINEAR_TEST`; ele não é MXFP4. O teste CASCADE usa decomposição low-rank, Gate heurístico e simulação lag-one do prefetch. O AETHER usa base ternária realmente empacotada em 2 bits e TADDS low-rank por entropia, mas não implementa HQR-ANS 0,85 bit, P-IO assíncrono nem o kernel SRFA. O SPECTRA mede o mesmo tipo de base física, Gate/TADDS e um proxy de drift de uma única operação Linear; prefetch assíncrono, kernel fused, compensação de drift e speculative path permanecem simulados. Nenhum dos scripts contém o kernel low-bit/fused nativo de produção.
 
 Por isso:
 
 - latência de uma única operação Linear não deve ser chamada de Tok/s;
 - o prefetch CASCADE não representa I/O assíncrono real;
 - P-IO e SRFA do AETHER permanecem simulações do caminho Python;
+- o proxy de drift SPECTRA não equivale a certificação de qualidade end-to-end;
 - speedups nativos de inferência não devem ser reivindicados a partir dessas baterias de referência;
 - comparações de latência exigem o mesmo hardware, camada e forma de ativação.
 
@@ -160,6 +173,8 @@ api/test.mjs
 rift_m0_phase1_test_v035_auto_batteries.py
 cascade_m0_phase1_test_v030_auto_batteries.py
 aether_m0_phase1_test_v100_auto_batteries.py
+SPECTRA_Colab_Test_M0.py
+SPECTRA_Especificacao_Tecnica_v0.1.txt
 data/rift_test_batteries.json
 data/record-schema-example.json
 ```

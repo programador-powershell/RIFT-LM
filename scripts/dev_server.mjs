@@ -20,7 +20,7 @@ createServer(async (request, response) => {
   try {
     const requestUrl = new URL(request.url, `http://127.0.0.1:${port}`);
     const pathname = decodeURIComponent(requestUrl.pathname);
-    const friendly = pathname.match(/^\/(rift|cascade|aether)\/(.+)$/i);
+    const friendly = pathname.match(/^\/(rift|cascade|aether|spectra)\/(.+)$/i);
     if (pathname === "/api/test" || friendly) {
       if (friendly) {
         requestUrl.pathname = "/api/test";
