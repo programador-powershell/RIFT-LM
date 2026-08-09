@@ -633,5 +633,234 @@
       }
     },
     "notes": "Erro de prefetch afeta apenas custo estimado; esta bateria não implementa I/O assíncrono."
+  },
+  {
+    "timestamp_utc": "2026-08-09T16:17:25Z",
+    "run_id": "20260809T161725Z-7765bdc6",
+    "spec": "AETHER-LM v1.0 reference",
+    "technology": "AETHER",
+    "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+    "battery_id": "B0_AETHER_BINARY_IR_FOUNDATION",
+    "status": "PASS",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "measurement_scope": "AETHER Header/IR/Stage Pages/MMAP correctness; desempenho não se aplica.",
+    "quality": {
+      "full_local_gate_pass": true
+    },
+    "metrics": {
+      "bundle": {
+        "file_size": 688864,
+        "header_checksum": 7016606229173555000,
+        "hqr_packed_bytes": 589828,
+        "tadds_residual_bytes": 98336,
+        "stages": [
+          {
+            "stage_id": 0,
+            "rank": 0,
+            "offset": 640,
+            "size": 589828
+          },
+          {
+            "stage_id": 1,
+            "rank": 16,
+            "offset": 590528,
+            "size": 98336
+          }
+        ]
+      },
+      "negative_tests_passed": 11
+    },
+    "notes": "Container AETH v1.0 test-local; ABI de produção ainda não congelada."
+  },
+  {
+    "timestamp_utc": "2026-08-09T16:17:25Z",
+    "run_id": "20260809T161725Z-7765bdc6",
+    "spec": "AETHER-LM v1.0 reference",
+    "technology": "AETHER",
+    "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+    "battery_id": "P1_AETHER_HQR_PLUS_TADDS_DYNAMIC",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": "primary",
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 9609216,
+    "candidate_ram_bytes": 9805888,
+    "baseline_disk_bytes": 9437184,
+    "candidate_disk_bytes": 688864,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": -2.046701832907072,
+      "disk_reduction_pct": 92.70053439670139,
+      "disk_compression_ratio_x": 13.699633018999396,
+      "overall_gain_pct": 45.326916281897155
+    },
+    "measurement_scope": "Single Linear op; bundle AETH real; TADDS por entropia; latência do path Python/PyTorch; Tok/s não medido.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "weight": {
+        "cosine": 0.8863018751144409,
+        "nrmse": 0.008674295619130135
+      },
+      "output": {
+        "cosine": 0.8091269731521606,
+        "nrmse": 0.015224779024720192
+      },
+      "output_base": {
+        "cosine": 0.8129885792732239,
+        "nrmse": 0.0152722904458642
+      },
+      "output_rank_max": {
+        "cosine": 0.9890689849853516,
+        "nrmse": 0.003092851024121046
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.12808900000038648,
+        "candidate_median_ms": 0.8961110000029748,
+        "speedup_x": 0.14293876539843978,
+        "rows_processed": 14
+      },
+      "aether": {
+        "maximum_rank": 16,
+        "mean_selected_rank": 1.7142858505249023,
+        "stage_activation_rate": 0.1428571492433548,
+        "rank_histogram": {
+          "0": 12,
+          "8": 1,
+          "16": 1
+        },
+        "entropy_mean": 6.104866981506348,
+        "entropy_thresholds": [
+          10.219676971435547,
+          10.348470687866211,
+          10.455904006958008
+        ],
+        "activation_source": "real_model_activation",
+        "hqr_ans_native": false,
+        "pio_async_native": false,
+        "srfa_fused_native": false,
+        "ring_buffer_budget_bytes": 335544320
+      },
+      "bundle": {
+        "file_size": 688864,
+        "header_checksum": 7016606229173555000,
+        "hqr_packed_bytes": 589828,
+        "tadds_residual_bytes": 98336,
+        "stages": [
+          {
+            "stage_id": 0,
+            "rank": 0,
+            "offset": 640,
+            "size": 589828
+          },
+          {
+            "stage_id": 1,
+            "rank": 16,
+            "offset": 590528,
+            "size": 98336
+          }
+        ]
+      }
+    },
+    "notes": "P-IO e SRFA são simulados. Nenhum ganho nativo de inferência deve ser reivindicado."
+  },
+  {
+    "timestamp_utc": "2026-08-09T16:17:25Z",
+    "run_id": "20260809T161725Z-7765bdc6",
+    "spec": "AETHER-LM v1.0 reference",
+    "technology": "AETHER",
+    "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+    "battery_id": "P1_AETHER_HQR_TERNARY_2BIT",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 9609216,
+    "candidate_ram_bytes": 9609216,
+    "baseline_disk_bytes": 9437184,
+    "candidate_disk_bytes": 589828,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": 0,
+      "disk_reduction_pct": 93.74995761447482,
+      "disk_compression_ratio_x": 15.999891493791411,
+      "overall_gain_pct": 46.87497880723741
+    },
+    "measurement_scope": "Single Linear op; base ternária realmente empacotada em 2 bits; RAM é o working set FP32 do path Python.",
+    "quality": {
+      "full_local_gate_pass": null,
+      "weight": {
+        "cosine": 0.8199331760406494,
+        "nrmse": 0.010653095319867134
+      },
+      "output": {
+        "cosine": 0.8129885792732239,
+        "nrmse": 0.0152722904458642
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.12808900000038648,
+        "candidate_median_ms": 0.12794799999937823,
+        "speedup_x": 1.0011020101995258
+      },
+      "aether": {
+        "ternary_sparsity": 0.5157716870307922,
+        "hqr_ans_native": false
+      }
+    },
+    "notes": "HQR ANS 0.85-bit não implementado; o dashboard usa somente bytes físicos medidos."
+  },
+  {
+    "timestamp_utc": "2026-08-09T16:17:25Z",
+    "run_id": "20260809T161725Z-7765bdc6",
+    "spec": "AETHER-LM v1.0 reference",
+    "technology": "AETHER",
+    "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+    "battery_id": "P1_AETHER_PIO_POLICY_SIM",
+    "status": "SIMULATED",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "measurement_scope": "Política de prefetch derivada dos ranks do TADDS; nenhuma leitura NVMe assíncrona foi medida.",
+    "quality": {
+      "full_local_gate_pass": null
+    },
+    "metrics": {
+      "aether": {
+        "predicted_refinement_rows": 2,
+        "stage_activation_rate": 0.1428571492433548,
+        "ring_buffer_budget_bytes": 335544320,
+        "pio_async_native": false
+      }
+    },
+    "notes": "A bateria mede somente decisões da política, não I/O real."
   }
 ]
