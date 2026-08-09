@@ -43,6 +43,16 @@ class ResultsPublishError(RuntimeError):
     pass
 
 
+def ensure_import(module: str, pip_name: str | None = None):
+    try:
+        return __import__(module)
+    except ImportError:
+        package = pip_name or module
+        print(f"[deps] Instalando {package}...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", package])
+        return __import__(module)
+
+
 def repository_archive() -> str:
     ref = os.environ.get("RIFT_SOURCE_REF", "main").strip()
     if ref != "main" and not re.fullmatch(r"[a-fA-F0-9]{40}", ref):
@@ -54,6 +64,8 @@ def ensure_ml_dependencies() -> None:
     global torch, F, AutoModel, AutoModelForCausalLM, AutoTokenizer
     if torch is not None:
         return
+    ensure_import("sentencepiece")
+    ensure_import("tiktoken")
     try:
         import torch as _torch
         import torch.nn.functional as _F
@@ -63,7 +75,7 @@ def ensure_ml_dependencies() -> None:
     except ImportError as exc:
         raise SystemExit(
             "PyTorch e Transformers são necessários. Instale com: "
-            f"pip install torch transformers\nErro: {exc}"
+            f"pip install torch transformers sentencepiece tiktoken\nErro: {exc}"
         ) from exc
     torch = _torch
     F = _F

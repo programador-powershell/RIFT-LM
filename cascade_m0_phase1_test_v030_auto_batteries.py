@@ -49,6 +49,8 @@ def ensure_ml_dependencies() -> None:
     global torch, F, AutoModelForCausalLM, AutoTokenizer
     if torch is not None:
         return
+    ensure_import("sentencepiece")
+    ensure_import("tiktoken")
     try:
         import torch as _torch
         import torch.nn.functional as _F
@@ -57,7 +59,7 @@ def ensure_ml_dependencies() -> None:
     except ImportError as exc:
         raise SystemExit(
             "PyTorch e Transformers são necessários. Instale com: "
-            f"pip install torch transformers\nErro: {exc}"
+            f"pip install torch transformers sentencepiece tiktoken\nErro: {exc}"
         )
     torch = _torch
     F = _F

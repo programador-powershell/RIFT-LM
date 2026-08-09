@@ -12,3 +12,4 @@ winner_cpp/*.json
 !.env.example
 .vercel/
 rift_m0_test_output/
+.codex/
