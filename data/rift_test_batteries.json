@@ -3070,5 +3070,46 @@
       }
     },
     "notes": "Prefetch, fused kernel, drift compensation e speculative path são simulados. Nenhum ganho nativo de inferência deve ser reivindicado."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:05:54Z",
+    "run_id": "20260809T210548Z-c57d1a8f",
+    "spec": "SPECTRA-LM v0.1 reference",
+    "technology": "SPECTRA",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_SPECTRA_DRIFT_CONTRACT_REF",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "measurement_scope": "Proxy de drift relativo por linha para uma única operação Linear; não é drift acumulado end-to-end.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "output": {
+        "cosine": 0.8612435460090637,
+        "nrmse": 0.013102036900818348
+      }
+    },
+    "metrics": {
+      "spectra": {
+        "single_layer_drift_proxy_mean": 0.5369561910629272,
+        "single_layer_drift_proxy_max": 0.7566548585891724,
+        "drift_budget": 0.08,
+        "drift_budget_pass": false,
+        "drift_compensation_native": false
+      }
+    },
+    "notes": "A compensação de drift e a certificação end-to-end permanecem fora da Fase 1."
   }
 ]
