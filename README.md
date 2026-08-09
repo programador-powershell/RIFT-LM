@@ -74,13 +74,11 @@ As rotas amigáveis retornam um pequeno programa Python que baixa a bateria do m
 !curl -fsSL "https://rift-lm.vercel.app/spectra/Qwen/Qwen2.5-0.5B" -o /content/spectra_launcher.py && python /content/spectra_launcher.py
 ```
 
-O alias pedido para Kimi também é aceito:
+### Limite explícito para Kimi-K3
 
-```python
-!curl -fsSL "https://rift-lm.vercel.app/aether/Kimi-K3" -o /content/aether_launcher.py && python /content/aether_launcher.py
-```
+`Kimi-K3` resolve para `moonshotai/Kimi-K3`, mas não é colocado na fila do Colab. O modelo possui 2,8 trilhões de parâmetros; mesmo no limite teórico de 4 bits, somente os pesos exigiriam pelo menos 1,4 TB. Além disso, o código remoto da revisão atual declara `transformers==4.56.2`, enquanto versões mais novas podem falhar ao importar `OutputRecorder` e `check_model_inputs`.
 
-`Kimi-K3` resolve para `moonshotai/Kimi-K3` e habilita `trust_remote_code`, como exigido pelo repositório do modelo. Ele é um modelo de escala extrema e não deve caber na memória de um Colab comum; a rota simplifica o lançamento, mas não remove os requisitos de hardware.
+As rotas antigas com Kimi continuam respondendo, porém o launcher encerra antes de baixar os pesos, exibe a versão compatível do Transformers e informa os recursos detectados. Nenhum resultado sintético ou de um modelo substituto é publicado em nome do Kimi-K3. Para testar o checkpoint real, é necessário adaptar as baterias para carregamento distribuído e executá-las em infraestrutura compatível com os engines recomendados pelo projeto, como vLLM, SGLang ou TokenSpeed.
 
 ## Fila serial de benchmarks
 
