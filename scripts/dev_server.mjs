@@ -28,7 +28,7 @@ createServer(async (request, response) => {
       response.end(body);
       return;
     }
-    const friendly = pathname.match(/^\/(rift|cascade|aether|spectra)\/(.+)$/i);
+    const friendly = pathname.match(/^\/(rift|cascade|aether|spectra|winner)\/(.+)$/i);
     if (pathname === "/api/test" || friendly) {
       if (friendly) {
         requestUrl.pathname = "/api/test";

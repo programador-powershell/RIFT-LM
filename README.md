@@ -1,20 +1,23 @@
-# RIFT-LM, CASCADE, AETHER & SPECTRA Test Observatory
+# RIFT-LM, CASCADE, AETHER, SPECTRA & WINNER Test Observatory
 
-Dashboard estático para executar, publicar e comparar baterias de referência das tecnologias RIFT-LM v0.3.5, CASCADE v0.3, AETHER-LM v1.0 e SPECTRA-LM v0.1.
+Dashboard para executar, publicar e comparar baterias de referência das tecnologias RIFT-LM v0.3.5, CASCADE v0.3, AETHER-LM v1.0, SPECTRA-LM v0.1 e WINNER.cpp v0.8.
 
 ## O que o dashboard faz
 
-- carrega automaticamente `data/rift_test_batteries.json`;
+- carrega `data/rift_test_batteries.json` e verifica uma nova versão automaticamente a cada 15 segundos enquanto a aba está visível;
 - exibe datas em `America/Sao_Paulo` (GMT−3), preservando UTC no dado original;
 - aceita históricos JSON e CSV locais;
 - gera uma célula pronta para testar qualquer model ID ou URL do Hugging Face no Google Colab;
 - seleciona automaticamente uma camada `torch.nn.Linear` compatível entre famílias;
-- compara as baterias principais de RIFT, CASCADE, AETHER e SPECTRA para o mesmo modelo;
+- compara as baterias principais das cinco tecnologias para o mesmo modelo;
 - calcula um ranking auditável de modelos e tecnologias a partir das métricas publicadas;
 - usa o Gemini 2.5 Flash para explicar qual tecnologia é mais adequada para cada modelo;
 - mantém métricas de operação Linear separadas de Tok/s do modelo;
 - entrega launchers Python por URLs curtas, sem duplicar os scripts dentro do notebook.
 - pesquisa modelos públicos no Hugging Face e monta uma fila Colab com vários modelos e tecnologias.
+- mantém os geradores de modelo/fila fechados em cards expansíveis e exibe primeiro o dashboard.
+
+Quando chega uma nova execução, `/api/results` substitui o snapshot anterior da mesma combinação `model_id + technology`. Assim, uma versão otimizada do script atualiza as baterias daquele modelo em vez de manter execuções antigas duplicadas. Tecnologias e modelos diferentes permanecem independentes.
 
 ## Executar localmente
 
@@ -57,21 +60,29 @@ A Function pública `/api/models?q=...` faz o autocomplete de modelos públicos 
 
 Cadastre e autorize:
 
-- `RIFT_RESULTS_ENDPOINT`: `https://SEU-DOMINIO.vercel.app/api/results`;
 - `RIFT_INGEST_TOKEN`: o mesmo segredo de ingestão configurado na Vercel;
 - `HF_TOKEN`: opcional para limites maiores ou modelos gated.
 
-Os launchers por URL configuram `RIFT_RESULTS_ENDPOINT` automaticamente. Mesmo assim, `RIFT_INGEST_TOKEN` continua obrigatório no Colab e nunca é incluído na resposta pública da API.
+Use exatamente esses nomes, sem espaços, e habilite **Acesso ao notebook**. `RIFT_RESULTS_ENDPOINT` não precisa ser cadastrado como Secret: as células geradas fixam `https://rift-lm.vercel.app/api/results`.
+
+O painel do Colab disponibiliza Secrets ao kernel do notebook, mas os benchmarks rodam em subprocessos isolados. Por isso, a célula gerada lê `RIFT_INGEST_TOKEN` no kernel e o transfere por variável de ambiente aos filhos. O valor nunca é exibido, gravado no código gerado ou enviado ao navegador.
 
 ## Executar por URL no Colab
 
 As rotas amigáveis retornam um pequeno programa Python que baixa a bateria do mesmo commit implantado e a executa na GPU do Colab:
 
 ```python
+from google.colab import userdata
+import os
+
+os.environ["RIFT_RESULTS_ENDPOINT"] = "https://rift-lm.vercel.app/api/results"
+os.environ["RIFT_INGEST_TOKEN"] = userdata.get("RIFT_INGEST_TOKEN").strip()
+
 !curl -fsSL "https://rift-lm.vercel.app/rift/Qwen/Qwen2.5-0.5B" -o /content/rift_launcher.py && python /content/rift_launcher.py
 !curl -fsSL "https://rift-lm.vercel.app/cascade/Qwen/Qwen2.5-0.5B" -o /content/cascade_launcher.py && python /content/cascade_launcher.py
 !curl -fsSL "https://rift-lm.vercel.app/aether/Qwen/Qwen2.5-0.5B" -o /content/aether_launcher.py && python /content/aether_launcher.py
 !curl -fsSL "https://rift-lm.vercel.app/spectra/Qwen/Qwen2.5-0.5B" -o /content/spectra_launcher.py && python /content/spectra_launcher.py
+!curl -fsSL "https://rift-lm.vercel.app/winner/Qwen/Qwen2.5-0.5B" -o /content/winner_launcher.py && python /content/winner_launcher.py
 ```
 
 ### Limite explícito para Kimi-K3
@@ -146,13 +157,26 @@ python SPECTRA_Colab_Test_M0.py \
   --publish required
 ```
 
+### WINNER
+
+```bash
+python winner_m0_phase1_test_v080_auto_batteries.py \
+  --mode phase1 \
+  --model microsoft/Phi-3.5-mini-instruct \
+  --target-layer auto \
+  --device cuda \
+  --publish required
+```
+
+A bateria WINNER baixa o código-fonte publicado, compila com CMake/g++, executa `winner --self-test` e um perfil C++ sintético. Em seguida, mede F0 + residual LS sobre uma camada Linear real do modelo com PyTorch. Os dois escopos são reportados separadamente.
+
 Use `--trust-remote-code` somente quando o modelo realmente exigir e você confiar no código do repositório.
 
 ## Contrato das métricas
 
 Registros novos declaram:
 
-- `technology`: `RIFT`, `CASCADE`, `AETHER` ou `SPECTRA`;
+- `technology`: `RIFT`, `CASCADE`, `AETHER`, `SPECTRA` ou `WINNER`;
 - `candidate_tok_s`, `candidate_ram_bytes` e `candidate_disk_bytes`;
 - `comparison_role: primary` na bateria indicada ao comparador;
 - `quality`, `metrics`, `measurement_scope` e `notes`.
@@ -163,11 +187,11 @@ O dashboard continua compatível com registros RIFT anteriores que usam `rift_*`
 
 O score composto usa qualidade de saída (40%), quality gate (5%), redução em disco (20%), redução de RAM (15%) e speedup da operação Linear (20%). Métricas ausentes reduzem a cobertura e aplicam uma penalização explícita ao score. O ranking mede somente esta bateria de referência; não representa inteligência geral do modelo.
 
-O Gemini recebe as mesmas métricas e o ranking calculado pelo servidor. Ele pode recomendar `RIFT`, `CASCADE`, `AETHER`, `SPECTRA` ou `INCONCLUSIVO`, com resumo, confiança, métricas decisivas e ressalvas. Com menos de duas tecnologias medidas, ou quando a resposta recomenda uma tecnologia ausente, o servidor força `INCONCLUSIVO`.
+O Gemini recebe as mesmas métricas e o ranking calculado pelo servidor. Ele pode recomendar `RIFT`, `CASCADE`, `AETHER`, `SPECTRA`, `WINNER` ou `INCONCLUSIVO`, com resumo, confiança, métricas decisivas e ressalvas. Com menos de duas tecnologias medidas, ou quando a resposta recomenda uma tecnologia ausente, o servidor força `INCONCLUSIVO`.
 
 ## Limites atuais
 
-O teste RIFT usa o codec experimental `Q4_LINEAR_TEST`; ele não é MXFP4. O teste CASCADE usa decomposição low-rank, Gate heurístico e simulação lag-one do prefetch. O AETHER usa base ternária realmente empacotada em 2 bits e TADDS low-rank por entropia, mas não implementa HQR-ANS 0,85 bit, P-IO assíncrono nem o kernel SRFA. O SPECTRA mede o mesmo tipo de base física, Gate/TADDS e um proxy de drift de uma única operação Linear; prefetch assíncrono, kernel fused, compensação de drift e speculative path permanecem simulados. Nenhum dos scripts contém o kernel low-bit/fused nativo de produção.
+O teste RIFT usa o codec experimental `Q4_LINEAR_TEST`; ele não é MXFP4. O teste CASCADE usa decomposição low-rank, Gate heurístico e simulação lag-one do prefetch. O AETHER usa base ternária realmente empacotada em 2 bits e TADDS low-rank por entropia, mas não implementa HQR-ANS 0,85 bit, P-IO assíncrono nem o kernel SRFA. O SPECTRA mede o mesmo tipo de base física, Gate/TADDS e um proxy de drift de uma única operação Linear; prefetch assíncrono, kernel fused, compensação de drift e speculative path permanecem simulados. O WINNER valida o runtime C++ com dados sintéticos, mas o tensor real ainda é executado pelo caminho PyTorch e não por um kernel low-bit nativo.
 
 Por isso:
 
@@ -175,6 +199,7 @@ Por isso:
 - o prefetch CASCADE não representa I/O assíncrono real;
 - P-IO e SRFA do AETHER permanecem simulações do caminho Python;
 - o proxy de drift SPECTRA não equivale a certificação de qualidade end-to-end;
+- o perfil nativo sintético do WINNER não equivale à latência da camada real do modelo;
 - speedups nativos de inferência não devem ser reivindicados a partir dessas baterias de referência;
 - comparações de latência exigem o mesmo hardware, camada e forma de ativação.
 
@@ -191,6 +216,8 @@ cascade_m0_phase1_test_v030_auto_batteries.py
 aether_m0_phase1_test_v100_auto_batteries.py
 SPECTRA_Colab_Test_M0.py
 SPECTRA_Especificacao_Tecnica_v0.1.txt
+winner_m0_phase1_test_v080_auto_batteries.py
+winner_cpp/
 data/rift_test_batteries.json
 data/record-schema-example.json
 ```

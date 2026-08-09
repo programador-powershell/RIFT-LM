@@ -80,10 +80,31 @@ function validateHistory(value, source) {
   return value;
 }
 
+function snapshotKey(record) {
+  const model = String(record.model_id || record.model || "").trim().toLowerCase();
+  const explicit = String(record.technology || "").trim().toUpperCase();
+  const hint = `${record.battery_id || ""} ${record.spec || ""}`.toUpperCase();
+  const technology = explicit ||
+    (hint.includes("WINNER") ? "WINNER" : hint.includes("SPECTRA") ? "SPECTRA" :
+      hint.includes("AETHER") ? "AETHER" : hint.includes("CASCADE") ? "CASCADE" : "RIFT");
+  return model ? `${model}\u0000${technology}` : null;
+}
+
 function mergeHistories(remote, incoming) {
+  // Every publisher sends a complete run snapshot for one model/technology.
+  // Remove that previous snapshot before inserting the optimized/new run, so
+  // reruns update the dashboard instead of accumulating duplicate cards.
+  const replacedSnapshots = new Set(incoming.map(snapshotKey).filter(Boolean));
   const records = new Map();
-  for (const record of [...remote, ...incoming]) {
-    records.set(`${record.run_id}\u0000${record.battery_id}`, record);
+  for (const record of remote) {
+    const key = snapshotKey(record);
+    if (!key || !replacedSnapshots.has(key)) {
+      records.set(`${record.run_id}\u0000${record.battery_id}`, record);
+    }
+  }
+  for (const record of incoming) {
+    const key = snapshotKey(record) || String(record.run_id);
+    records.set(`${key}\u0000${record.battery_id}`, record);
   }
   return [...records.values()].sort((left, right) => {
     const leftKey = `${left.timestamp_utc || ""}\u0000${left.run_id}\u0000${left.battery_id}`;
@@ -101,7 +122,7 @@ async function githubRequest(url, token, options = {}) {
       headers: {
         Accept: "application/vnd.github+json",
         Authorization: `Bearer ${token}`,
-        "User-Agent": "rift-cascade-aether-spectra-vercel-ingest/0.6",
+        "User-Agent": "rift-cascade-aether-spectra-winner-vercel-ingest/0.8",
         "X-GitHub-Api-Version": GITHUB_API_VERSION,
         ...(options.body ? { "Content-Type": "application/json" } : {}),
         ...options.headers,

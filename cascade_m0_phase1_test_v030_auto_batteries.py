@@ -560,7 +560,12 @@ def publish_to_vercel(path: Path, *, mode: str, endpoint: str | None) -> None:
     endpoint = (endpoint or read_setting("RIFT_RESULTS_ENDPOINT") or "").strip()
     token = read_setting("RIFT_INGEST_TOKEN")
     if not endpoint or not token:
-        message = "Configure RIFT_RESULTS_ENDPOINT e RIFT_INGEST_TOKEN"
+        missing = []
+        if not endpoint:
+            missing.append("RIFT_RESULTS_ENDPOINT")
+        if not token:
+            missing.append("RIFT_INGEST_TOKEN")
+        message = "Configure " + " e ".join(missing)
         if mode == "required" or running_in_colab():
             raise ResultsPublishError(message)
         print(f"[PUBLISH] AVISO: {message}; resultado mantido localmente.")
