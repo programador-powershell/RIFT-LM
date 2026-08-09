@@ -3627,6 +3627,98 @@
     "run_id": "20260809T224855Z-501c8733",
     "technology": "WINNER",
     "model_id": "google/gemma-4-E4B-it",
+    "battery_id": "P1_WINNER_F0_PLUS_LS",
+    "status": "EXPERIMENTAL_FAIL",
+    "measurement_scope": "Uma operação Linear real; F0 + residual low-rank; latência PyTorch e self-test C++ reportados separadamente; Tok/s não medido.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "weight": {
+        "cosine": 0.5659370422363281,
+        "nrmse": 0.890743613243103
+      },
+      "output": {
+        "cosine": 0.8803859949111938,
+        "nrmse": 0.47467562556266785
+      },
+      "output_base": {
+        "cosine": 0.6916345357894897,
+        "nrmse": 0.7458054423332214
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.1705445,
+        "candidate_median_ms": 0.1992675,
+        "speedup_x": 0.8558570765428382,
+        "rows_processed": 12,
+        "device": "cuda"
+      },
+      "winner": {
+        "threshold": 0.5,
+        "residual_rank": 16,
+        "stage_activation_rate": 1,
+        "activation_source": "real_model_activation",
+        "cpp_self_test_pass": true,
+        "native_profile": {
+          "dim": 128,
+          "layers": 2,
+          "tokens": 4,
+          "profiles": [
+            {
+              "profile": "MINMEM",
+              "rank": 0,
+              "us_gemv": 9.52225,
+              "ms_tok": 0.0337505,
+              "tok_s": 29629.2,
+              "rss_mb": 0.00878906,
+              "residual_pct": 0
+            },
+            {
+              "profile": "FAST",
+              "rank": 16,
+              "us_gemv": 10.9881,
+              "ms_tok": 0.0357025,
+              "tok_s": 28009.2,
+              "rss_mb": 0.0244141,
+              "residual_pct": 25
+            },
+            {
+              "profile": "BALANCED",
+              "rank": 64,
+              "us_gemv": 13.6451,
+              "ms_tok": 0.0418292,
+              "tok_s": 23906.7,
+              "rss_mb": 0.0712891,
+              "residual_pct": 56.25
+            },
+            {
+              "profile": "SAFE",
+              "rank": 128,
+              "us_gemv": 21.3818,
+              "ms_tok": 0.0935065,
+              "tok_s": 10694.4,
+              "rss_mb": 0.133789,
+              "residual_pct": 93.75
+            }
+          ]
+        },
+        "native_lowbit_model_kernel": false
+      }
+    },
+    "notes": "O C++ validado ainda não carrega diretamente este tensor do Hugging Face; nenhum ganho end-to-end ou kernel low-bit nativo é reivindicado.",
+    "baseline_ram_bytes": 21192704,
+    "candidate_ram_bytes": 5767232,
+    "baseline_disk_bytes": 20971520,
+    "candidate_disk_bytes": 1613888,
+    "comparison_role": "primary"
+  },
+  {
+    "schema_version": 1,
+    "timestamp_utc": "2026-08-09T22:48:55Z",
+    "run_id": "20260809T224855Z-501c8733",
+    "technology": "WINNER",
+    "model_id": "google/gemma-4-E4B-it",
     "battery_id": "P1_WINNER_F0_TERNARY_2BIT",
     "status": "EXPERIMENTAL_FAIL",
     "measurement_scope": "Uma operação Linear real; disco F0 em 2 bits; RAM do path de referência usa códigos int8.",
