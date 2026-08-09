@@ -3216,5 +3216,47 @@
     "baseline_disk_bytes": null,
     "candidate_disk_bytes": null,
     "comparison_role": null
+  },
+  {
+    "schema_version": 1,
+    "timestamp_utc": "2026-08-09T21:07:13Z",
+    "run_id": "20260809T210713Z-483e8385",
+    "technology": "WINNER",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_WINNER_F0_TERNARY_2BIT",
+    "status": "EXPERIMENTAL_FAIL",
+    "measurement_scope": "Uma operação Linear real; disco F0 em 2 bits; RAM do path de referência usa códigos int8.",
+    "quality": {
+      "full_local_gate_pass": null,
+      "weight": {
+        "cosine": 0.5392135977745056,
+        "nrmse": 0.9086830615997314
+      },
+      "output": {
+        "cosine": 0.7746873497962952,
+        "nrmse": 0.6345943212509155
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.40637599999999996,
+        "candidate_median_ms": 0.40793749999999995,
+        "speedup_x": 0.9961722077524131,
+        "rows_processed": 14,
+        "device": "cuda"
+      },
+      "winner": {
+        "threshold": 0.5,
+        "residual_rank": 0,
+        "cpp_self_test_pass": true
+      }
+    },
+    "notes": "O armazenamento é empacotado; o kernel PyTorch desta bateria pré-decodifica F0 em FP32.",
+    "baseline_ram_bytes": 42315776,
+    "candidate_ram_bytes": 10874880,
+    "baseline_disk_bytes": 41943040,
+    "candidate_disk_bytes": 2637824,
+    "comparison_role": null
   }
 ]
