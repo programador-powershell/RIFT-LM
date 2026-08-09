@@ -2691,5 +2691,53 @@
       "negative_tests_passed": 11
     },
     "notes": "Container AETH v1.0 test-local; ABI de produção ainda não congelada."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:04:44Z",
+    "run_id": "20260809T210443Z-0e28c66a",
+    "spec": "AETHER-LM v1.0 reference",
+    "technology": "AETHER",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_AETHER_HQR_TERNARY_2BIT",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 42315776,
+    "candidate_ram_bytes": 42315776,
+    "baseline_disk_bytes": 41943040,
+    "candidate_disk_bytes": 2621444,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": 0,
+      "disk_reduction_pct": 93.74999046325684,
+      "disk_compression_ratio_x": 15.999975585974752,
+      "overall_gain_pct": 46.87499523162842
+    },
+    "measurement_scope": "Single Linear op; base ternária realmente empacotada em 2 bits; RAM é o working set FP32 do path Python.",
+    "quality": {
+      "full_local_gate_pass": null,
+      "weight": {
+        "cosine": 0.8860535621643066,
+        "nrmse": 0.010312497615814209
+      },
+      "output": {
+        "cosine": 0.8419888615608215,
+        "nrmse": 0.01445861253887415
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.42364499995528604,
+        "candidate_median_ms": 0.42314400002396724,
+        "speedup_x": 1.0011839939389202
+      },
+      "aether": {
+        "ternary_sparsity": 0.43617841601371765,
+        "hqr_ans_native": false
+      }
+    },
+    "notes": "HQR ANS 0.85-bit não implementado; o dashboard usa somente bytes físicos medidos."
   }
 ]
