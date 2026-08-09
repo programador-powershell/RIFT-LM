@@ -31,6 +31,21 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
+No ambiente de execução mostrado na interface, o script de configuração correto
+(a partir da raiz clonada `/workspace/RIFT-LM`) é simplesmente:
+
+```bash
+bash winner_cpp/setup_test.sh
+```
+
+Não use `cd winner.cpp`: o diretório do repositório chama-se `winner_cpp`. Para
+também compilar uma cópia já clonada do llama.cpp, informe-a explicitamente:
+
+```bash
+LLAMA_CPP_DIR=/workspace/llama.cpp GGUF_MODEL=/models/model.gguf \
+  bash winner_cpp/setup_test.sh
+```
+
 Para um benchmark ligado à CPU da máquina, ative explicitamente:
 
 ```bash
@@ -51,7 +66,18 @@ O build portátil não usa `-march=native` nem `fast-math` por padrão, evitando
 ./winner --model arquivo.winr
 ```
 
-Em Unix, o servidor experimental pode ser iniciado com `--serve`. Ele liga em `127.0.0.1` por padrão, retorna apenas respostas sintéticas e não deve ser exposto à internet.
+Em Unix, o servidor experimental pode ser iniciado com `--serve`. Ele liga em
+`127.0.0.1` por padrão e oferece `GET /health`, `GET /v1/models` e
+`POST /v1/chat/completions` (incluindo SSE). Ele **ainda retorna respostas
+sintéticas**: carregar um Bundle valida o runtime, mas o caminho HTTP ainda não
+executa os tensores do modelo. Não o exponha à internet.
+
+Os nomes comerciais de uma família não são arquivos testáveis. Um ensaio
+reproduzível precisa registrar o identificador exato do checkpoint, revisão,
+formato/quantização, licença, prompt, hardware e comando. WINNER usa `.winr`,
+enquanto llama.cpp usa GGUF; portanto, comparar ambos exige conversões verificadas
+do mesmo checkpoint. Resultados do `--bench-kernels` são microbenchmarks sintéticos
+e não demonstram superioridade end-to-end sobre llama.cpp ou BitNet.
 
 ## Perfis
 

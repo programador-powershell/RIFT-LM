@@ -77,5 +77,6 @@ private:
 // Helpers to build OpenAI SSE payloads
 std::string sse_chat_chunk(uint64_t id, const std::string& delta, bool done);
 std::string json_chat_complete(uint64_t id, const std::string& content);
+std::string json_models();
 
 } // namespace winner
