@@ -7,6 +7,8 @@
 #include <cstdio>
 #include <sstream>
 #include <cerrno>
+#include <algorithm>
+#include <cctype>
 
 namespace winner {
 
@@ -41,6 +43,35 @@ std::string json_escape(const std::string& value) {
         }
     }
     return output.str();
+}
+
+bool parse_content_length(const std::string& headers, size_t& length) {
+    std::string lower(headers);
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    const std::string key = "content-length:";
+    const size_t begin = lower.find(key);
+    if (begin == std::string::npos) { length = 0; return true; }
+    size_t pos = begin + key.size();
+    while (pos < lower.size() && (lower[pos] == ' ' || lower[pos] == '\t')) ++pos;
+    if (pos == lower.size() || !std::isdigit(static_cast<unsigned char>(lower[pos]))) return false;
+    size_t value = 0;
+    while (pos < lower.size() && std::isdigit(static_cast<unsigned char>(lower[pos]))) {
+        const unsigned digit = static_cast<unsigned>(lower[pos++] - '0');
+        if (value > (1024u * 1024u - digit) / 10u) return false;
+        value = value * 10u + digit;
+    }
+    length = value;
+    return true;
+}
+
+void send_json(int fd, int status, const char* reason, const std::string& body) {
+    std::ostringstream out;
+    out << "HTTP/1.1 " << status << ' ' << reason
+        << "\r\nContent-Type: application/json\r\nContent-Length: " << body.size()
+        << "\r\nConnection: close\r\n\r\n" << body;
+    const std::string response = out.str();
+    send_all(fd, response.data(), response.size());
 }
 }
 
@@ -132,19 +163,44 @@ void HttpServer::accept_loop() {
 }
 
 void HttpServer::handle_client(int fd) {
+    constexpr size_t max_request_bytes = 1024u * 1024u;
     char buf[8192];
-    ssize_t n = read(fd, buf, sizeof(buf) - 1);
-    if (n <= 0) return;
-    buf[n] = 0;
-    std::string req(buf);
+    std::string req;
+    size_t header_end = std::string::npos;
+    size_t content_length = 0;
+    while (req.size() <= max_request_bytes) {
+        const ssize_t n = read(fd, buf, sizeof(buf));
+        if (n <= 0) return;
+        req.append(buf, static_cast<size_t>(n));
+        header_end = req.find("\r\n\r\n");
+        if (header_end == std::string::npos) continue;
+        if (!parse_content_length(req.substr(0, header_end), content_length) ||
+            header_end + 4u + content_length > max_request_bytes) {
+            send_json(fd, 413, "Payload Too Large", "{\"error\":{\"message\":\"request too large\"}}");
+            return;
+        }
+        if (req.size() >= header_end + 4u + content_length) break;
+    }
+    if (header_end == std::string::npos || req.size() > max_request_bytes) {
+        send_json(fd, 400, "Bad Request", "{\"error\":{\"message\":\"malformed request\"}}");
+        return;
+    }
     const size_t request_line_end = req.find("\r\n");
     const std::string request_line = req.substr(0, request_line_end);
     const bool is_chat = request_line == "POST /v1/chat/completions HTTP/1.1" ||
                          request_line == "POST /chat/completions HTTP/1.1";
 
+    if (request_line == "GET /health HTTP/1.1") {
+        send_json(fd, 200, "OK", "{\"status\":\"ok\",\"runtime\":\"winner.cpp\"}");
+        return;
+    }
+    if (request_line == "GET /v1/models HTTP/1.1") {
+        send_json(fd, 200, "OK", json_models());
+        return;
+    }
+
     if (!is_chat) {
-        const char* resp = "HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: 21\r\nConnection: close\r\n\r\n{\"error\":\"not found\"}";
-        send_all(fd, resp, strlen(resp));
+        send_json(fd, 404, "Not Found", "{\"error\":{\"message\":\"not found\"}}");
         return;
     }
 
@@ -199,6 +255,11 @@ std::string json_chat_complete(uint64_t id, const std::string& content) {
       << "\"role\":\"assistant\",\"content\":\"" << json_escape(content)
       << "\"},\"finish_reason\":\"stop\"}]}";
     return o.str();
+}
+
+std::string json_models() {
+    return "{\"object\":\"list\",\"data\":[{\"id\":\"winner-synthetic\","
+           "\"object\":\"model\",\"owned_by\":\"local\"}]}";
 }
 
 } // namespace winner
