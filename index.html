@@ -178,11 +178,11 @@ details{margin-top:18px}.help{color:var(--muted);font-size:13px;line-height:1.6}
       <div class="sub">Qualidade 45% • disco 20% • RAM 15% • latência 20% • cobertura — bateria primária P1_WINNER_F0_PLUS_LS — F0 empacotado residente + residual gated (L2 percentil, como F1 do CASCADE)</div>
     </div>
     <div class="actions" style="margin:0;gap:8px;flex-wrap:wrap">
-      <button class="primary" id="retestWinnerBtn" type="button" title="Gera fila serial WINNER com todos os modelos do ranking geral">Reteste WINNER</button>
+      <button class="primary" id="retestWinnerBtn" type="button" title="Copia a célula Colab WINNER (todos os modelos do ranking) direto para a área de transferência">Reteste WINNER</button>
     </div>
   </div>
   <div class="rankRows" id="rankingWinnerRows"><div class="empty">Sem resultados WINNER para classificar.</div></div>
-  <div class="note" id="retestWinnerNote">O botão <strong>Reteste WINNER</strong> monta a fila com todos os modelos únicos do ranking geral e gera a célula Colab só com WINNER.</div>
+  <div class="note" id="retestWinnerNote">O botão <strong>Reteste WINNER</strong> copia a célula Colab (só WINNER, todos os modelos do ranking) direto para a área de transferência — é só colar no Colab. A lista à esquerda continua só para pesquisa/URL.</div>
 </section>
 
 <div class="sectionTitle">Comparador RIFT × CASCADE × AETHER × SPECTRA × WINNER <small>• mesmo modelo, métricas de referência</small></div>
@@ -371,26 +371,51 @@ function renderRanking(){
   }
 }
 async function retestWinnerFromRanking(){
-  const models=modelsFromRanking(state.ranking.length?state.ranking:buildLocalRanking(buildAnalysisPayload(),{includeWinner:false}));
+  const btn=$("retestWinnerBtn");
   const status=$("retestWinnerNote")||$("modelValidation");
+  const models=modelsFromRanking(state.ranking.length?state.ranking:buildLocalRanking(buildAnalysisPayload(),{includeWinner:false}));
   if(!models.length){
-    if(status){status.textContent="Nenhum modelo no ranking geral para retestar.";}
+    if(status) status.textContent="Nenhum modelo no ranking geral para retestar.";
     return;
   }
-  // Fila só WINNER, camada auto, trust do formulário
   const trust=!!$("trustRemoteInput")?.checked;
-  const target=($("targetLayerInput")?.value||"auto").trim()||"auto";
-  state.queue=models.map(model=>({model,technology:"winner",target,trust,label:model}));
-  renderBatchQueue();
-  await refreshColabCell();
-  // Abre o painel de execução se estiver fechado
-  const details=document.querySelector(".launcherDisclosure");
-  if(details) details.open=true;
-  if(status){
-    status.innerHTML=`Fila WINNER montada com <strong>${models.length}</strong> modelo(s) do ranking geral. Célula Colab atualizada — copie e rode no Colab.`;
+  const target=(($("targetLayerInput")?.value)||"auto").trim()||"auto";
+  // Gera célula serial WINNER sem alterar a fila de pesquisa/URL
+  const tasks=models.map(model=>({
+    model,
+    technology:"winner",
+    target,
+    trust,
+    url:launcherUrl("winner",model,target,trust),
+  }));
+  const code=buildSerialColabCode(tasks);
+  const oldLabel=btn?btn.textContent:"";
+  try{
+    await navigator.clipboard.writeText(code);
+    if(btn){
+      btn.textContent="Copiado! Cole no Colab";
+      btn.disabled=true;
+      setTimeout(()=>{
+        btn.disabled=false;
+        const n=modelsFromRanking(state.ranking).length;
+        btn.textContent=n?`Reteste WINNER (${n} modelo${n>1?"s":""})`:(oldLabel||"Reteste WINNER");
+      },2500);
+    }
+    if(status){
+      status.innerHTML=`✅ Célula WINNER de <strong>${models.length}</strong> modelo(s) copiada para a área de transferência. Abra o Colab e cole (Ctrl+V). A fila de pesquisa/URL não foi alterada.`;
+    }
+  }catch(err){
+    // Fallback: mostra no painel só se clipboard falhar
+    if($("commandOutput")) $("commandOutput").textContent=code;
+    const details=document.querySelector(".launcherDisclosure");
+    if(details) details.open=true;
+    if(status){
+      status.innerHTML=`⚠️ Não foi possível copiar automaticamente. Célula de <strong>${models.length}</strong> modelo(s) exibida no painel — use “Copiar célula Colab”.`;
+    }
+    if(btn) btn.textContent=oldLabel||"Reteste WINNER";
   }
-  $("commandOutput")?.scrollIntoView({behavior:"smooth",block:"center"});
 }
+
 
 function renderAI(){const status=$("aiStatus"),summary=$("aiSummary"),root=$("aiCards"),button=$("analyzeBtn");button.disabled=state.analysisLoading;if(state.analysisLoading){status.textContent="Gemini está analisando as baterias…";status.className="sub warn";root.innerHTML='<div class="empty">Comparando qualidade, compressão, memória e latência…</div>';return}if(!state.analysis){const models=buildAnalysisPayload().models;status.textContent=state.analysisError?"Gemini indisponível • ranking local preservado":models.length?"Ranking calculado localmente • análise Gemini pendente":"Nenhuma bateria principal disponível.";status.className=state.analysisError?"sub bad":"sub";summary.textContent=state.analysisError?`A análise de IA não ficou disponível: ${state.analysisError}. O ranking auditável continua válido.`:"A IA compara somente tecnologias com baterias principais. Com menos de duas tecnologias, o resultado será inconclusivo.";root.innerHTML=models.length?models.map(model=>`<div class="aiCard inconclusive"><strong>${esc(model.model_id)}</strong><div class="aiVerdict"><strong>${state.analysisError?"RANKING LOCAL":"ANÁLISE PENDENTE"}</strong><span class="techPill INCONCLUSIVO">—</span></div><div class="sub">${state.analysisError?"A recomendação de IA não foi aplicada.":"Aguardando resposta segura da Function da Vercel."}</div></div>`).join(""):'<div class="empty">Aguardando baterias principais.</div>';return}status.textContent=`Analisado por ${state.analysis.model||"gemini-2.5-flash"}${state.analysis.cached?" • cache seguro":""}`;status.className="sub good";summary.textContent=state.analysis.global_summary||"Análise concluída.";root.innerHTML=state.analysis.analyses.map(item=>{const cls=item.recommendation==="RIFT"?"winnerRift":item.recommendation==="CASCADE"?"winnerCascade":item.recommendation==="AETHER"?"winnerAether":item.recommendation==="SPECTRA"?"winnerSpectra":item.recommendation==="WINNER"?"winnerWinner":"inconclusive";const decisive=item.decisive_metrics?.length?`<div class="sub" style="margin-top:10px"><b>Métricas decisivas</b></div><ul class="miniList">${item.decisive_metrics.map(value=>`<li>${esc(value)}</li>`).join("")}</ul>`:"";const caveats=item.caveats?.length?`<div class="sub" style="margin-top:10px"><b>Ressalvas</b></div><ul class="miniList">${item.caveats.map(value=>`<li>${esc(value)}</li>`).join("")}</ul>`:"";return `<article class="aiCard ${cls}"><strong>${esc(item.model_id)}</strong><div class="aiVerdict"><strong>${esc(item.recommendation)}</strong><span class="techPill ${item.recommendation}">${item.confidence}% confiança</span></div><div class="confidence"><i style="width:${clamp(item.confidence,0,100)}%"></i></div><p class="help">${esc(item.summary)}</p>${decisive}${caveats}</article>`}).join("")}
 async function requestAIAnalysis(force=false){const payload=buildAnalysisPayload();state.ranking=buildLocalRanking(payload);renderRanking();if(!payload.models.length){state.analysis=null;state.analysisError=null;renderAI();return}if(["localhost","127.0.0.1","::1"].includes(location.hostname)){state.analysis=null;state.analysisError=null;renderAI();$("aiStatus").textContent="Ranking local pronto • Gemini será executado no deploy da Vercel";return}const requestId=++state.analysisRequest;state.analysisLoading=true;state.analysisError=null;renderAI();try{const response=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),cache:"no-store"});const body=await response.json().catch(()=>({}));if(!response.ok||!body.ok)throw new Error(body.error||`HTTP ${response.status}`);if(requestId!==state.analysisRequest)return;state.analysis=body;state.analysisError=null;state.ranking=Array.isArray(body.ranking)?body.ranking:state.ranking}catch(error){if(requestId!==state.analysisRequest)return;state.analysis=null;state.analysisError=error.message}finally{if(requestId===state.analysisRequest){state.analysisLoading=false;render()}}}
@@ -528,8 +553,9 @@ async function addQueueModel(value){
   hideModelSearchResults();status.textContent=`${model} adicionado à fila. ${formatSizeNote(model)}`;status.className="note good";renderBatchQueue();updateCommand();
 }
 function queueTasks(){return state.queue.flatMap(item=>queueTechnologies(item.technology).map(technology=>({model:item.model,technology,target:item.target,trust:item.trust,url:launcherUrl(technology,item.model,item.target,item.trust)})))}
-function buildSerialColabCode(){
-  const tasks=queueTasks();if(!tasks.length)return "# Adicione modelos à fila para gerar a célula serial.";
+function buildSerialColabCode(tasks){
+  tasks = tasks && tasks.length ? tasks : queueTasks();
+  if(!tasks.length)return "# Adicione modelos à fila para gerar a célula serial.";
   const serialized=JSON.stringify(tasks,null,2);
   return [
     "# Instala dependências críticas antes de iniciar a fila.",
