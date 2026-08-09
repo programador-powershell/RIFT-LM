@@ -3837,5 +3837,48 @@
     "baseline_disk_bytes": null,
     "candidate_disk_bytes": null,
     "comparison_role": null
+  },
+  {
+    "schema_version": 1,
+    "timestamp_utc": "2026-08-09T23:14:42Z",
+    "run_id": "20260809T231442Z-c9ec1925",
+    "technology": "WINNER",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_WINNER_F0_TERNARY_2BIT",
+    "status": "EXPERIMENTAL_FAIL",
+    "measurement_scope": "Single Linear op; disk=F0 2-bit packed; RAM=working-set F0 packed (CASCADE-style, sem descompactar numel int8).",
+    "quality": {
+      "full_local_gate_pass": null,
+      "weight": {
+        "cosine": 0.5392135977745056,
+        "nrmse": 0.9086830615997314
+      },
+      "output": {
+        "cosine": 0.7746873497962952,
+        "nrmse": 0.6345943212509155
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.4172445,
+        "candidate_median_ms": 0.4073825,
+        "speedup_x": 1.0242082072744902,
+        "rows_processed": 14,
+        "device": "cuda"
+      },
+      "winner": {
+        "threshold": 0.5,
+        "residual_rank": 0,
+        "stage_activation_rate": 0,
+        "cpp_self_test_pass": true
+      }
+    },
+    "notes": "Working set = payload empacotado 2-bit + I/O; alinhado à conta de RAM do CASCADE (fatores residentes, não matriz densa).",
+    "baseline_ram_bytes": 42315776,
+    "candidate_ram_bytes": 3010560,
+    "baseline_disk_bytes": 41943040,
+    "candidate_disk_bytes": 2637824,
+    "comparison_role": null
   }
 ]
