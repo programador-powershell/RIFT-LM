@@ -375,7 +375,22 @@ function render(){const models=[...new Set(state.records.map(r=>r.model))].sort(
 
 function normalizeModelInput(value){const raw=String(value||"").trim();try{const url=new URL(raw);if(!["huggingface.co","www.huggingface.co"].includes(url.hostname.toLowerCase()))throw new Error();const parts=url.pathname.split("/").filter(Boolean);if(parts.length<2)throw new Error();return `${parts[0]}/${parts[1]}`}catch{if(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(raw))return raw;return null}}
 function colabBlockReason(model){const value=String(model||"").toLowerCase();if(value.includes("kimi-k3"))return COLAB_BLOCK_REASONS.kimi;if(value.includes("deepseek-v4"))return COLAB_BLOCK_REASONS.deepseekV4;if(value.includes("gguf"))return COLAB_BLOCK_REASONS.gguf;if(value.includes("nvfp4"))return COLAB_BLOCK_REASONS.nvfp4;return null}
-function launcherUrl(technology,model,target,trust){const path=model.split("/").map(encodeURIComponent).join("/"),params=new URLSearchParams();if(target!=="auto")params.set("target_layer",target);if(trust)params.set("trust_remote_code","1");return `${launcherOrigin}/${technology}/${path}${params.size?`?${params}`:""}`}
+function launcherUrl(technology, model, target, trust) {
+  const params = new URLSearchParams();
+
+  params.set("technology", technology);
+  params.set("model", model);
+
+  if (target !== "auto") {
+    params.set("target_layer", target);
+  }
+
+  if (trust) {
+    params.set("trust_remote_code", "1");
+  }
+
+  return `${launcherOrigin}/api/test?${params.toString()}`;
+}
 function colabSecretBootstrapLines(){return [
   "# Transfere os Secrets do kernel do Colab aos processos de benchmark.",
   "from google.colab import userdata",
