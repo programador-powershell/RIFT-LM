@@ -14,6 +14,7 @@ Dashboard estático para executar, publicar e comparar baterias de referência d
 - usa o Gemini 2.5 Flash para explicar qual tecnologia é mais adequada para cada modelo;
 - mantém métricas de operação Linear separadas de Tok/s do modelo;
 - entrega launchers Python por URLs curtas, sem duplicar os scripts dentro do notebook.
+- pesquisa modelos públicos no Hugging Face e monta uma fila Colab com vários modelos e tecnologias.
 
 ## Executar localmente
 
@@ -50,6 +51,8 @@ O PAT e `API_GOOGLE` devem ficar somente na Vercel. O PAT precisa ter `Contents:
 
 A Function `/api/analyze` envia ao Gemini somente identificadores técnicos, o estado da bateria e métricas numéricas já publicadas. Ela valida e sanitiza a entrada, valida a resposta estruturada, limita tamanho e frequência das requisições e mantém um cache curto em memória. Em produção, o dashboard solicita a análise automaticamente; localmente, ele preserva apenas o ranking determinístico para não consumir a API.
 
+A Function pública `/api/models?q=...` faz o autocomplete de modelos públicos `text-generation` do Hugging Face, limita e sanitiza a busca e devolve apenas model ID, pipeline, biblioteca, downloads, likes e estado gated. A resposta usa cache da Vercel por cinco minutos.
+
 ## Secrets do Google Colab
 
 Cadastre e autorize:
@@ -78,6 +81,20 @@ O alias pedido para Kimi também é aceito:
 ```
 
 `Kimi-K3` resolve para `moonshotai/Kimi-K3` e habilita `trust_remote_code`, como exigido pelo repositório do modelo. Ele é um modelo de escala extrema e não deve caber na memória de um Colab comum; a rota simplifica o lançamento, mas não remove os requisitos de hardware.
+
+## Fila serial de benchmarks
+
+No card **Fila serial de baterias**, digite pelo menos dois caracteres, selecione um resultado público do Hugging Face e repita para todos os modelos desejados. A seleção de tecnologia, camada e `trust_remote_code` é capturada individualmente quando o modelo entra na fila.
+
+O botão **Copiar lista serial** gera uma única célula Python para o Colab. Ela:
+
+1. expande cada modelo para as tecnologias escolhidas;
+2. baixa um launcher por vez;
+3. executa o benchmark em um subprocesso isolado e aguarda sua publicação;
+4. encerra a fila imediatamente se um benchmark falhar;
+5. remove o launcher temporário, força coleta de lixo e aguarda três leituras estáveis de VRAM via `nvidia-smi` antes de iniciar o próximo.
+
+O encerramento do subprocesso é o limite de isolamento de RAM/VRAM. A tolerância de VRAM é de 128 MB sobre o nível medido antes do benchmark e o timeout de liberação é de 180 segundos.
 
 ## Testar um modelo
 
@@ -169,6 +186,7 @@ Por isso:
 index.html
 api/results.mjs
 api/analyze.mjs
+api/models.mjs
 api/test.mjs
 rift_m0_phase1_test_v035_auto_batteries.py
 cascade_m0_phase1_test_v030_auto_batteries.py

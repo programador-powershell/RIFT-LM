@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import modelsApi from "../api/models.mjs";
 import testLauncher from "../api/test.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -20,6 +21,13 @@ createServer(async (request, response) => {
   try {
     const requestUrl = new URL(request.url, `http://127.0.0.1:${port}`);
     const pathname = decodeURIComponent(requestUrl.pathname);
+    if (pathname === "/api/models") {
+      const result = await modelsApi.fetch(new Request(requestUrl, { method: request.method }));
+      const body = Buffer.from(await result.arrayBuffer());
+      response.writeHead(result.status, Object.fromEntries(result.headers.entries()));
+      response.end(body);
+      return;
+    }
     const friendly = pathname.match(/^\/(rift|cascade|aether|spectra)\/(.+)$/i);
     if (pathname === "/api/test" || friendly) {
       if (friendly) {

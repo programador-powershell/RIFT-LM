@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { _test as api } from "../api/results.mjs";
 import { _test as analysisApi } from "../api/analyze.mjs";
+import modelSearch, { _test as modelSearchApi } from "../api/models.mjs";
 import testLauncher, { _test as launcherApi } from "../api/test.mjs";
 
 const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
@@ -15,6 +16,11 @@ assert.match(html, /Comparador RIFT × CASCADE × AETHER × SPECTRA/);
 assert.match(html, /Gemini 2\.5 Flash/);
 assert.match(html, /Ranking das baterias/);
 assert.match(html, /curl -fsSL/);
+assert.match(html, /Fila serial de baterias/);
+assert.match(html, /Copiar lista serial/);
+assert.match(html, /subprocess\.Popen/);
+assert.match(html, /nvidia-smi/);
+assert.match(html, /wait_for_resource_release/);
 assert.doesNotMatch(html, /RIFT_GITHUB_TOKEN\s*=/);
 assert.doesNotMatch(html, /API_GOOGLE\s*=/);
 
@@ -135,6 +141,19 @@ assert.throws(() => analysisApi.enforceSameOrigin(new Request("https://dashboard
 
 const geminiBody = analysisApi.buildGeminiBody("benchmark");
 assert.equal(geminiBody.generationConfig.responseFormat.text.mimeType, "application/json");
+
+assert.equal(modelSearchApi.normalizeSearch("  qwen  "), "qwen");
+assert.throws(() => modelSearchApi.normalizeSearch("<script>"));
+const modelSearchResults = modelSearchApi.normalizeModelResults([
+  { id: "example/vision", downloads: 9999, pipeline_tag: "image-classification" },
+  { id: "Qwen/Qwen2.5-0.5B", downloads: 500, pipeline_tag: "text-generation", likes: 20 },
+  { id: "trl-internal-testing/tiny-Qwen", downloads: 500000, pipeline_tag: "text-generation" },
+  { id: "private/model", downloads: 100000, private: true },
+]);
+assert.equal(modelSearchResults.length, 1);
+assert.equal(modelSearchResults[0].id, "Qwen/Qwen2.5-0.5B");
+assert.equal((await modelSearch.fetch(new Request("https://dashboard.example/api/models?q=x"))).status, 400);
+assert.equal((await modelSearch.fetch(new Request("https://dashboard.example/api/models?q=qwen", { method: "POST" }))).status, 405);
 
 const kimi = launcherApi.normalizeModel("Kimi-K3");
 assert.equal(kimi.modelId, "moonshotai/Kimi-K3");

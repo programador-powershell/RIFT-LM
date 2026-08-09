@@ -30,6 +30,7 @@ a.button{display:inline-flex;text-decoration:none;border:1px solid var(--border)
 .metricCompare{display:flex;justify-content:space-between;gap:8px;margin-top:8px;color:var(--muted);font-size:12px}.gain{font-weight:700}
 .good{color:var(--good)}.bad{color:var(--bad)}.warn{color:var(--warn)}
 .launcher{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(340px,.95fr);gap:16px;align-items:start}
+.queueBuilder{display:grid;grid-template-columns:minmax(0,1fr) minmax(420px,1fr);gap:18px;align-items:start}.queueSearch{position:relative}.searchResults{position:absolute;z-index:20;top:100%;left:0;right:0;margin-top:5px;max-height:330px;overflow:auto;border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:0 16px 34px rgba(15,23,42,.16)}.searchResults[hidden]{display:none}.modelResult{display:grid;width:100%;grid-template-columns:minmax(0,1fr) auto;gap:8px;text-align:left;border:0;border-bottom:1px solid var(--border);border-radius:0;padding:10px 12px;box-shadow:none}.modelResult:last-child{border-bottom:0}.modelResult:hover{background:var(--accentSoft)}.modelResultName{font-weight:750;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.modelResultMeta{grid-column:1/-1;color:var(--muted);font-size:11px}.queueToolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:14px 0 8px}.queueList{display:flex;flex-direction:column;gap:8px}.queueItem{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:11px;background:#fff}.queueOrder{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--accentSoft);color:#2547bd;font-weight:800;font-size:12px}.queueModel{font-weight:750;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.queueMeta{color:var(--muted);font-size:11px;margin-top:3px}.queueRemove{padding:6px 9px;color:var(--bad)}.queueCommand{min-height:360px;max-height:560px;overflow:auto}.queueSafety{margin-top:10px;padding:11px 12px;border-radius:10px;background:var(--winnerSoft);color:#176b54;font-size:12px;line-height:1.5}
 .formGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:flex;flex-direction:column;gap:6px}.formGrid>.wide{grid-column:1/-1}
 .field label{font-size:12px;color:var(--muted)}.field input,.field select{width:100%}.check{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12px}.check input{width:auto}
 .commandBox{margin:8px 0 10px;padding:12px;border:1px solid var(--border);border-radius:10px;background:#f8fafc;color:#263b72;white-space:pre-wrap;word-break:break-word;min-height:128px;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}
@@ -54,7 +55,7 @@ th,td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:left;fo
 .aiVerdict{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0}.aiVerdict strong{font-size:19px}.confidence{height:7px;background:var(--grid);border-radius:99px;overflow:hidden;margin-top:6px}.confidence>i{display:block;height:100%;background:linear-gradient(90deg,#60a5fa,#8b5cf6);border-radius:99px}.miniList{margin:9px 0 0;padding-left:17px;color:var(--muted);font-size:12px;line-height:1.5}
 .rankingCard{overflow:hidden}.rankingHeader{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}.rankRows{display:flex;flex-direction:column;gap:10px;margin-top:16px}.rankRow{display:grid;grid-template-columns:34px minmax(190px,1.1fr) 92px minmax(180px,2fr) 58px 76px;gap:10px;align-items:center;padding:9px 10px;border:1px solid var(--border);border-radius:11px;background:#fff}.rankRow.aiRankWinner{border-color:#86efac;background:linear-gradient(90deg,var(--winnerSoft),#fff 40%)}.rankPosition{font-size:18px;font-weight:800;color:#64748b;text-align:center}.rankPosition.podium{color:#b7791f}.rankModel{min-width:0;font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rankBar{height:20px;border-radius:6px;background:repeating-linear-gradient(90deg,#edf1f6 0,#edf1f6 calc(20% - 1px),#dbe3ee 20%);overflow:hidden}.rankBar>i{display:block;height:100%;border-radius:6px}.rankBar>i.riftScore{background:linear-gradient(90deg,#8da5ff,var(--rift))}.rankBar>i.cascadeScore{background:linear-gradient(90deg,#c2a9ff,var(--cascade))}.rankBar>i.aetherScore{background:linear-gradient(90deg,#73d9cb,var(--aether))}.rankBar>i.spectraScore{background:linear-gradient(90deg,#f5a98f,var(--spectra))}.rankScore{font-size:16px;font-weight:800;text-align:right}.coverage{text-align:right;color:var(--muted);font-size:11px}.techPill{display:inline-flex;justify-content:center;padding:4px 8px;border-radius:99px;font-size:11px;font-weight:800}.techPill.RIFT{color:#2547bd;background:var(--riftSoft)}.techPill.CASCADE{color:#6d3bd1;background:var(--cascadeSoft)}.techPill.AETHER{color:#08766a;background:var(--aetherSoft)}.techPill.SPECTRA{color:#a83f20;background:var(--spectraSoft)}.techPill.INCONCLUSIVO{color:#92400e;background:#fff7ed}
 details{margin-top:18px}.help{color:var(--muted);font-size:13px;line-height:1.6}code{color:#3156b9}
-@media(max-width:1050px){.metrics,.charts{grid-template-columns:repeat(2,1fr)}.launcher,.compareGrid{grid-template-columns:1fr}.aiCards{grid-template-columns:repeat(2,1fr)}.rankRow{grid-template-columns:34px minmax(160px,1fr) 82px minmax(130px,1.4fr) 52px}.coverage{display:none}}
+@media(max-width:1050px){.metrics,.charts{grid-template-columns:repeat(2,1fr)}.launcher,.queueBuilder,.compareGrid{grid-template-columns:1fr}.aiCards{grid-template-columns:repeat(2,1fr)}.rankRow{grid-template-columns:34px minmax(160px,1fr) 82px minmax(130px,1.4fr) 52px}.coverage{display:none}}
 @media(max-width:620px){.shell{padding:14px}.metrics,.charts,.quality,.formGrid,.aiCards{grid-template-columns:1fr}.formGrid>.wide{grid-column:auto}.metricMain{font-size:24px}.rankRow{grid-template-columns:30px 1fr 78px 48px}.rankBar,.coverage{display:none}}
 </style>
 </head>
@@ -117,6 +118,45 @@ details{margin-top:18px}.help{color:var(--muted);font-size:13px;line-height:1.6}
       <a class="button" href="https://colab.research.google.com/" target="_blank" rel="noopener">Abrir Colab</a>
     </div>
     <div class="note" id="modelValidation"></div>
+  </div>
+</section>
+
+<div class="sectionTitle">Fila serial de baterias <small>• pesquise no Hugging Face e teste vários modelos sem sobrepor recursos</small></div>
+<section class="card queueBuilder">
+  <div>
+    <div class="formGrid">
+      <div class="field wide queueSearch">
+        <label for="batchModelSearch">Buscar modelo no Hugging Face</label>
+        <input id="batchModelSearch" placeholder="Digite qwen, llama, gemma, phi…" autocomplete="off" aria-controls="modelSearchResults" aria-expanded="false">
+        <div class="searchResults" id="modelSearchResults" role="listbox" hidden></div>
+        <div class="note" id="batchSearchStatus">Digite pelo menos 2 caracteres para listar modelos públicos de geração de texto.</div>
+      </div>
+      <div class="field">
+        <label for="batchTechnologyInput">Tecnologias deste modelo</label>
+        <select id="batchTechnologyInput"><option value="all">Todas as 4 tecnologias</option><option value="rift">Somente RIFT</option><option value="cascade">Somente CASCADE</option><option value="aether">Somente AETHER</option><option value="spectra">Somente SPECTRA</option></select>
+      </div>
+      <div class="field">
+        <label for="batchTargetLayerInput">Camada alvo</label>
+        <input id="batchTargetLayerInput" value="auto" placeholder="auto">
+      </div>
+      <label class="check wide"><input id="batchTrustRemoteInput" type="checkbox"> Permitir <code>trust_remote_code</code> para este modelo.</label>
+      <div class="actions wide">
+        <button class="primary" id="addBatchModelBtn" type="button">Adicionar modelo digitado</button>
+      </div>
+    </div>
+    <div class="queueToolbar">
+      <strong id="batchQueueCount">Fila vazia</strong>
+      <button id="clearBatchQueueBtn" type="button">Limpar fila</button>
+    </div>
+    <div class="queueList" id="batchQueue"><div class="empty">Pesquise e selecione um ou mais modelos.</div></div>
+  </div>
+  <div>
+    <div class="sub">Cole a célula inteira no Colab. Cada launcher executa em um processo isolado e o próximo benchmark só começa após o processo anterior terminar, publicar o resultado e a VRAM estabilizar:</div>
+    <pre class="commandBox queueCommand" id="batchCommandOutput" aria-live="polite"># Adicione modelos à fila para gerar a célula serial.</pre>
+    <div class="actions">
+      <button class="primary" id="copyBatchCommandBtn" type="button" disabled>Copiar lista serial</button>
+    </div>
+    <div class="queueSafety"><strong>Isolamento:</strong> falhas interrompem a fila; o encerramento do subprocesso libera RAM/VRAM e uma verificação com <code>nvidia-smi</code> aguarda três leituras estáveis antes do próximo teste.</div>
   </div>
 </section>
 
@@ -207,7 +247,7 @@ details{margin-top:18px}.help{color:var(--muted);font-size:13px;line-height:1.6}
 </main>
 
 <script>
-const state={records:[],analysis:null,analysisError:null,analysisLoading:false,ranking:[],analysisRequest:0};
+const state={records:[],analysis:null,analysisError:null,analysisLoading:false,ranking:[],analysisRequest:0,queue:[],modelSearchRequest:0};
 const $=id=>document.getElementById(id);
 const SAO_PAULO_TZ="America/Sao_Paulo";
 const dateFormatter=new Intl.DateTimeFormat("pt-BR",{timeZone:SAO_PAULO_TZ,day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false,timeZoneName:"shortOffset"});
@@ -302,13 +342,127 @@ function render(){const models=[...new Set(state.records.map(r=>r.model))].sort(
 
 function normalizeModelInput(value){const raw=String(value||"").trim();try{const url=new URL(raw);if(!["huggingface.co","www.huggingface.co"].includes(url.hostname.toLowerCase()))throw new Error();const parts=url.pathname.split("/").filter(Boolean);if(parts.length<2)throw new Error();return `${parts[0]}/${parts[1]}`}catch{if(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(raw))return raw;return null}}
 function launcherUrl(technology,model,target,trust){const path=model.split("/").map(encodeURIComponent).join("/"),params=new URLSearchParams();if(target!=="auto")params.set("target_layer",target);if(trust)params.set("trust_remote_code","1");return `${launcherOrigin}/${technology}/${path}${params.size?`?${params}`:""}`}
+function queueTechnologies(value){return value==="all"?["rift","cascade","aether","spectra"]:[value]}
+function compactNumber(value){return new Intl.NumberFormat("pt-BR",{notation:"compact",maximumFractionDigits:1}).format(Number(value)||0)}
+function renderModelSearchResults(models,message=""){
+  const root=$("modelSearchResults");
+  if(!models.length){root.innerHTML=`<div class="empty">${esc(message||"Nenhum modelo encontrado.")}</div>`;root.hidden=false;$("batchModelSearch").setAttribute("aria-expanded","true");return}
+  root.innerHTML=models.map(model=>`<button class="modelResult" type="button" role="option" data-model="${esc(model.id)}"><span class="modelResultName">${esc(model.id)}</span><span>${compactNumber(model.downloads)} downloads</span><span class="modelResultMeta">${esc(model.pipeline_tag||"pipeline não informada")} • ${esc(model.library_name||"biblioteca não informada")}${model.gated?" • acesso controlado":""}</span></button>`).join("");
+  root.hidden=false;$("batchModelSearch").setAttribute("aria-expanded","true");
+}
+function hideModelSearchResults(){const root=$("modelSearchResults");root.hidden=true;$("batchModelSearch").setAttribute("aria-expanded","false")}
+function addQueueModel(value){
+  const model=normalizeModelInput(value),technology=$("batchTechnologyInput").value,target=$("batchTargetLayerInput").value.trim()||"auto",status=$("batchSearchStatus");
+  if(!model){status.textContent="Selecione um resultado ou informe um model ID completo no formato org/modelo.";status.className="note bad";return}
+  if(!/^(auto|[A-Za-z0-9_.-]+)$/.test(target)){status.textContent="Camada inválida; use auto ou um nome de tensor válido.";status.className="note bad";return}
+  const trust=$("batchTrustRemoteInput").checked||model==="moonshotai/Kimi-K3",key=[model,technology,target,trust].join("|");
+  if(state.queue.some(item=>item.key===key)){status.textContent="Este modelo já está na fila com a mesma configuração.";status.className="note warn";return}
+  state.queue.push({key,model,technology,target,trust});
+  $("batchModelSearch").value="";hideModelSearchResults();status.textContent=`${model} adicionado à fila.`;status.className="note good";renderBatchQueue();
+}
+function queueTasks(){return state.queue.flatMap(item=>queueTechnologies(item.technology).map(technology=>({model:item.model,technology,target:item.target,trust:item.trust,url:launcherUrl(technology,item.model,item.target,item.trust)})))}
+function buildSerialColabCode(){
+  const tasks=queueTasks();if(!tasks.length)return "# Adicione modelos à fila para gerar a célula serial.";
+  const serialized=JSON.stringify(tasks,null,2);
+  return [
+    "# Fila serial RIFT / CASCADE / AETHER / SPECTRA",
+    "# Cada benchmark roda isolado; falhas interrompem a fila.",
+    "import gc",
+    "import json",
+    "import subprocess",
+    "import sys",
+    "import time",
+    "from pathlib import Path",
+    "from urllib.request import Request, urlopen",
+    "",
+    `TASKS = json.loads(r'''${serialized}''')`,
+    "WORK_DIR = Path('/content/rift_serial_queue')",
+    "WORK_DIR.mkdir(parents=True, exist_ok=True)",
+    "",
+    "def gpu_memory_used_mb():",
+    "    try:",
+    "        output = subprocess.check_output([",
+    "            'nvidia-smi', '--query-gpu=memory.used',",
+    "            '--format=csv,noheader,nounits',",
+    "        ], text=True, stderr=subprocess.DEVNULL, timeout=10)",
+    "        values = [int(line.strip()) for line in output.splitlines() if line.strip()]",
+    "        return sum(values) if values else None",
+    "    except (FileNotFoundError, ValueError, subprocess.SubprocessError):",
+    "        return None",
+    "",
+    "def wait_for_resource_release(baseline_mb, timeout_s=180):",
+    "    gc.collect()",
+    "    if baseline_mb is None:",
+    "        print('[FILA] GPU não detectada; aguardando cooldown de CPU/RAM...')",
+    "        time.sleep(5)",
+    "        return",
+    "    deadline = time.time() + timeout_s",
+    "    stable_reads = 0",
+    "    while time.time() < deadline:",
+    "        current_mb = gpu_memory_used_mb()",
+    "        if current_mb is not None and current_mb <= baseline_mb + 128:",
+    "            stable_reads += 1",
+    "        else:",
+    "            stable_reads = 0",
+    "        print(f'[FILA] VRAM: {current_mb} MB; alvo <= {baseline_mb + 128} MB; estabilidade {stable_reads}/3')",
+    "        if stable_reads >= 3:",
+    "            time.sleep(2)",
+    "            return",
+    "        time.sleep(2)",
+    "    raise RuntimeError('A VRAM não retornou ao nível seguro em 180 segundos')",
+    "",
+    "def download_launcher(url, path):",
+    "    request = Request(url, headers={'User-Agent': 'rift-serial-colab/1.0'})",
+    "    with urlopen(request, timeout=60) as response:",
+    "        path.write_bytes(response.read())",
+    "",
+    "for index, task in enumerate(TASKS, start=1):",
+    "    baseline_mb = gpu_memory_used_mb()",
+    "    launcher_path = WORK_DIR / f'launcher_{index:03d}.py'",
+    "    print('\\n' + '=' * 78)",
+    "    print(f\"[FILA] {index}/{len(TASKS)} — {task['technology'].upper()} — {task['model']}\")",
+    "    print('=' * 78)",
+    "    try:",
+    "        download_launcher(task['url'], launcher_path)",
+    "        process = subprocess.Popen([sys.executable, str(launcher_path)])",
+    "        return_code = process.wait()",
+    "        if return_code != 0:",
+    "            raise RuntimeError(f'Benchmark terminou com código {return_code}; fila interrompida')",
+    "        print('[FILA] Benchmark publicado; processo encerrado.')",
+    "    finally:",
+    "        launcher_path.unlink(missing_ok=True)",
+    "        wait_for_resource_release(baseline_mb)",
+    "",
+    "print('\\n[FILA] Todos os benchmarks foram concluídos e publicados em série.')",
+  ].join("\n")
+}
+function renderBatchQueue(){
+  const root=$("batchQueue"),tasks=queueTasks();
+  $("batchQueueCount").textContent=state.queue.length?`${state.queue.length} modelo(s) • ${tasks.length} benchmark(s) em série`:"Fila vazia";
+  root.innerHTML=state.queue.length?state.queue.map((item,index)=>{const tech=item.technology==="all"?"RIFT + CASCADE + AETHER + SPECTRA":item.technology.toUpperCase();return `<div class="queueItem"><span class="queueOrder">${index+1}</span><div><div class="queueModel">${esc(item.model)}</div><div class="queueMeta">${esc(tech)} • camada ${esc(item.target)}${item.trust?" • trust_remote_code":""}</div></div><button class="queueRemove" type="button" data-remove-index="${index}" aria-label="Remover ${esc(item.model)}">Remover</button></div>`}).join(""):'<div class="empty">Pesquise e selecione um ou mais modelos.</div>';
+  $("batchCommandOutput").textContent=buildSerialColabCode();$("copyBatchCommandBtn").disabled=!tasks.length;
+}
+var batchSearchTimer=null;
+async function searchBatchModels(){
+  const input=$("batchModelSearch"),query=input.value.trim(),status=$("batchSearchStatus"),requestId=++state.modelSearchRequest;
+  if(query.length<2){hideModelSearchResults();status.textContent="Digite pelo menos 2 caracteres para listar modelos públicos de geração de texto.";status.className="note";return}
+  status.textContent="Buscando modelos no Hugging Face…";status.className="note warn";
+  try{const response=await fetch(`/api/models?q=${encodeURIComponent(query)}`,{cache:"force-cache"}),body=await response.json().catch(()=>({}));if(requestId!==state.modelSearchRequest)return;if(!response.ok||!body.ok)throw new Error(body.error||`HTTP ${response.status}`);renderModelSearchResults(body.models||[]);status.textContent=`${body.models?.length||0} modelo(s) encontrado(s). Selecione para adicionar.`;status.className="note good"}catch(error){if(requestId!==state.modelSearchRequest)return;renderModelSearchResults([],"Busca indisponível");status.textContent=`Não foi possível buscar: ${error.message}`;status.className="note bad"}
+}
 function updateCommand(){const model=normalizeModelInput($("modelInput").value),tech=$("technologyInput").value,target=$("targetLayerInput").value.trim()||"auto";if(!model){$("commandOutput").textContent="# Informe org/modelo ou uma URL válida do Hugging Face.";$("modelValidation").textContent="Formato inválido. Exemplo: microsoft/Phi-3.5-mini-instruct";$("modelValidation").className="note bad";$("openModelBtn").href="https://huggingface.co/models";return}if(!/^(auto|[A-Za-z0-9_.-]+)$/.test(target)){$("commandOutput").textContent="# Informe 'auto' ou um nome de tensor válido.";$("modelValidation").textContent="Camada inválida; use apenas letras, números, ponto, hífen e sublinhado.";$("modelValidation").className="note bad";return}const trust=$("trustRemoteInput").checked||model==="moonshotai/Kimi-K3",technologies=tech==="all"?["rift","cascade","aether","spectra"]:[tech],commands=technologies.map(technology=>`!curl -fsSL "${launcherUrl(technology,model,target,trust)}" -o /content/${technology}_launcher.py && python /content/${technology}_launcher.py`);$("commandOutput").textContent=commands.join("\n");const kimi=model==="moonshotai/Kimi-K3"?" Kimi-K3 exige trust_remote_code e recursos muito superiores a um Colab comum.":"";$("modelValidation").textContent=`Modelo normalizado: ${model}. O launcher configura RIFT_RESULTS_ENDPOINT automaticamente.${kimi}`;$("modelValidation").className=`note ${kimi?"warn":"good"}`;$("openModelBtn").href=`https://huggingface.co/${model}`}
 
 $("files").addEventListener("change",e=>loadFiles([...e.target.files]));$("reloadBtn").addEventListener("click",()=>{state.records=[];state.analysis=null;state.analysisError=null;state.ranking=[];loadPublishedData()});$("clearBtn").addEventListener("click",()=>{state.records=[];state.analysis=null;state.analysisError=null;state.ranking=[];render();$("dataStatus").textContent="Dados removidos da visualização.";$("dataStatus").className="sub"});["modelFilter","technologyFilter","batteryFilter"].forEach(id=>$(id).addEventListener("change",render));$("compareModel").addEventListener("change",renderCompare);$("analyzeBtn").addEventListener("click",()=>requestAIAnalysis(true));
 $("modelPreset").addEventListener("change",e=>{if(e.target.value!=="custom"){$("modelInput").value=e.target.value;if(e.target.value==="moonshotai/Kimi-K3")$("trustRemoteInput").checked=true}else $("modelInput").focus();updateCommand()});["modelInput","technologyInput","targetLayerInput","trustRemoteInput"].forEach(id=>$(id).addEventListener("input",updateCommand));
 $("copyCommandBtn").addEventListener("click",async()=>{try{await navigator.clipboard.writeText($("commandOutput").textContent);const old=$("copyCommandBtn").textContent;$("copyCommandBtn").textContent="Copiado!";setTimeout(()=>$("copyCommandBtn").textContent=old,1500)}catch{alert("Não foi possível copiar automaticamente; selecione o texto da célula.")}});
+$("batchModelSearch").addEventListener("input",()=>{clearTimeout(batchSearchTimer);batchSearchTimer=setTimeout(searchBatchModels,300)});
+$("batchModelSearch").addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();addQueueModel(event.currentTarget.value)}});
+$("modelSearchResults").addEventListener("click",event=>{const button=event.target.closest("[data-model]");if(button)addQueueModel(button.dataset.model)});
+$("addBatchModelBtn").addEventListener("click",()=>addQueueModel($("batchModelSearch").value));
+$("batchQueue").addEventListener("click",event=>{const button=event.target.closest("[data-remove-index]");if(!button)return;state.queue.splice(Number(button.dataset.removeIndex),1);renderBatchQueue()});
+$("clearBatchQueueBtn").addEventListener("click",()=>{state.queue=[];renderBatchQueue();$("batchSearchStatus").textContent="Fila removida.";$("batchSearchStatus").className="note"});
+$("copyBatchCommandBtn").addEventListener("click",async()=>{try{await navigator.clipboard.writeText($("batchCommandOutput").textContent);const old=$("copyBatchCommandBtn").textContent;$("copyBatchCommandBtn").textContent="Lista copiada!";setTimeout(()=>$("copyBatchCommandBtn").textContent=old,1500)}catch{alert("Não foi possível copiar automaticamente; selecione o código da fila.")}});
 $("demoBtn").addEventListener("click",()=>{state.records=[normalizePreferred({timestamp_utc:"2026-08-09T14:56:43Z",run_id:"demo-rift",technology:"RIFT",model_id:"Qwen/Qwen2.5-1.5B-Instruct",battery_id:"P1_Q4_LINEAR_BASE_PLUS_REF_4BIT",status:"EXPERIMENTAL_FAIL",comparison_role:"primary",baseline_ram_bytes:13000000,candidate_ram_bytes:14000000,baseline_disk_bytes:12000000,candidate_disk_bytes:1500000,quality:{full_local_gate_pass:false,output:{cosine:.9803,nrmse:.0068}},metrics:{operation:{baseline_median_ms:.07,candidate_median_ms:3.3,speedup_x:.021}}},"demo"),normalizePreferred({timestamp_utc:"2026-08-09T15:02:00Z",run_id:"demo-cascade",technology:"CASCADE",model_id:"Qwen/Qwen2.5-1.5B-Instruct",battery_id:"P1_CASCADE_GATED_F0_PLUS_F1",status:"EXPERIMENTAL_FAIL",comparison_role:"primary",baseline_ram_bytes:13000000,candidate_ram_bytes:3400000,baseline_disk_bytes:12000000,candidate_disk_bytes:3100000,quality:{full_local_gate_pass:false,output:{cosine:.972,nrmse:.011}},metrics:{operation:{baseline_median_ms:.07,candidate_median_ms:.18,speedup_x:.389},cascade:{stage_activation_rate:.5}}},"demo"),normalizePreferred({timestamp_utc:"2026-08-09T15:06:00Z",run_id:"demo-aether",technology:"AETHER",model_id:"Qwen/Qwen2.5-1.5B-Instruct",battery_id:"P1_AETHER_HQR_PLUS_TADDS_DYNAMIC",status:"EXPERIMENTAL_FAIL",comparison_role:"primary",baseline_ram_bytes:13000000,candidate_ram_bytes:5200000,baseline_disk_bytes:12000000,candidate_disk_bytes:900000,quality:{full_local_gate_pass:false,weight:{cosine:.958},output:{cosine:.987,nrmse:.0045}},metrics:{operation:{baseline_median_ms:.07,candidate_median_ms:.12,speedup_x:.583},aether:{stage_activation_rate:.1875,hqr_ans_native:false,pio_async_native:false,srfa_fused_native:false}}},"demo"),normalizePreferred({timestamp_utc:"2026-08-09T15:10:00Z",run_id:"demo-spectra",technology:"SPECTRA",model_id:"Qwen/Qwen2.5-1.5B-Instruct",battery_id:"P1_SPECTRA_HQR_PLUS_TADDS_DYNAMIC",status:"EXPERIMENTAL_FAIL",comparison_role:"primary",baseline_ram_bytes:13000000,candidate_ram_bytes:4800000,baseline_disk_bytes:12000000,candidate_disk_bytes:1100000,quality:{full_local_gate_pass:false,weight:{cosine:.962},output:{cosine:.991,nrmse:.0038}},metrics:{operation:{baseline_median_ms:.07,candidate_median_ms:.1,speedup_x:.7},spectra:{stage_activation_rate:.15,single_layer_drift_proxy_max:.061,hqr_ans_native:false,pio_async_native:false,fused_kernel_native:false,drift_compensation_native:false,speculative_path_native:false}}},"demo")];state.analysis=null;state.analysisError=null;state.ranking=[];render();requestAIAnalysis(true)});
-updateCommand();loadPublishedData();
+updateCommand();renderBatchQueue();loadPublishedData();
 </script>
 </body>
 </html>
