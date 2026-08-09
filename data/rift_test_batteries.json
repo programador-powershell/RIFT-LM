@@ -237,5 +237,184 @@
       }
     },
     "notes": "BASE+REF 4-bit packed. Q4_LINEAR_TEST não é MXFP4. O path ainda materializa FP32 antes da GEMM."
+  },
+  {
+    "timestamp_utc": "2026-08-09T16:16:43Z",
+    "run_id": "20260809T161643Z-b1372900",
+    "spec": "RIFT-LM v0.3.5",
+    "technology": "RIFT",
+    "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+    "battery_id": "B0_BINARY_IR_FOUNDATION",
+    "status": "PASS",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "rift_tok_s": null,
+    "baseline_ram_bytes": null,
+    "rift_ram_bytes": null,
+    "baseline_disk_bytes": 9437184,
+    "rift_disk_bytes": 9437440,
+    "candidate_tok_s": null,
+    "candidate_ram_bytes": null,
+    "candidate_disk_bytes": 9437440,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": -0.0027126736111160454,
+      "disk_compression_ratio_x": 0.9999728739997288,
+      "overall_gain_pct": -0.0027126736111160454
+    },
+    "measurement_scope": "B0 binary/container validation. Tok/s e RAM não se aplicam; disk compara tensor FP32 raw com Container M0 raw one-tensor.",
+    "quality": {
+      "full_local_gate_pass": true
+    },
+    "metrics": {
+      "container": {
+        "file_size": 9437440,
+        "payload_bytes": 9437184,
+        "container_overhead_bytes": 256,
+        "payload_offset": 256,
+        "shape_blob_offset": 160,
+        "page_entry_size_test_local": 44,
+        "tensor_id": 1,
+        "shape": [
+          1536,
+          1536
+        ],
+        "codec_id_test_local": 0,
+        "mapped_file_bytes": 9437440
+      },
+      "golden_checksum": "0x8db3a70fc08a38f3"
+    },
+    "notes": "B0 mede correção/overhead do container, não compressão. Ganho de disco pode ser negativo por design."
+  },
+  {
+    "timestamp_utc": "2026-08-09T16:16:44Z",
+    "run_id": "20260809T161643Z-b1372900",
+    "spec": "RIFT-LM v0.3.5",
+    "technology": "RIFT",
+    "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+    "battery_id": "P1_Q4_LINEAR_BASE_2BIT",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "rift_tok_s": null,
+    "baseline_ram_bytes": 9682944,
+    "rift_ram_bytes": 10272788,
+    "baseline_disk_bytes": 9437184,
+    "rift_disk_bytes": 589844,
+    "candidate_tok_s": null,
+    "candidate_ram_bytes": 10272788,
+    "candidate_disk_bytes": 589844,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": -6.091577107127755,
+      "disk_reduction_pct": 93.74978807237413,
+      "disk_compression_ratio_x": 15.99945748367365,
+      "overall_gain_pct": 43.82910548262319
+    },
+    "measurement_scope": "Single Linear op. RAM=estimated current reference working set; disk=real bytes on disk; Tok/s=model-level NOT_MEASURED.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "weight": {
+        "cosine": 0.09882240304971156,
+        "rmse": 0.49948740005493164,
+        "nrmse": 0.19142032097913547
+      },
+      "output": {
+        "cosine": 0.39687732098449574,
+        "rmse": 10.162759780883789,
+        "nrmse": 0.05899540553999631
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.13266650000000002,
+        "rift_median_ms": 8.645832,
+        "speedup_x": 0.015344561402534772,
+        "speed_gain_pct": -98.46554385974652,
+        "rows_processed": 20,
+        "baseline_rows_s": 150753.95823361585,
+        "rift_rows_s": 2313.253368790881,
+        "IMPORTANT": "rows/s de uma única Linear NÃO é model Tok/s"
+      },
+      "storage": {
+        "baseline_bytes": 9437184,
+        "candidate_bytes": 589844,
+        "compression_ratio_x": 15.99945748367365,
+        "disk_reduction_pct": 93.74978807237413
+      },
+      "ram": {
+        "baseline_working_set_bytes": 9682944,
+        "rift_working_set_bytes": 10272788,
+        "includes_reconstructed_fp32_weight": true
+      }
+    },
+    "notes": "BASE 2-bit packed. Q4_LINEAR_TEST não é MXFP4. Speedup nativo não pode ser reivindicado."
+  },
+  {
+    "timestamp_utc": "2026-08-09T16:16:44Z",
+    "run_id": "20260809T161643Z-b1372900",
+    "spec": "RIFT-LM v0.3.5",
+    "technology": "RIFT",
+    "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+    "battery_id": "P1_Q4_LINEAR_BASE_PLUS_REF_4BIT",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": "primary",
+    "baseline_tok_s": null,
+    "rift_tok_s": null,
+    "baseline_ram_bytes": 9682944,
+    "rift_ram_bytes": 10862612,
+    "baseline_disk_bytes": 9437184,
+    "rift_disk_bytes": 1179668,
+    "candidate_tok_s": null,
+    "candidate_ram_bytes": 10862612,
+    "candidate_disk_bytes": 1179668,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": -12.182947665503384,
+      "disk_reduction_pct": 87.49978807237413,
+      "disk_compression_ratio_x": 7.999864368618967,
+      "overall_gain_pct": 37.65842020343537
+    },
+    "measurement_scope": "Single Linear op. RAM=estimated current reference working set; disk=real bytes on disk; Tok/s=model-level NOT_MEASURED.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "weight": {
+        "cosine": 0.7133273488584112,
+        "rmse": 0.03792606666684151,
+        "nrmse": 0.01453454051902908
+      },
+      "output": {
+        "cosine": 0.9750146638431079,
+        "rmse": 0.7981857657432556,
+        "nrmse": 0.004633514317129791
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.13266650000000002,
+        "rift_median_ms": 10.466620500000001,
+        "speedup_x": 0.01267519922022586,
+        "speed_gain_pct": -98.73248007797741,
+        "rows_processed": 20,
+        "baseline_rows_s": 150753.95823361585,
+        "rift_rows_s": 1910.8364538486896,
+        "IMPORTANT": "rows/s de uma única Linear NÃO é model Tok/s"
+      },
+      "storage": {
+        "baseline_bytes": 9437184,
+        "candidate_bytes": 1179668,
+        "compression_ratio_x": 7.999864368618967,
+        "disk_reduction_pct": 87.49978807237413
+      },
+      "ram": {
+        "baseline_working_set_bytes": 9682944,
+        "rift_working_set_bytes": 10862612,
+        "includes_reconstructed_fp32_weight": true
+      }
+    },
+    "notes": "BASE+REF 4-bit packed. Q4_LINEAR_TEST não é MXFP4. O path ainda materializa FP32 antes da GEMM."
   }
 ]
