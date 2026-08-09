@@ -2,6 +2,9 @@ const REPOSITORY = "programador-powershell/RIFT-LM";
 const DEFAULT_REF = "main";
 const RESULTS_ENDPOINT = "https://rift-lm.vercel.app/api/results";
 const TOKENIZER_DEPENDENCIES = {
+  transformers: "transformers>=4.52.0",
+  accelerate: "accelerate>=0.33.0",
+  tokenizers: "tokenizers>=0.20.0",
   sentencepiece: "sentencepiece>=0.2.0",
   tiktoken: "tiktoken>=0.7.0",
 };
@@ -168,9 +171,11 @@ function normalizeTargetLayer(value) {
 }
 
 function normalizeDevice(value) {
-  const device = String(value || "cuda").trim().toLowerCase();
-  if (!["cpu", "cuda"].includes(device)) throw new ApiError("device precisa ser cpu ou cuda");
-  return device;
+  const device = String(value || "auto").trim().toLowerCase();
+  if (!["auto", "cpu", "cuda", "gpu"].includes(device)) {
+    throw new ApiError("device precisa ser auto, cpu ou cuda");
+  }
+  return device === "gpu" ? "auto" : device;
 }
 
 function normalizePublish(value) {
@@ -191,7 +196,7 @@ function buildLauncher({
   model,
   origin,
   targetLayer = "auto",
-  device = "cuda",
+  device = "auto",
   publish = "required",
   trustRemoteCode = false,
   ref = deploymentRef(),
@@ -284,19 +289,12 @@ def enforce_publish_settings():
         raise SystemExit(2)
 
 def ensure_tokenizer_dependencies():
-    missing = []
-    for module, package in TOKENIZER_DEPENDENCIES.items():
-        try:
-            __import__(module)
-        except ImportError:
-            missing.append(package)
-    if not missing:
-        print("[LAUNCHER] Tokenizadores opcionais prontos: sentencepiece + tiktoken")
-        return
-    print("[LAUNCHER] Instalando dependências de tokenizer:", ", ".join(missing))
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", *missing])
+    packages = list(TOKENIZER_DEPENDENCIES.values())
+    print("[LAUNCHER] Garantindo transformers + accelerate + tokenizers + sentencepiece + tiktoken...")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "-U", *packages])
     for module in TOKENIZER_DEPENDENCIES:
         __import__(module)
+    print("[LAUNCHER] Dependências ML prontas: transformers + accelerate + tokenizers + sentencepiece + tiktoken")
 
 os.environ.setdefault("RIFT_RESULTS_ENDPOINT", ${JSON.stringify(RESULTS_ENDPOINT)})
 os.environ.setdefault("RIFT_SOURCE_REF", ${JSON.stringify(ref)})

@@ -92,10 +92,12 @@ torch = None
 F = None
 AutoModelForCausalLM = None
 AutoTokenizer = None
+AutoModel = None
+AutoModelForMultimodalLM = None
 
 
 def ensure_phase1_dependencies():
-    global torch, F, AutoModelForCausalLM, AutoTokenizer
+    global torch, F, AutoModelForCausalLM, AutoTokenizer, AutoModel, AutoModelForMultimodalLM
     if torch is not None:
         return
 
@@ -104,23 +106,38 @@ def ensure_phase1_dependencies():
     # disponíveis (Llama/SentencePiece e Qwen/tiktoken).
     ensure_import("sentencepiece")
     ensure_import("tiktoken")
+    print("[deps] Garantindo transformers e accelerate atualizados (Gemma 4 / multimodal)...")
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "-q", "-U", "transformers", "accelerate", "huggingface_hub"]
+    )
 
     try:
         import torch as _torch
         import torch.nn.functional as _F
         from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
         from transformers import AutoTokenizer as _AutoTokenizer
+        from transformers import AutoModel as _AutoModel
     except ImportError as exc:
         raise SystemExit(
             "PyTorch/Transformers são necessários para --mode phase1.\n"
-            "Instale com: pip install torch transformers sentencepiece tiktoken\n"
+            "Instale com: pip install torch transformers accelerate sentencepiece tiktoken\n"
             f"Erro original: {exc}"
         )
 
+    _AutoMM = None
+    try:
+        from transformers import AutoModelForMultimodalLM as _AutoMM
+    except ImportError:
+        try:
+            from transformers import AutoModelForImageTextToText as _AutoMM
+        except ImportError:
+            _AutoMM = None
     torch = _torch
     F = _F
     AutoModelForCausalLM = _AutoModelForCausalLM
     AutoTokenizer = _AutoTokenizer
+    AutoModel = _AutoModel
+    AutoModelForMultimodalLM = _AutoMM
 
 
 def normalize_huggingface_model_id(value: str) -> str:
@@ -156,6 +173,10 @@ def resolve_linear_weight_name(model: Any, requested: str) -> str:
         "attention.q_proj",
         "attention.wq",
         "attn.q_proj",
+        "mlp.down_proj",
+        "mlp.gate_proj",
+        "mlp.up_proj",
+        "self_attn.o_proj",
     )
     linear_names = [
         name
@@ -2027,6 +2048,137 @@ def run_b0(out_dir: Path, valid_ir: Dict[str, Any], one_tensor: np.ndarray) -> D
 # 10. Phase 1 experimental runner
 # ------------------------------------------------------------------------------
 
+
+
+def resolve_torch_device(requested: str):
+    """cuda se disponível; senão CPU (Colab sem GPU / TPU sem CUDA)."""
+    requested = (requested or "auto").strip().lower()
+    if requested in {"auto", "gpu"}:
+        requested = "cuda"
+    if requested not in {"cuda", "cpu"}:
+        raise ValueError(f"device inválido: {requested} (use auto, cuda ou cpu)")
+    if requested == "cuda":
+        try:
+            import torch
+            if torch.cuda.is_available():
+                name = torch.cuda.get_device_name(0) if torch.cuda.device_count() else "CUDA"
+                print(f"[device] CUDA disponível → usando GPU ({name})")
+                return torch.device("cuda")
+        except Exception as exc:
+            print(f"[device] CUDA indisponível ({exc}); caindo para CPU")
+        print("[device] Sem GPU CUDA — executando em CPU (adequado a Colab CPU/TPU sem torch_xla)")
+        return torch.device("cpu")
+    print("[device] Forçado para CPU")
+    return torch.device("cpu")
+
+
+def cleanup_colab_workspace(*, label: str = "battery") -> None:
+    """Libera disco no Colab após publicar resultados, para o próximo modelo."""
+    import gc
+    import shutil
+
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+    except Exception:
+        pass
+
+    removed = []
+    home = Path.home()
+    targets = [
+        home / ".cache" / "huggingface" / "hub",
+        home / ".cache" / "huggingface" / "transformers",
+        home / ".cache" / "huggingface" / "modules",
+        home / ".cache" / "torch",
+        Path("/content") / ".cache",
+        Path("/root") / ".cache" / "huggingface" / "hub",
+        Path("/root") / ".cache" / "huggingface" / "transformers",
+    ]
+    for path in targets:
+        try:
+            if path.is_dir():
+                size = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+                shutil.rmtree(path, ignore_errors=True)
+                removed.append(f"{path} (~{size / (1024**3):.2f} GiB)")
+            elif path.is_file():
+                path.unlink(missing_ok=True)
+                removed.append(str(path))
+        except Exception as exc:
+            print(f"[cleanup] AVISO ao remover {path}: {exc}")
+
+    # Artefatos temporários conhecidos no /tmp e /content
+    patterns = [
+        "/tmp/winner_cpp_*",
+        "/tmp/winner_phase1_*",
+        "/tmp/phase1_load_fail*",
+        "/tmp/cascade_load_fail*",
+        "/tmp/rift_*",
+        "/content/*_launcher.py",
+        "/content/rift_serial_queue",
+    ]
+    import glob as _glob
+    for pattern in patterns:
+        for match in _glob.glob(pattern):
+            p = Path(match)
+            try:
+                if p.is_dir():
+                    shutil.rmtree(p, ignore_errors=True)
+                elif p.is_file():
+                    p.unlink(missing_ok=True)
+                removed.append(str(p))
+            except Exception as exc:
+                print(f"[cleanup] AVISO ao remover {p}: {exc}")
+
+    if removed:
+        print(f"[cleanup] {label}: espaço liberado ({len(removed)} item(ns)):")
+        for item in removed[:12]:
+            print(f"  - {item}")
+        if len(removed) > 12:
+            print(f"  - … +{len(removed) - 12} outros")
+    else:
+        print(f"[cleanup] {label}: nada relevante para limpar")
+    gc.collect()
+
+
+
+def load_tokenizer(model_id: str, *, trust_remote_code: bool = False, token: str | None = None):
+    """Carrega tokenizer com fallbacks (subfolder, use_fast=False).
+
+    Modelos multimodais/diffusers (ex.: MiniMax-H3) guardam o tokenizer em
+    subpastas; AutoTokenizer na raiz falha com mensagem enganosa de sentencepiece/tiktoken.
+    """
+    common = {"trust_remote_code": trust_remote_code, "token": token}
+    attempts = [
+        {},
+        {"use_fast": False},
+        {"subfolder": "tokenizer"},
+        {"subfolder": "tokenizer", "use_fast": False},
+        {"subfolder": "processor"},
+        {"subfolder": "processor", "use_fast": False},
+        {"subfolder": "text_encoder"},
+        {"subfolder": "text_encoder", "use_fast": False},
+    ]
+    errors: list[str] = []
+    for extra in attempts:
+        try:
+            tok = AutoTokenizer.from_pretrained(model_id, **common, **extra)
+            print(f"[tokenizer] OK com {extra or {'root': True}}")
+            return tok
+        except Exception as exc:
+            errors.append(f"{extra or 'root'}: {type(exc).__name__}: {exc}")
+    raise RuntimeError(
+        "Não foi possível carregar o tokenizer de "
+        f"{model_id}.\n"
+        "Possíveis causas: (1) arquivos só em subpasta; (2) modelo diffusers/vídeo "
+        "sem checkpoint Transformers CausalLM; (3) tokenizers desatualizado.\n"
+        "Tentativas:\n- " + "\n- ".join(errors)
+    )
+
+
+
 def run_phase1(
     *,
     out_dir: Path,
@@ -2038,12 +2190,12 @@ def run_phase1(
     trust_remote_code: bool = False,
 ) -> Dict[str, Any]:
     ensure_phase1_dependencies()
-    device = torch.device(device_str)
+    device = resolve_torch_device(device_str)
     model_id = normalize_huggingface_model_id(model_id)
 
     print(f"\n[Phase1] Carregando {model_id} em {device}...")
     hf_token = _read_setting("HF_TOKEN")
-    tokenizer = AutoTokenizer.from_pretrained(
+    tokenizer = load_tokenizer(
         model_id,
         token=hf_token,
         trust_remote_code=trust_remote_code,
@@ -2052,13 +2204,37 @@ def run_phase1(
     # Em CUDA carregamos o checkpoint em FP16 para permitir modelos maiores;
     # o tensor alvo e todas as métricas continuam convertidos a FP32.
     load_dtype = torch.float16 if device.type == "cuda" else torch.float32
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        token=hf_token,
-        dtype=load_dtype,
-        trust_remote_code=trust_remote_code,
-    ).to(device)
-    model.eval()
+    load_kwargs = {
+        "token": hf_token,
+        "dtype": load_dtype,
+        "trust_remote_code": trust_remote_code,
+        "low_cpu_mem_usage": True,
+    }
+    if device.type == "cuda":
+        load_kwargs["device_map"] = "auto"
+    classes = []
+    if AutoModelForMultimodalLM is not None:
+        classes.append(AutoModelForMultimodalLM)
+    classes.extend([AutoModelForCausalLM, AutoModel])
+    model = None
+    errors = []
+    for cls in classes:
+        try:
+            model = cls.from_pretrained(model_id, **load_kwargs)
+            if getattr(model, "hf_device_map", None) is None:
+                model = model.to(device)
+            model.eval()
+            print(f"[load] Modelo carregado via {cls.__name__}")
+            break
+        except Exception as exc:
+            errors.append(f"{cls.__name__}: {exc}")
+            print(f"[load] {cls.__name__} falhou: {exc}")
+    if model is None:
+        raise RuntimeError(
+            "Não foi possível carregar o modelo.\n"
+            "Gemma 4 Unified exige transformers recente (AutoModelForMultimodalLM).\n"
+            + "\n".join(errors)
+        )
 
     state = model.state_dict()
     target_layer_name = resolve_linear_weight_name(model, target_layer_name)
@@ -2745,6 +2921,8 @@ def main(argv: Iterable[str] | None = None):
         )
     except ResultsPublishError as exc:
         raise SystemExit(f"[PUBLISH] ERRO: {exc}") from exc
+    finally:
+        cleanup_colab_workspace(label="RIFT")
 
 
 if __name__ == "__main__":

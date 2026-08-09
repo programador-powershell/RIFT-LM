@@ -34,6 +34,7 @@ F = None
 AutoModel = None
 AutoModelForCausalLM = None
 AutoTokenizer = None
+AutoModelForMultimodalLM = None
 
 REPOSITORY_ARCHIVE_TEMPLATE = "https://github.com/programador-powershell/RIFT-LM/archive/{ref}.tar.gz"
 MAX_ARCHIVE_BYTES = 25 * 1024 * 1024
@@ -61,11 +62,16 @@ def repository_archive() -> str:
 
 
 def ensure_ml_dependencies() -> None:
-    global torch, F, AutoModel, AutoModelForCausalLM, AutoTokenizer
+    global torch, F, AutoModel, AutoModelForCausalLM, AutoTokenizer, AutoModelForMultimodalLM
     if torch is not None:
         return
     ensure_import("sentencepiece")
     ensure_import("tiktoken")
+    # Gemma 4 Unified / modelos recentes exigem Transformers atualizado
+    print("[deps] Garantindo transformers e accelerate atualizados (Gemma 4 / multimodal)...")
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "-q", "-U", "transformers", "accelerate", "huggingface_hub"]
+    )
     try:
         import torch as _torch
         import torch.nn.functional as _F
@@ -75,13 +81,23 @@ def ensure_ml_dependencies() -> None:
     except ImportError as exc:
         raise SystemExit(
             "PyTorch e Transformers são necessários. Instale com: "
-            f"pip install torch transformers sentencepiece tiktoken\nErro: {exc}"
+            "pip install torch transformers accelerate sentencepiece tiktoken\n"
+            f"Erro: {exc}"
         ) from exc
+    _AutoMM = None
+    try:
+        from transformers import AutoModelForMultimodalLM as _AutoMM
+    except ImportError:
+        try:
+            from transformers import AutoModelForImageTextToText as _AutoMM
+        except ImportError:
+            _AutoMM = None
     torch = _torch
     F = _F
     AutoModel = _AutoModel
     AutoModelForCausalLM = _AutoModelForCausalLM
     AutoTokenizer = _AutoTokenizer
+    AutoModelForMultimodalLM = _AutoMM
 
 
 def normalize_huggingface_model_id(value: str) -> str:
@@ -110,9 +126,23 @@ def resolve_linear_weight_name(model: Any, requested: str) -> str:
             raise ValueError(f"Tensor Linear 2D não encontrado: {name}")
         return name
     preferred = (
+        # Gemma 4 Unified (language_model backbone)
+        "model.language_model.layers.0.self_attn.q_proj.weight",
+        "model.language_model.layers.0.mlp.down_proj.weight",
+        "model.language_model.layers.0.mlp.gate_proj.weight",
+        "language_model.layers.0.self_attn.q_proj.weight",
+        "language_model.layers.0.mlp.down_proj.weight",
+        # Gemma / Llama / Qwen style
         "model.layers.0.self_attn.q_proj.weight",
         "model.layers.0.mlp.down_proj.weight",
+        "model.model.layers.0.self_attn.q_proj.weight",
+        "model.model.layers.0.mlp.down_proj.weight",
+        # GPT-2 / OPT style
         "transformer.h.0.attn.c_attn.weight",
+        "transformer.h.0.mlp.c_proj.weight",
+        # Phi / others
+        "model.layers.0.self_attn.qkv_proj.weight",
+        "model.layers.0.mixer.Wqkv.weight",
     )
     for name in preferred:
         if name in state and state[name].ndim == 2:
@@ -149,19 +179,173 @@ def capture_activation(model: Any, tokenizer: Any, module_name: str, device: Any
     return x[-min(32, x.shape[0]):]
 
 
+
+
+def resolve_torch_device(requested: str):
+    """cuda se disponível; senão CPU (Colab sem GPU / TPU sem CUDA)."""
+    requested = (requested or "auto").strip().lower()
+    if requested in {"auto", "gpu"}:
+        requested = "cuda"
+    if requested not in {"cuda", "cpu"}:
+        raise ValueError(f"device inválido: {requested} (use auto, cuda ou cpu)")
+    if requested == "cuda":
+        try:
+            import torch
+            if torch.cuda.is_available():
+                name = torch.cuda.get_device_name(0) if torch.cuda.device_count() else "CUDA"
+                print(f"[device] CUDA disponível → usando GPU ({name})")
+                return torch.device("cuda")
+        except Exception as exc:
+            print(f"[device] CUDA indisponível ({exc}); caindo para CPU")
+        print("[device] Sem GPU CUDA — executando em CPU (adequado a Colab CPU/TPU sem torch_xla)")
+        return torch.device("cpu")
+    print("[device] Forçado para CPU")
+    return torch.device("cpu")
+
+
+def cleanup_colab_workspace(*, label: str = "battery") -> None:
+    """Libera disco no Colab após publicar resultados, para o próximo modelo."""
+    import gc
+    import shutil
+
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+    except Exception:
+        pass
+
+    removed = []
+    home = Path.home()
+    targets = [
+        home / ".cache" / "huggingface" / "hub",
+        home / ".cache" / "huggingface" / "transformers",
+        home / ".cache" / "huggingface" / "modules",
+        home / ".cache" / "torch",
+        Path("/content") / ".cache",
+        Path("/root") / ".cache" / "huggingface" / "hub",
+        Path("/root") / ".cache" / "huggingface" / "transformers",
+    ]
+    for path in targets:
+        try:
+            if path.is_dir():
+                size = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+                shutil.rmtree(path, ignore_errors=True)
+                removed.append(f"{path} (~{size / (1024**3):.2f} GiB)")
+            elif path.is_file():
+                path.unlink(missing_ok=True)
+                removed.append(str(path))
+        except Exception as exc:
+            print(f"[cleanup] AVISO ao remover {path}: {exc}")
+
+    # Artefatos temporários conhecidos no /tmp e /content
+    patterns = [
+        "/tmp/winner_cpp_*",
+        "/tmp/winner_phase1_*",
+        "/tmp/phase1_load_fail*",
+        "/tmp/cascade_load_fail*",
+        "/tmp/rift_*",
+        "/content/*_launcher.py",
+        "/content/rift_serial_queue",
+    ]
+    import glob as _glob
+    for pattern in patterns:
+        for match in _glob.glob(pattern):
+            p = Path(match)
+            try:
+                if p.is_dir():
+                    shutil.rmtree(p, ignore_errors=True)
+                elif p.is_file():
+                    p.unlink(missing_ok=True)
+                removed.append(str(p))
+            except Exception as exc:
+                print(f"[cleanup] AVISO ao remover {p}: {exc}")
+
+    if removed:
+        print(f"[cleanup] {label}: espaço liberado ({len(removed)} item(ns)):")
+        for item in removed[:12]:
+            print(f"  - {item}")
+        if len(removed) > 12:
+            print(f"  - … +{len(removed) - 12} outros")
+    else:
+        print(f"[cleanup] {label}: nada relevante para limpar")
+    gc.collect()
+
+
+
+def load_tokenizer(model_id: str, *, trust_remote_code: bool = False, token: str | None = None):
+    """Carrega tokenizer com fallbacks (subfolder, use_fast=False).
+
+    Modelos multimodais/diffusers (ex.: MiniMax-H3) guardam o tokenizer em
+    subpastas e não na raiz do repositório; AutoTokenizer padrão falha com a
+    mensagem enganosa de sentencepiece/tiktoken mesmo com os pacotes instalados.
+    """
+    common = {"trust_remote_code": trust_remote_code, "token": token}
+    attempts = [
+        {},
+        {"use_fast": False},
+        {"subfolder": "tokenizer"},
+        {"subfolder": "tokenizer", "use_fast": False},
+        {"subfolder": "processor"},
+        {"subfolder": "processor", "use_fast": False},
+        {"subfolder": "text_encoder"},
+        {"subfolder": "text_encoder", "use_fast": False},
+    ]
+    errors: list[str] = []
+    for extra in attempts:
+        try:
+            tok = AutoTokenizer.from_pretrained(model_id, **common, **extra)
+            label = extra or {"root": True}
+            print(f"[tokenizer] OK com {label}")
+            return tok
+        except Exception as exc:
+            errors.append(f"{extra or 'root'}: {type(exc).__name__}: {exc}")
+    raise RuntimeError(
+        "Não foi possível carregar o tokenizer de "
+        f"{model_id}.\n"
+        "Possíveis causas: (1) arquivos só em subpasta; (2) modelo diffusers/vídeo "
+        "sem checkpoint Transformers CausalLM; (3) tokenizers desatualizado.\n"
+        "Tentativas:\n- " + "\n- ".join(errors)
+    )
+
+
 def load_model(model_id: str, *, device: Any, trust_remote_code: bool):
     token = os.environ.get("HF_TOKEN") or None
     common = {"trust_remote_code": trust_remote_code, "token": token}
-    tokenizer = AutoTokenizer.from_pretrained(model_id, **common)
-    load_kwargs = {**common, "low_cpu_mem_usage": True, "dtype": torch.float16 if device.type == "cuda" else torch.float32}
+    tokenizer = load_tokenizer(model_id, trust_remote_code=trust_remote_code, token=token)
+    dtype = torch.float16 if device.type == "cuda" else torch.float32
+    load_kwargs = {
+        **common,
+        "low_cpu_mem_usage": True,
+        "dtype": dtype,
+    }
+    # Modelos grandes (Gemma 4 12B ~24GB) precisam de device_map para caber em Colab
+    if device.type == "cuda":
+        load_kwargs["device_map"] = "auto"
+    classes = []
+    if AutoModelForMultimodalLM is not None:
+        classes.append(AutoModelForMultimodalLM)
+    classes.extend([AutoModelForCausalLM, AutoModel])
     errors = []
-    for cls in (AutoModelForCausalLM, AutoModel):
+    for cls in classes:
         try:
-            model = cls.from_pretrained(model_id, **load_kwargs).to(device).eval()
+            model = cls.from_pretrained(model_id, **load_kwargs)
+            if getattr(model, "hf_device_map", None) is None:
+                model = model.to(device)
+            model.eval()
+            print(f"[load] Modelo carregado via {cls.__name__}")
             return tokenizer, model
-        except Exception as exc:  # preserve the useful combined loader context
+        except Exception as exc:
             errors.append(f"{cls.__name__}: {exc}")
-    raise RuntimeError("Não foi possível carregar o modelo:\n" + "\n".join(errors))
+    raise RuntimeError(
+        "Não foi possível carregar o modelo (tokenizer OK).\n"
+        "Gemma 4 Unified exige transformers recente e costuma usar "
+        "AutoModelForMultimodalLM. Modelos diffusers/vídeo puros não se aplicam.\n"
+        + "\n".join(errors)
+    )
+
 
 
 def compute_metrics(reference: Any, candidate: Any) -> dict[str, float]:
@@ -384,11 +568,32 @@ def publish_to_vercel(path: Path | None = None, *, mode: str, endpoint: str | No
 def run_phase1(args: argparse.Namespace, native: dict[str, Any]) -> Path:
     ensure_ml_dependencies()
     model_id = normalize_huggingface_model_id(args.model)
-    if args.device == "cuda" and not torch.cuda.is_available():
-        raise RuntimeError("CUDA não está disponível; use --device cpu ou ative GPU no Colab")
-    device = torch.device(args.device)
+    device = resolve_torch_device(args.device)
     print(f"[Phase1] Carregando {model_id} em {device}...")
-    tokenizer, model = load_model(model_id, device=device, trust_remote_code=args.trust_remote_code)
+    try:
+        tokenizer, model = load_model(model_id, device=device, trust_remote_code=args.trust_remote_code)
+    except Exception as load_exc:
+        print(f"[Phase1] FALHA ao carregar modelo/tokenizer: {load_exc}")
+        out_dir = Path(tempfile.mkdtemp(prefix="winner_phase1_fail_"))
+        recorder = BatteryRecorder(
+            out_dir,
+            model_id=model_id,
+            publish_mode=args.publish,
+            results_endpoint=args.results_endpoint,
+        )
+        recorder.record(
+            battery_id="P1_LOAD_MODEL",
+            status="FAIL",
+            measurement_scope="model_load",
+            quality={"full_local_gate_pass": False},
+            metrics={"error": str(load_exc)[:800]},
+            notes=(
+                f"Falha ao carregar {model_id}. Modelos diffusers/vídeo "
+                "(ex. MiniMax-H3) não são suportados por esta bateria CausalLM. "
+                f"Detalhe: {load_exc}"
+            )[:1200],
+        )
+        return recorder.json_path
     target_layer = resolve_linear_weight_name(model, args.target_layer)
     weight = model.state_dict()[target_layer].detach().to(device=device, dtype=torch.float32)
     try:
@@ -523,7 +728,7 @@ def main(argv: Iterable[str] | None = None) -> None:
     parser.add_argument("--model", default="Qwen/Qwen2.5-0.5B")
     parser.add_argument("--target-layer", default="auto")
     parser.add_argument("--prompt", default="Explique por que memória importa na inferência de modelos.")
-    parser.add_argument("--device", default="cuda")
+    parser.add_argument("--device", default="auto", help="auto|cuda|cpu — auto usa GPU se houver, senão CPU")
     parser.add_argument("--iterations", type=int, default=20)
     parser.add_argument("--maximum-rank", type=int, default=16)
     parser.add_argument("--cpp-profile-dim", type=int, default=128)
@@ -547,6 +752,8 @@ def main(argv: Iterable[str] | None = None) -> None:
         publish_to_vercel(batteries_path, mode=args.publish, endpoint=args.results_endpoint)
     except ResultsPublishError as exc:
         raise SystemExit(f"[PUBLISH] ERRO: {exc}") from exc
+    finally:
+        cleanup_colab_workspace(label="WINNER")
 
 
 if __name__ == "__main__":

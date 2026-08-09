@@ -430,7 +430,7 @@ function buildSerialColabCode(){
     "import subprocess",
     "import sys",
     "print('[FILA] Garantindo dependências (sentencepiece, tiktoken)...')",
-    "subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', 'sentencepiece>=0.2.0', 'tiktoken>=0.7.0'])",
+    "subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', '-U', 'transformers', 'accelerate', 'tokenizers', 'sentencepiece>=0.2.0', 'tiktoken>=0.7.0'])",
     "",
     "# Fila serial RIFT / CASCADE / AETHER / SPECTRA / WINNER",
     "# Cada benchmark roda isolado; falhas interrompem a fila.",
@@ -531,9 +531,32 @@ function updateCommand(){
     "# Instala dependências de tokenizer antes dos launchers (evita erro slow→fast em AutoTokenizer).",
     "import subprocess, sys",
     "print('[RIFT] Garantindo sentencepiece e tiktoken...')",
-    "subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', 'sentencepiece>=0.2.0', 'tiktoken>=0.7.0'])",
+    "subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', '-U', 'transformers', 'accelerate', 'tokenizers', 'sentencepiece>=0.2.0', 'tiktoken>=0.7.0'])",
   ];
-  $("commandOutput").textContent=[...colabSecretBootstrapLines(),"",...tokenizerDeps,"",...commands].join("\n");$("modelValidation").textContent=`Modelo normalizado: ${model}. A célula lê RIFT_INGEST_TOKEN no kernel e o transfere aos launchers sem exibir o valor. sentencepiece/tiktoken são instalados automaticamente.`;$("modelValidation").className="note good";
+  const cleanupLines=[
+    "",
+    "# Limpeza final do Colab (cache HF + tmp) para liberar espaço antes do próximo modelo.",
+    "import gc, shutil, glob, os",
+    "from pathlib import Path",
+    "gc.collect()",
+    "try:",
+    "    import torch",
+    "    if torch.cuda.is_available():",
+    "        torch.cuda.empty_cache()",
+    "except Exception:",
+    "    pass",
+    "for p in [Path.home()/'.cache'/'huggingface'/'hub', Path.home()/'.cache'/'huggingface'/'transformers', Path('/root')/'.cache'/'huggingface'/'hub', Path('/content')/'.cache']:",
+    "    if p.is_dir():",
+    "        shutil.rmtree(p, ignore_errors=True)",
+    "        print('[cleanup] removido', p)",
+    "for pat in ['/tmp/winner_cpp_*', '/tmp/winner_phase1_*', '/tmp/phase1_load_fail*', '/content/*_launcher.py']:",
+    "    for m in glob.glob(pat):",
+    "        p = Path(m)",
+    "        shutil.rmtree(p, ignore_errors=True) if p.is_dir() else p.unlink(missing_ok=True)",
+    "        print('[cleanup] removido', m)",
+    "print('[cleanup] Colab pronto para outro modelo')",
+  ];
+  $("commandOutput").textContent=[...colabSecretBootstrapLines(),"",...tokenizerDeps,"",...commands,...cleanupLines].join("\n");$("modelValidation").textContent=`Modelo normalizado: ${model}. A célula lê RIFT_INGEST_TOKEN no kernel e o transfere aos launchers sem exibir o valor. sentencepiece/tiktoken são instalados automaticamente.`;$("modelValidation").className="note good";
 }
 
 $("files").addEventListener("change",e=>loadFiles([...e.target.files]));$("reloadBtn").addEventListener("click",()=>{state.dataSource="published";state.publishedFingerprint=null;state.records=[];state.analysis=null;state.analysisError=null;state.ranking=[];loadPublishedData()});$("clearBtn").addEventListener("click",()=>{state.dataSource="cleared";state.records=[];state.analysis=null;state.analysisError=null;state.ranking=[];render();$("dataStatus").textContent="Dados removidos da visualização. Use Recarregar publicado para retomar o modo ao vivo.";$("dataStatus").className="sub"});["modelFilter","technologyFilter","batteryFilter"].forEach(id=>$(id).addEventListener("change",render));$("compareModel").addEventListener("change",renderCompare);$("analyzeBtn").addEventListener("click",()=>requestAIAnalysis(true));
