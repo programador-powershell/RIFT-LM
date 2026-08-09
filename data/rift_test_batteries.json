@@ -3374,8 +3374,8 @@
     "comparison_role": null
   },
   {
-    "timestamp_utc": "2026-08-09T22:00:48Z",
-    "run_id": "20260809T220048Z-fbeefea5",
+    "timestamp_utc": "2026-08-09T22:31:21Z",
+    "run_id": "20260809T223120Z-f758ee8a",
     "spec": "RIFT-LM v0.3.5",
     "technology": "RIFT",
     "model_id": "google/gemma-4-E4B-it",
@@ -3423,8 +3423,8 @@
     "notes": "B0 mede correção/overhead do container, não compressão. Ganho de disco pode ser negativo por design."
   },
   {
-    "timestamp_utc": "2026-08-09T22:00:54Z",
-    "run_id": "20260809T220048Z-fbeefea5",
+    "timestamp_utc": "2026-08-09T22:31:27Z",
+    "run_id": "20260809T223120Z-f758ee8a",
     "spec": "RIFT-LM v0.3.5",
     "technology": "RIFT",
     "model_id": "google/gemma-4-E4B-it",
@@ -3464,13 +3464,13 @@
     "metrics": {
       "operation": {
         "metric": "linear_latency",
-        "baseline_median_ms": 0.163115,
-        "rift_median_ms": 37.371654500000005,
-        "speedup_x": 0.004364671625656819,
-        "speed_gain_pct": -99.56353283743432,
+        "baseline_median_ms": 0.1513965,
+        "rift_median_ms": 39.968715,
+        "speedup_x": 0.0037878750918061786,
+        "speed_gain_pct": -99.62121249081937,
         "rows_processed": 18,
-        "baseline_rows_s": 110351.59243478527,
-        "rift_rows_s": 481.648464346153,
+        "baseline_rows_s": 118893.10519067482,
+        "rift_rows_s": 450.352231739249,
         "IMPORTANT": "rows/s de uma única Linear NÃO é model Tok/s"
       },
       "storage": {
@@ -3488,8 +3488,8 @@
     "notes": "BASE 2-bit packed. Q4_LINEAR_TEST não é MXFP4. Speedup nativo não pode ser reivindicado."
   },
   {
-    "timestamp_utc": "2026-08-09T22:00:56Z",
-    "run_id": "20260809T220048Z-fbeefea5",
+    "timestamp_utc": "2026-08-09T22:31:29Z",
+    "run_id": "20260809T223120Z-f758ee8a",
     "spec": "RIFT-LM v0.3.5",
     "technology": "RIFT",
     "model_id": "google/gemma-4-E4B-it",
@@ -3529,13 +3529,13 @@
     "metrics": {
       "operation": {
         "metric": "linear_latency",
-        "baseline_median_ms": 0.163115,
-        "rift_median_ms": 44.94846750000001,
-        "speedup_x": 0.003628933511470663,
-        "speed_gain_pct": -99.63710664885294,
+        "baseline_median_ms": 0.1513965,
+        "rift_median_ms": 60.1440965,
+        "speedup_x": 0.0025172296004147303,
+        "speed_gain_pct": -99.74827703995852,
         "rows_processed": 18,
-        "baseline_rows_s": 110351.59243478527,
-        "rift_rows_s": 400.4585918307448,
+        "baseline_rows_s": 118893.10519067482,
+        "rift_rows_s": 299.2812436711889,
         "IMPORTANT": "rows/s de uma única Linear NÃO é model Tok/s"
       },
       "storage": {
