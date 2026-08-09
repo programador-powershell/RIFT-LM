@@ -3374,71 +3374,6 @@
     "comparison_role": null
   },
   {
-    "timestamp_utc": "2026-08-09T22:00:54Z",
-    "run_id": "20260809T220048Z-fbeefea5",
-    "spec": "RIFT-LM v0.3.5",
-    "technology": "RIFT",
-    "model_id": "google/gemma-4-E4B-it",
-    "battery_id": "P1_Q4_LINEAR_BASE_2BIT",
-    "status": "EXPERIMENTAL_FAIL",
-    "comparison_role": null,
-    "baseline_tok_s": null,
-    "rift_tok_s": null,
-    "baseline_ram_bytes": 21303296,
-    "rift_ram_bytes": 22614036,
-    "baseline_disk_bytes": 20971520,
-    "rift_disk_bytes": 1310740,
-    "candidate_tok_s": null,
-    "candidate_ram_bytes": 22614036,
-    "candidate_disk_bytes": 1310740,
-    "gains": {
-      "tok_s_gain_pct": null,
-      "ram_reduction_pct": -6.152756831618911,
-      "disk_reduction_pct": 93.74990463256836,
-      "disk_compression_ratio_x": 15.999755863100233,
-      "overall_gain_pct": 43.79857390047472
-    },
-    "measurement_scope": "Single Linear op. RAM=estimated current reference working set; disk=real bytes on disk; Tok/s=model-level NOT_MEASURED.",
-    "quality": {
-      "full_local_gate_pass": false,
-      "weight": {
-        "cosine": 0.6357432899837108,
-        "rmse": 0.0703049823641777,
-        "nrmse": 0.13634905670628403
-      },
-      "output": {
-        "cosine": 0.8304138156679014,
-        "rmse": 60.6143798828125,
-        "nrmse": 0.08454651298608205
-      }
-    },
-    "metrics": {
-      "operation": {
-        "metric": "linear_latency",
-        "baseline_median_ms": 0.163115,
-        "rift_median_ms": 37.371654500000005,
-        "speedup_x": 0.004364671625656819,
-        "speed_gain_pct": -99.56353283743432,
-        "rows_processed": 18,
-        "baseline_rows_s": 110351.59243478527,
-        "rift_rows_s": 481.648464346153,
-        "IMPORTANT": "rows/s de uma única Linear NÃO é model Tok/s"
-      },
-      "storage": {
-        "baseline_bytes": 20971520,
-        "candidate_bytes": 1310740,
-        "compression_ratio_x": 15.999755863100233,
-        "disk_reduction_pct": 93.74990463256836
-      },
-      "ram": {
-        "baseline_working_set_bytes": 21303296,
-        "rift_working_set_bytes": 22614036,
-        "includes_reconstructed_fp32_weight": true
-      }
-    },
-    "notes": "BASE 2-bit packed. Q4_LINEAR_TEST não é MXFP4. Speedup nativo não pode ser reivindicado."
-  },
-  {
     "timestamp_utc": "2026-08-09T22:00:56Z",
     "run_id": "20260809T220048Z-fbeefea5",
     "spec": "RIFT-LM v0.3.5",
@@ -3551,5 +3486,70 @@
       "golden_checksum": "0x8db3a70fc08a38f3"
     },
     "notes": "B0 mede correção/overhead do container, não compressão. Ganho de disco pode ser negativo por design."
+  },
+  {
+    "timestamp_utc": "2026-08-09T22:31:27Z",
+    "run_id": "20260809T223120Z-f758ee8a",
+    "spec": "RIFT-LM v0.3.5",
+    "technology": "RIFT",
+    "model_id": "google/gemma-4-E4B-it",
+    "battery_id": "P1_Q4_LINEAR_BASE_2BIT",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "rift_tok_s": null,
+    "baseline_ram_bytes": 21303296,
+    "rift_ram_bytes": 22614036,
+    "baseline_disk_bytes": 20971520,
+    "rift_disk_bytes": 1310740,
+    "candidate_tok_s": null,
+    "candidate_ram_bytes": 22614036,
+    "candidate_disk_bytes": 1310740,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": -6.152756831618911,
+      "disk_reduction_pct": 93.74990463256836,
+      "disk_compression_ratio_x": 15.999755863100233,
+      "overall_gain_pct": 43.79857390047472
+    },
+    "measurement_scope": "Single Linear op. RAM=estimated current reference working set; disk=real bytes on disk; Tok/s=model-level NOT_MEASURED.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "weight": {
+        "cosine": 0.6357432899837108,
+        "rmse": 0.0703049823641777,
+        "nrmse": 0.13634905670628403
+      },
+      "output": {
+        "cosine": 0.8304138156679014,
+        "rmse": 60.6143798828125,
+        "nrmse": 0.08454651298608205
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.1513965,
+        "rift_median_ms": 39.968715,
+        "speedup_x": 0.0037878750918061786,
+        "speed_gain_pct": -99.62121249081937,
+        "rows_processed": 18,
+        "baseline_rows_s": 118893.10519067482,
+        "rift_rows_s": 450.352231739249,
+        "IMPORTANT": "rows/s de uma única Linear NÃO é model Tok/s"
+      },
+      "storage": {
+        "baseline_bytes": 20971520,
+        "candidate_bytes": 1310740,
+        "compression_ratio_x": 15.999755863100233,
+        "disk_reduction_pct": 93.74990463256836
+      },
+      "ram": {
+        "baseline_working_set_bytes": 21303296,
+        "rift_working_set_bytes": 22614036,
+        "includes_reconstructed_fp32_weight": true
+      }
+    },
+    "notes": "BASE 2-bit packed. Q4_LINEAR_TEST não é MXFP4. Speedup nativo não pode ser reivindicado."
   }
 ]
