@@ -2050,6 +2050,61 @@ def run_b0(out_dir: Path, valid_ir: Dict[str, Any], one_tensor: np.ndarray) -> D
 
 
 
+
+def resolve_hf_token() -> str | None:
+    """HF_TOKEN / HUGGING_FACE_HUB_TOKEN a partir do ambiente ou Secrets do Colab."""
+    for name in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_HUB_TOKEN", "HUGGINGFACE_TOKEN"):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    try:
+        from google.colab import userdata
+        for name in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_HUB_TOKEN"):
+            try:
+                value = str(userdata.get(name) or "").strip()
+            except Exception:
+                value = ""
+            if value:
+                # Espelha no ambiente para transformers/huggingface_hub
+                os.environ.setdefault("HF_TOKEN", value)
+                os.environ.setdefault("HUGGING_FACE_HUB_TOKEN", value)
+                return value
+    except Exception:
+        pass
+    return None
+
+
+def ensure_hf_login(token: str | None = None) -> str | None:
+    """Autentica no Hugging Face Hub quando há token (modelos gated)."""
+    token = token or resolve_hf_token()
+    if not token:
+        return None
+    try:
+        from huggingface_hub import login as hf_login
+        hf_login(token=token, add_to_git_credential=False)
+        print("[auth] HF_TOKEN aplicado (valor não exibido).")
+    except Exception as exc:
+        print(f"[auth] AVISO: não foi possível fazer login no Hub: {exc}")
+    return token
+
+
+def is_gated_access_error(exc: BaseException) -> bool:
+    text = f"{type(exc).__name__}: {exc}".lower()
+    markers = (
+        "gated repo",
+        "access to model",
+        "restricted",
+        "401 client error",
+        "403 client error",
+        "cannot access gated",
+        "you must have access",
+        "please log in",
+        "authentication",
+        "authorized",
+    )
+    return any(m in text for m in markers)
+
+
 def resolve_torch_device(requested: str):
     """cuda se disponível; senão CPU (Colab sem GPU / TPU sem CUDA)."""
     requested = (requested or "auto").strip().lower()
@@ -2153,13 +2208,18 @@ def cleanup_colab_workspace(*, label: str = "battery", wipe_hf_cache: bool = Fal
 
 
 
+
 def load_tokenizer(model_id: str, *, trust_remote_code: bool = False, token: str | None = None):
     """Carrega tokenizer com fallbacks (subfolder, use_fast=False).
 
-    Modelos multimodais/diffusers (ex.: MiniMax-H3) guardam o tokenizer em
-    subpastas; AutoTokenizer na raiz falha com mensagem enganosa de sentencepiece/tiktoken.
+    Para de tentar subpastas se o Hub responder 401/gated — o problema é auth,
+    não layout de arquivos.
     """
-    common = {"trust_remote_code": trust_remote_code, "token": token}
+    token = token or resolve_hf_token()
+    ensure_hf_login(token)
+    common = {"trust_remote_code": trust_remote_code}
+    if token:
+        common["token"] = token
     attempts = [
         {},
         {"use_fast": False},
@@ -2167,8 +2227,6 @@ def load_tokenizer(model_id: str, *, trust_remote_code: bool = False, token: str
         {"subfolder": "tokenizer", "use_fast": False},
         {"subfolder": "processor"},
         {"subfolder": "processor", "use_fast": False},
-        {"subfolder": "text_encoder"},
-        {"subfolder": "text_encoder", "use_fast": False},
     ]
     errors: list[str] = []
     for extra in attempts:
@@ -2178,12 +2236,16 @@ def load_tokenizer(model_id: str, *, trust_remote_code: bool = False, token: str
             return tok
         except Exception as exc:
             errors.append(f"{extra or 'root'}: {type(exc).__name__}: {exc}")
+            if is_gated_access_error(exc):
+                raise RuntimeError(
+                    f"Modelo gated/restrito: {model_id}.\n"
+                    "1) Aceite os termos em https://huggingface.co/" + model_id + "\n"
+                    "2) Configure o Secret HF_TOKEN no Colab (token com acesso de leitura).\n"
+                    "3) Rode de novo. Sem token válido a bateria grava FAIL e segue a fila."
+                ) from exc
     raise RuntimeError(
         "Não foi possível carregar o tokenizer de "
-        f"{model_id}.\n"
-        "Possíveis causas: (1) arquivos só em subpasta; (2) modelo diffusers/vídeo "
-        "sem checkpoint Transformers CausalLM; (3) tokenizers desatualizado.\n"
-        "Tentativas:\n- " + "\n- ".join(errors)
+        f"{model_id}.\nTentativas:\n- " + "\n- ".join(errors)
     )
 
 
@@ -2203,47 +2265,95 @@ def run_phase1(
     model_id = normalize_huggingface_model_id(model_id)
 
     print(f"\n[Phase1] Carregando {model_id} em {device}...")
-    hf_token = _read_setting("HF_TOKEN")
-    tokenizer = load_tokenizer(
-        model_id,
-        token=hf_token,
-        trust_remote_code=trust_remote_code,
-    )
-
-    # Em CUDA carregamos o checkpoint em FP16 para permitir modelos maiores;
-    # o tensor alvo e todas as métricas continuam convertidos a FP32.
-    load_dtype = torch.float16 if device.type == "cuda" else torch.float32
-    load_kwargs = {
-        "token": hf_token,
-        "dtype": load_dtype,
-        "trust_remote_code": trust_remote_code,
-        "low_cpu_mem_usage": True,
-    }
-    if device.type == "cuda":
-        load_kwargs["device_map"] = "auto"
-    classes = []
-    if AutoModelForMultimodalLM is not None:
-        classes.append(AutoModelForMultimodalLM)
-    classes.extend([AutoModelForCausalLM, AutoModel])
-    model = None
-    errors = []
-    for cls in classes:
-        try:
-            model = cls.from_pretrained(model_id, **load_kwargs)
-            if getattr(model, "hf_device_map", None) is None:
-                model = model.to(device)
-            model.eval()
-            print(f"[load] Modelo carregado via {cls.__name__}")
-            break
-        except Exception as exc:
-            errors.append(f"{cls.__name__}: {exc}")
-            print(f"[load] {cls.__name__} falhou: {exc}")
-    if model is None:
-        raise RuntimeError(
-            "Não foi possível carregar o modelo.\n"
-            "Gemma 4 Unified exige transformers recente (AutoModelForMultimodalLM).\n"
-            + "\n".join(errors)
+    hf_token = ensure_hf_login(resolve_hf_token())
+    try:
+        tokenizer = load_tokenizer(
+            model_id,
+            token=hf_token,
+            trust_remote_code=trust_remote_code,
         )
+        load_dtype = torch.float16 if device.type == "cuda" else torch.float32
+        load_kwargs = {
+            "token": hf_token,
+            "dtype": load_dtype,
+            "trust_remote_code": trust_remote_code,
+            "low_cpu_mem_usage": True,
+        }
+        if device.type == "cuda":
+            load_kwargs["device_map"] = "auto"
+        classes = []
+        if AutoModelForMultimodalLM is not None:
+            classes.append(AutoModelForMultimodalLM)
+        classes.extend([AutoModelForCausalLM, AutoModel])
+        model = None
+        errors = []
+        for cls in classes:
+            try:
+                model = cls.from_pretrained(model_id, **load_kwargs)
+                if getattr(model, "hf_device_map", None) is None:
+                    model = model.to(device)
+                model.eval()
+                print(f"[load] Modelo carregado via {cls.__name__}")
+                break
+            except Exception as exc:
+                errors.append(f"{cls.__name__}: {exc}")
+                print(f"[load] {cls.__name__} falhou: {exc}")
+                if is_gated_access_error(exc):
+                    raise RuntimeError(
+                        f"Modelo gated/restrito: {model_id}. "
+                        "Aceite o acesso no Hugging Face e configure o Secret HF_TOKEN no Colab."
+                    ) from exc
+        if model is None:
+            raise RuntimeError(
+                "Não foi possível carregar o modelo.\n" + "\n".join(errors)
+            )
+    except Exception as load_exc:
+        print(f"[Phase1] FALHA ao carregar modelo/tokenizer: {load_exc}")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        # Soft-fail: grava FAIL e retorna (main ainda tenta publicar; exit 0)
+        try:
+            from datetime import datetime, timezone
+            import json as _json
+            run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            gated = is_gated_access_error(load_exc)
+            fail_record = {
+                "timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "run_id": run_id,
+                "technology": "RIFT",
+                "model_id": model_id,
+                "battery_id": "P1_LOAD_MODEL",
+                "status": "FAIL",
+                "measurement_scope": "model_load",
+                "quality": {"full_local_gate_pass": False},
+                "metrics": {"error": str(load_exc)[:800], "gated": gated},
+                "notes": (
+                    f"Falha ao carregar {model_id}. "
+                    + (
+                        "Modelo gated: aceite os termos em https://huggingface.co/"
+                        + model_id
+                        + " e configure o Secret HF_TOKEN no Colab. "
+                        if gated else ""
+                    )
+                    + str(load_exc)
+                )[:1200],
+            }
+            fail_path = out_dir / "rift_test_batteries.json"
+            existing = []
+            if fail_path.is_file():
+                try:
+                    existing = _json.loads(fail_path.read_text(encoding="utf-8"))
+                    if not isinstance(existing, list):
+                        existing = []
+                except Exception:
+                    existing = []
+            existing = [r for r in existing if r.get("battery_id") != "P1_LOAD_MODEL"]
+            existing.append(fail_record)
+            fail_path.write_text(_json.dumps(existing, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            print(f"[BATTERY] P1_LOAD_MODEL FAIL gravada -> {fail_path}")
+        except Exception as rec_exc:
+            print(f"[Phase1] AVISO ao gravar FAIL: {rec_exc}")
+        return {"status": "FAIL", "error": str(load_exc)[:500]}
+
 
     state = model.state_dict()
     target_layer_name = resolve_linear_weight_name(model, target_layer_name)

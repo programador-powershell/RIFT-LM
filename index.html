@@ -112,24 +112,20 @@ details{margin-top:18px}.help{color:var(--muted);font-size:13px;line-height:1.6}
       <label class="check wide"><input id="trustRemoteInput" type="checkbox"> Permitir <code>trust_remote_code</code> — habilite apenas se confiar no repositório do modelo.</label>
     </div>
     <p class="help">O dashboard não executa GPU no navegador. Ele transforma o model ID/URL em comandos seguros para o Colab. A opção <code>auto</code> procura uma camada Linear compatível em Qwen, Llama, Gemma, Phi e outras famílias.</p>
-    <p class="help">Cole um <strong>model ID</strong> ou <strong>URL</strong> do Hugging Face para usar direto; digite texto livre para <strong>buscar e listar</strong>. Bloqueio só por tamanho de pesos (&gt;110&nbsp;GiB), não por nome da família. Modelos derivados/quantizados são aceitos se couberem no limite.</p>
+    <p class="help">Um único campo e uma única célula à direita. Cole <strong>URL</strong> ou <strong>org/modelo</strong> para gerar na hora; digite texto livre para buscar e clicar no resultado. Use <em>Adicionar à fila</em> só se quiser vários modelos em série. Limite: 110&nbsp;GiB de pesos.</p>
     <div class="actions wide">
       <button class="primary" id="addBatchModelBtn" type="button">Adicionar à fila serial</button>
       <button id="clearBatchQueueBtn" type="button">Limpar fila</button>
     </div>
     <div class="queueToolbar"><strong id="batchQueueCount">Fila vazia</strong></div>
     <div class="queueList" id="batchQueue"><div class="empty">Adicione modelos pela busca, URL ou ID.</div></div>
-    <div class="sub" style="margin-top:12px">Célula serial (quando a fila tiver itens):</div>
-    <pre class="commandBox queueCommand" id="batchCommandOutput" aria-live="polite"># Adicione modelos à fila para gerar a célula serial.</pre>
-    <div class="actions">
-      <button class="primary" id="copyBatchCommandBtn" type="button" disabled>Copiar lista serial</button>
-    </div>
+
   </div>
   <div>
-    <div class="sub">Cole esta célula no Colab após configurar <code>RIFT_INGEST_TOKEN</code> e, quando necessário, <code>HF_TOKEN</code> em Secrets. O endpoint é configurado pelo launcher:</div>
+    <div class="sub">Célula Colab (atualiza sozinha: 1 modelo ou fila serial). Configure <code>RIFT_INGEST_TOKEN</code> e, se o modelo for gated, <code>HF_TOKEN</code> nos Secrets:</div>
     <pre class="commandBox" id="commandOutput" aria-live="polite"></pre>
     <div class="actions">
-      <button class="primary" id="copyCommandBtn" type="button">Copiar célula</button>
+      <button class="primary" id="copyCommandBtn" type="button">Copiar célula Colab</button>
       <a class="button" id="openModelBtn" href="https://huggingface.co/Qwen/Qwen2.5-0.5B" target="_blank" rel="noopener">Abrir modelo</a>
       <a class="button" href="https://colab.research.google.com/" target="_blank" rel="noopener">Abrir Colab</a>
     </div>
@@ -490,6 +486,7 @@ function buildSerialColabCode(){
     "    with urlopen(request, timeout=60) as response:",
     "        path.write_bytes(response.read())",
     "",
+    "failures = []",
     "for index, task in enumerate(TASKS, start=1):",
     "    baseline_mb = gpu_memory_used_mb()",
     "    launcher_path = WORK_DIR / f'launcher_{index:03d}.py'",
@@ -501,20 +498,22 @@ function buildSerialColabCode(){
     "        process = subprocess.Popen([sys.executable, str(launcher_path)], env=CHILD_ENV)",
     "        return_code = process.wait()",
     "        if return_code != 0:",
-    "            raise RuntimeError(f'Benchmark terminou com código {return_code}; fila interrompida')",
-    "        print('[FILA] Benchmark publicado; processo encerrado.')",
+    "            print(f'[FILA] AVISO: benchmark terminou com código {return_code}; seguindo para o próximo item da fila.')",
+    "            failures.append(task.get('label') or task.get('url') or 'item')",
+    "        else:",
+    "            print('[FILA] Benchmark publicado; processo encerrado.')",
     "    finally:",
     "        launcher_path.unlink(missing_ok=True)",
     "        wait_for_resource_release(baseline_mb)",
     "",
-    "print('\\n[FILA] Todos os benchmarks foram concluídos e publicados em série.')",
+    "print(('\\n[FILA] Fila concluída com avisos.' if failures else '\\n[FILA] Todos os benchmarks foram concluídos e publicados em série.'))",
   ].join("\n")
 }
 function renderBatchQueue(){
   const root=$("batchQueue"),tasks=queueTasks();
-  $("batchQueueCount").textContent=state.queue.length?`${state.queue.length} modelo(s) • ${tasks.length} benchmark(s) em série`:"Fila vazia";
+  refreshColabCell();$("batchQueueCount").textContent=state.queue.length?`${state.queue.length} modelo(s) • ${tasks.length} benchmark(s) em série`:"Fila vazia";
   root.innerHTML=state.queue.length?state.queue.map((item,index)=>{const tech=item.technology==="all"?"RIFT + CASCADE + AETHER + SPECTRA + WINNER":item.technology.toUpperCase();return `<div class="queueItem"><span class="queueOrder">${index+1}</span><div><div class="queueModel">${esc(item.model)}</div><div class="queueMeta">${esc(tech)} • camada ${esc(item.target)}${item.trust?" • trust_remote_code":""}</div></div><button class="queueRemove" type="button" data-remove-index="${index}" aria-label="Remover ${esc(item.model)}">Remover</button></div>`}).join(""):'<div class="empty">Pesquise e selecione um ou mais modelos.</div>';
-  $("batchCommandOutput").textContent=buildSerialColabCode();$("copyBatchCommandBtn").disabled=!tasks.length;
+  refreshColabCell();
 }
 var batchSearchTimer=null;
 async function searchBatchModels(){
@@ -522,34 +521,27 @@ async function searchBatchModels(){
   if(query.length<2){hideModelSearchResults();status.textContent="Digite pelo menos 2 caracteres para buscar, ou cole um model ID / URL do Hugging Face.";status.className="note";return}
   const asId=normalizeModelInput(query);
   if(asId){
-    // URL ou org/modelo completo: valida tamanho e adiciona direto (sem lista de busca)
-    status.textContent="Model ID detectado — verificando tamanho dos pesos…";status.className="note warn";
-    const blockedReason=await colabBlockReason(asId);
-    if(blockedReason){hideModelSearchResults();status.textContent=blockedReason;status.className="note bad";return}
+    // URL ou org/modelo completo: gera a célula no painel único (não adiciona à fila sozinho)
     hideModelSearchResults();
-    await addQueueModel(asId);
+    status.textContent="Model ID/URL detectado — gerando célula…";
+    status.className="note warn";
+    await refreshColabCell();
     return;
   }
   status.textContent="Buscando modelos no Hugging Face…";status.className="note warn";
   try{const response=await fetch(`/api/models?q=${encodeURIComponent(query)}`,{cache:"force-cache"}),body=await response.json().catch(()=>({}));if(requestId!==state.modelSearchRequest)return;if(!response.ok||!body.ok)throw new Error(body.error||`HTTP ${response.status}`);renderModelSearchResults(body.models||[]);status.textContent=`${body.models?.length||0} modelo(s) encontrado(s). Selecione para adicionar.`;status.className="note good"}catch(error){if(requestId!==state.modelSearchRequest)return;renderModelSearchResults([],"Busca indisponível");status.textContent=`Não foi possível buscar: ${error.message}`;status.className="note bad"}
 }
-async function updateCommand(){
-  const model=normalizeModelInput($("modelInput").value),tech=$("technologyInput").value,target=$("targetLayerInput").value.trim()||"auto";
-  if(!model){$("commandOutput").textContent="# Informe org/modelo ou uma URL válida do Hugging Face.";$("modelValidation").textContent="Formato inválido. Exemplo: microsoft/Phi-3.5-mini-instruct";$("modelValidation").className="note bad";$("openModelBtn").href="https://huggingface.co/models";return}
-  $("openModelBtn").href=`https://huggingface.co/${model}`;
-  $("modelValidation").textContent="Verificando tamanho dos pesos no Hugging Face…";$("modelValidation").className="note warn";
-  const blockedReason=await colabBlockReason(model);
-  if(blockedReason){$("commandOutput").textContent="# Teste não gerado: pesos acima do limite de 110 GiB (ou modelo inacessível).";$("modelValidation").textContent=blockedReason;$("modelValidation").className="note bad";return}
-  const sizeNote=formatSizeNote(model);
-  if(!/^(auto|[A-Za-z0-9_.-]+)$/.test(target)){$("commandOutput").textContent="# Informe 'auto' ou um nome de tensor válido.";$("modelValidation").textContent="Camada inválida; use apenas letras, números, ponto, hífen e sublinhado.";$("modelValidation").className="note bad";return}
-  const trust=$("trustRemoteInput").checked,technologies=tech==="all"?["rift","cascade","aether","spectra","winner"]:[tech],commands=technologies.map(technology=>`!curl -fsSL "${launcherUrl(technology,model,target,trust)}" -o /content/${technology}_launcher.py && python /content/${technology}_launcher.py`);
-  const tokenizerDeps=[
+
+function buildSingleColabCode(model, tech, target, trust){
+  const technologies = tech==="all"?["rift","cascade","aether","spectra","winner"]:[tech];
+  const commands = technologies.map(technology=>`!curl -fsSL "${launcherUrl(technology,model,target,trust)}" -o /content/${technology}_launcher.py && python /content/${technology}_launcher.py`);
+  const tokenizerDeps = [
     "# Instala dependências de tokenizer antes dos launchers (evita erro slow→fast em AutoTokenizer).",
     "import subprocess, sys",
     "print('[RIFT] Garantindo sentencepiece e tiktoken...')",
     "subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', '-U', 'transformers', 'accelerate', 'tokenizers', 'sentencepiece>=0.2.0', 'tiktoken>=0.7.0'])",
   ];
-  const cleanupLines=[
+  const cleanupLines = [
     "",
     "# Limpeza FINAL do Colab (após TODAS as tecnologias) — libera HF hub + tmp.",
     "import gc, shutil, glob, os",
@@ -572,21 +564,78 @@ async function updateCommand(){
     "        print('[cleanup-final] removido', m)",
     "print('[cleanup-final] Colab pronto para outro modelo')",
   ];
-  $("commandOutput").textContent=[...colabSecretBootstrapLines(),"",...tokenizerDeps,"",...commands,...cleanupLines].join("\n");$("modelValidation").textContent=`Modelo normalizado: ${model}. ${sizeNote} A célula lê RIFT_INGEST_TOKEN no kernel e o transfere aos launchers sem exibir o valor. sentencepiece/tiktoken são instalados automaticamente.`;$("modelValidation").className="note good";
+  return [...colabSecretBootstrapLines(), "", ...tokenizerDeps, "", ...commands, ...cleanupLines].join("\n");
 }
+
+/** Único gerador de célula: fila serial se houver itens; senão o model ID atual. */
+async function refreshColabCell(){
+  const out = $("commandOutput");
+  const status = $("modelValidation");
+  const tech = $("technologyInput").value;
+  const target = ($("targetLayerInput").value.trim() || "auto");
+  const trust = $("trustRemoteInput").checked;
+  const tasks = typeof queueTasks === "function" ? queueTasks() : [];
+
+  if(state.queue && state.queue.length){
+    out.textContent = buildSerialColabCode();
+    $("copyCommandBtn").disabled = false;
+    const models = state.queue.map(q=>q.model).join(", ");
+    status.textContent = `Fila: ${state.queue.length} modelo(s) • ${tasks.length} benchmark(s) em série — ${models}`;
+    status.className = "note good";
+    const first = state.queue[0];
+    if(first) $("openModelBtn").href = `https://huggingface.co/${first.model}`;
+    return;
+  }
+
+  const model = normalizeModelInput($("modelInput").value);
+  if(!model){
+    out.textContent = "# Cole um model ID ou URL do Hugging Face, ou adicione modelos à fila.\\n# Exemplo: Qwen/Qwen2.5-0.5B  ou  https://huggingface.co/google/gemma-4-E4B-it";
+    status.textContent = "Informe org/modelo, cole uma URL, busque pelo nome, ou adicione à fila.";
+    status.className = "note";
+    $("openModelBtn").href = "https://huggingface.co/models";
+    $("copyCommandBtn").disabled = true;
+    return;
+  }
+  $("openModelBtn").href = `https://huggingface.co/${model}`;
+  status.textContent = "Verificando tamanho dos pesos no Hugging Face…";
+  status.className = "note warn";
+  const blockedReason = await colabBlockReason(model);
+  if(blockedReason){
+    out.textContent = "# Teste não gerado: pesos acima do limite de 110 GiB (ou modelo inacessível).";
+    status.textContent = blockedReason;
+    status.className = "note bad";
+    $("copyCommandBtn").disabled = true;
+    return;
+  }
+  if(!/^(auto|[A-Za-z0-9_.-]+)$/.test(target)){
+    out.textContent = "# Informe 'auto' ou um nome de tensor válido.";
+    status.textContent = "Camada inválida; use apenas letras, números, ponto, hífen e sublinhado.";
+    status.className = "note bad";
+    $("copyCommandBtn").disabled = true;
+    return;
+  }
+  out.textContent = buildSingleColabCode(model, tech, target, trust);
+  $("copyCommandBtn").disabled = false;
+  const sizeNote = formatSizeNote(model);
+  status.textContent = `Modelo: ${model}. ${sizeNote} Célula única pronta — ou adicione mais modelos à fila para gerar a serial.`;
+  status.className = "note good";
+}
+
+async function updateCommand(){ return refreshColabCell(); }
+
 
 $("files").addEventListener("change",e=>loadFiles([...e.target.files]));$("reloadBtn").addEventListener("click",()=>{state.dataSource="published";state.publishedFingerprint=null;state.records=[];state.analysis=null;state.analysisError=null;state.ranking=[];loadPublishedData()});$("clearBtn").addEventListener("click",()=>{state.dataSource="cleared";state.records=[];state.analysis=null;state.analysisError=null;state.ranking=[];render();$("dataStatus").textContent="Dados removidos da visualização. Use Recarregar publicado para retomar o modo ao vivo.";$("dataStatus").className="sub"});["modelFilter","technologyFilter","batteryFilter"].forEach(id=>$(id).addEventListener("change",render));$("compareModel").addEventListener("change",renderCompare);$("analyzeBtn").addEventListener("click",()=>requestAIAnalysis(true));
 $("modelPreset").addEventListener("change",e=>{if(e.target.value!=="custom"){$("modelInput").value=e.target.value;updateCommand();if(e.target.value==="moonshotai/Kimi-K3")$("trustRemoteInput").checked=true}else $("modelInput").focus();updateCommand()});["technologyInput","targetLayerInput","trustRemoteInput"].forEach(id=>$(id).addEventListener("input",updateCommand));
 $("modelInput").addEventListener("change",updateCommand);
 $("modelInput").addEventListener("blur",()=>{ if(normalizeModelInput($("modelInput").value)) updateCommand(); });
 $("copyCommandBtn").addEventListener("click",async()=>{try{await navigator.clipboard.writeText($("commandOutput").textContent);const old=$("copyCommandBtn").textContent;$("copyCommandBtn").textContent="Copiado!";setTimeout(()=>$("copyCommandBtn").textContent=old,1500)}catch{alert("Não foi possível copiar automaticamente; selecione o texto da célula.")}});
-$("modelInput").addEventListener("input",()=>{clearTimeout(batchSearchTimer);batchSearchTimer=setTimeout(searchBatchModels,300)});
+$("modelInput").addEventListener("input",()=>{clearTimeout(batchSearchTimer);batchSearchTimer=setTimeout(async()=>{const q=$("modelInput").value.trim();if(normalizeModelInput(q)){await refreshColabCell();return}await searchBatchModels()},300)});
 $("modelInput").addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();addQueueModel(event.currentTarget.value)}});
 $("modelSearchResults").addEventListener("click",async event=>{const button=event.target.closest("[data-model]");if(!button)return;$("modelInput").value=button.dataset.model;hideModelSearchResults();await updateCommand();await addQueueModel(button.dataset.model);});
 $("addBatchModelBtn").addEventListener("click",()=>addQueueModel($("modelInput").value));
 $("batchQueue").addEventListener("click",event=>{const button=event.target.closest("[data-remove-index]");if(!button)return;state.queue.splice(Number(button.dataset.removeIndex),1);renderBatchQueue()});
 $("clearBatchQueueBtn").addEventListener("click",()=>{state.queue=[];renderBatchQueue();$("modelSearchStatus").textContent="Fila removida.";$("modelSearchStatus").className="note"});
-$("copyBatchCommandBtn").addEventListener("click",async()=>{try{await navigator.clipboard.writeText($("batchCommandOutput").textContent);const old=$("copyBatchCommandBtn").textContent;$("copyBatchCommandBtn").textContent="Lista copiada!";setTimeout(()=>$("copyBatchCommandBtn").textContent=old,1500)}catch{alert("Não foi possível copiar automaticamente; selecione o código da fila.")}});
+$("copyCommandBtn").addEventListener("click",async()=>{try{await navigator.clipboard.writeText($("commandOutput").textContent);const old=$("copyCommandBtn").textContent;$("copyCommandBtn").textContent="Lista copiada!";setTimeout(()=>$("copyCommandBtn").textContent=old,1500)}catch{alert("Não foi possível copiar automaticamente; selecione o código da fila.")}});
 $("demoBtn").addEventListener("click",()=>{state.dataSource="demo";state.records=[normalizePreferred({timestamp_utc:"2026-08-09T14:56:43Z",run_id:"demo-rift",technology:"RIFT",model_id:"Qwen/Qwen2.5-1.5B-Instruct",battery_id:"P1_Q4_LINEAR_BASE_PLUS_REF_4BIT",status:"EXPERIMENTAL_FAIL",comparison_role:"primary",baseline_ram_bytes:13000000,candidate_ram_bytes:14000000,baseline_disk_bytes:12000000,candidate_disk_bytes:1500000,quality:{full_local_gate_pass:false,output:{cosine:.9803,nrmse:.0068}},metrics:{operation:{baseline_median_ms:.07,candidate_median_ms:3.3,speedup_x:.021}}},"demo"),normalizePreferred({timestamp_utc:"2026-08-09T15:02:00Z",run_id:"demo-cascade",technology:"CASCADE",model_id:"Qwen/Qwen2.5-1.5B-Instruct",battery_id:"P1_CASCADE_GATED_F0_PLUS_F1",status:"EXPERIMENTAL_FAIL",comparison_role:"primary",baseline_ram_bytes:13000000,candidate_ram_bytes:3400000,baseline_disk_bytes:12000000,candidate_disk_bytes:3100000,quality:{full_local_gate_pass:false,output:{cosine:.972,nrmse:.011}},metrics:{operation:{baseline_median_ms:.07,candidate_median_ms:.18,speedup_x:.389},cascade:{stage_activation_rate:.5}}},"demo"),normalizePreferred({timestamp_utc:"2026-08-09T15:06:00Z",run_id:"demo-aether",technology:"AETHER",model_id:"Qwen/Qwen2.5-1.5B-Instruct",battery_id:"P1_AETHER_HQR_PLUS_TADDS_DYNAMIC",status:"EXPERIMENTAL_FAIL",comparison_role:"primary",baseline_ram_bytes:13000000,candidate_ram_bytes:5200000,baseline_disk_bytes:12000000,candidate_disk_bytes:900000,quality:{full_local_gate_pass:false,weight:{cosine:.958},output:{cosine:.987,nrmse:.0045}},metrics:{operation:{baseline_median_ms:.07,candidate_median_ms:.12,speedup_x:.583},aether:{stage_activation_rate:.1875,hqr_ans_native:false,pio_async_native:false,srfa_fused_native:false}}},"demo"),normalizePreferred({timestamp_utc:"2026-08-09T15:10:00Z",run_id:"demo-spectra",technology:"SPECTRA",model_id:"Qwen/Qwen2.5-1.5B-Instruct",battery_id:"P1_SPECTRA_HQR_PLUS_TADDS_DYNAMIC",status:"EXPERIMENTAL_FAIL",comparison_role:"primary",baseline_ram_bytes:13000000,candidate_ram_bytes:4800000,baseline_disk_bytes:12000000,candidate_disk_bytes:1100000,quality:{full_local_gate_pass:false,weight:{cosine:.962},output:{cosine:.991,nrmse:.0038}},metrics:{operation:{baseline_median_ms:.07,candidate_median_ms:.1,speedup_x:.7},spectra:{stage_activation_rate:.15,single_layer_drift_proxy_max:.061,hqr_ans_native:false,pio_async_native:false,fused_kernel_native:false,drift_compensation_native:false,speculative_path_native:false}}},"demo"),normalizePreferred({timestamp_utc:"2026-08-09T15:14:00Z",run_id:"demo-winner",technology:"WINNER",model_id:"Qwen/Qwen2.5-1.5B-Instruct",battery_id:"P1_WINNER_F0_PLUS_LS",status:"PASS",comparison_role:"primary",baseline_ram_bytes:13000000,candidate_ram_bytes:4200000,baseline_disk_bytes:12000000,candidate_disk_bytes:1800000,quality:{full_local_gate_pass:true,weight:{cosine:.975},output:{cosine:.994,nrmse:.003}},metrics:{operation:{baseline_median_ms:.07,candidate_median_ms:.15,speedup_x:.467},winner:{stage_activation_rate:1,cpp_self_test_pass:true,native_lowbit_model_kernel:false}}},"demo")];state.analysis=null;state.analysisError=null;state.ranking=[];render();requestAIAnalysis(true)});
 const executionTools=$("executionTools");document.querySelector(".toolbar").before(executionTools);
 updateCommand();renderBatchQueue();loadPublishedData();

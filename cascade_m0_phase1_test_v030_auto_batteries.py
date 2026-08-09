@@ -634,6 +634,61 @@ def publish_to_vercel(path: Path | None = None, *, mode: str, endpoint: str | No
 
 
 
+
+def resolve_hf_token() -> str | None:
+    """HF_TOKEN / HUGGING_FACE_HUB_TOKEN a partir do ambiente ou Secrets do Colab."""
+    for name in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_HUB_TOKEN", "HUGGINGFACE_TOKEN"):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    try:
+        from google.colab import userdata
+        for name in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "HUGGINGFACE_HUB_TOKEN"):
+            try:
+                value = str(userdata.get(name) or "").strip()
+            except Exception:
+                value = ""
+            if value:
+                # Espelha no ambiente para transformers/huggingface_hub
+                os.environ.setdefault("HF_TOKEN", value)
+                os.environ.setdefault("HUGGING_FACE_HUB_TOKEN", value)
+                return value
+    except Exception:
+        pass
+    return None
+
+
+def ensure_hf_login(token: str | None = None) -> str | None:
+    """Autentica no Hugging Face Hub quando há token (modelos gated)."""
+    token = token or resolve_hf_token()
+    if not token:
+        return None
+    try:
+        from huggingface_hub import login as hf_login
+        hf_login(token=token, add_to_git_credential=False)
+        print("[auth] HF_TOKEN aplicado (valor não exibido).")
+    except Exception as exc:
+        print(f"[auth] AVISO: não foi possível fazer login no Hub: {exc}")
+    return token
+
+
+def is_gated_access_error(exc: BaseException) -> bool:
+    text = f"{type(exc).__name__}: {exc}".lower()
+    markers = (
+        "gated repo",
+        "access to model",
+        "restricted",
+        "401 client error",
+        "403 client error",
+        "cannot access gated",
+        "you must have access",
+        "please log in",
+        "authentication",
+        "authorized",
+    )
+    return any(m in text for m in markers)
+
+
 def resolve_torch_device(requested: str):
     """cuda se disponível; senão CPU (Colab sem GPU / TPU sem CUDA)."""
     requested = (requested or "auto").strip().lower()
@@ -737,13 +792,18 @@ def cleanup_colab_workspace(*, label: str = "battery", wipe_hf_cache: bool = Fal
 
 
 
+
 def load_tokenizer(model_id: str, *, trust_remote_code: bool = False, token: str | None = None):
     """Carrega tokenizer com fallbacks (subfolder, use_fast=False).
 
-    Modelos multimodais/diffusers (ex.: MiniMax-H3) guardam o tokenizer em
-    subpastas; AutoTokenizer na raiz falha com mensagem enganosa de sentencepiece/tiktoken.
+    Para de tentar subpastas se o Hub responder 401/gated — o problema é auth,
+    não layout de arquivos.
     """
-    common = {"trust_remote_code": trust_remote_code, "token": token}
+    token = token or resolve_hf_token()
+    ensure_hf_login(token)
+    common = {"trust_remote_code": trust_remote_code}
+    if token:
+        common["token"] = token
     attempts = [
         {},
         {"use_fast": False},
@@ -751,8 +811,6 @@ def load_tokenizer(model_id: str, *, trust_remote_code: bool = False, token: str
         {"subfolder": "tokenizer", "use_fast": False},
         {"subfolder": "processor"},
         {"subfolder": "processor", "use_fast": False},
-        {"subfolder": "text_encoder"},
-        {"subfolder": "text_encoder", "use_fast": False},
     ]
     errors: list[str] = []
     for extra in attempts:
@@ -762,13 +820,18 @@ def load_tokenizer(model_id: str, *, trust_remote_code: bool = False, token: str
             return tok
         except Exception as exc:
             errors.append(f"{extra or 'root'}: {type(exc).__name__}: {exc}")
+            if is_gated_access_error(exc):
+                raise RuntimeError(
+                    f"Modelo gated/restrito: {model_id}.\n"
+                    "1) Aceite os termos em https://huggingface.co/" + model_id + "\n"
+                    "2) Configure o Secret HF_TOKEN no Colab (token com acesso de leitura).\n"
+                    "3) Rode de novo. Sem token válido a bateria grava FAIL e segue a fila."
+                ) from exc
     raise RuntimeError(
         "Não foi possível carregar o tokenizer de "
-        f"{model_id}.\n"
-        "Possíveis causas: (1) arquivos só em subpasta; (2) modelo diffusers/vídeo "
-        "sem checkpoint Transformers CausalLM; (3) tokenizers desatualizado.\n"
-        "Tentativas:\n- " + "\n- ".join(errors)
+        f"{model_id}.\nTentativas:\n- " + "\n- ".join(errors)
     )
+
 
 
 def run_phase1(args: argparse.Namespace) -> Path:
@@ -776,7 +839,7 @@ def run_phase1(args: argparse.Namespace) -> Path:
     device = resolve_torch_device(args.device)
     model_id = normalize_huggingface_model_id(args.model)
     print(f"[Phase1] Carregando {model_id} em {device}...")
-    hf_token = read_setting("HF_TOKEN")
+    hf_token = ensure_hf_login(resolve_hf_token())
     try:
         tokenizer = load_tokenizer(model_id, trust_remote_code=args.trust_remote_code, token=hf_token)
         load_dtype = torch.float16 if device.type == "cuda" else torch.float32
@@ -824,9 +887,13 @@ def run_phase1(args: argparse.Namespace) -> Path:
             quality={"full_local_gate_pass": False},
             metrics={"error": str(load_exc)[:800]},
             notes=(
-                f"Falha ao carregar {model_id}. Modelos diffusers/vídeo "
-                "(ex. MiniMax-H3) não são suportados por esta bateria CausalLM. "
-                f"Detalhe: {load_exc}"
+                f"Falha ao carregar {model_id}. "
+                + (
+                    "Modelo gated/restrito: aceite os termos no Hugging Face e configure o Secret HF_TOKEN no Colab. "
+                    if is_gated_access_error(load_exc) else
+                    "Modelos diffusers/vídeo ou formato incompatível podem falhar nesta bateria CausalLM. "
+                )
+                + f"Detalhe: {load_exc}"
             )[:1200],
         )
         return recorder.json_path
