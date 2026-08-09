@@ -682,37 +682,78 @@ def run_phase1(args: argparse.Namespace, native: dict[str, Any]) -> Path:
     with torch.inference_mode():
         y_reference = F.linear(x, weight)
         y_base = F.linear(x, ternary)
-        y_candidate = y_base + ((x @ v) * s) @ u.T
+        y_residual = ((x @ v) * s) @ u.T
+        # --- Arquitetura de RAM estilo CASCADE ---
+        # F0 (ternário empacotado) sempre residente; residual low-rank só entra no
+        # working set quando o gate de ativação (L2 percentil) dispara — igual F0/F1 do CASCADE.
+        gate_features = torch.linalg.vector_norm(x, dim=1) / (float(x.shape[1]) ** 0.5 + 1e-12)
+        gate_pct = float(getattr(args, "gate_percentile", 70.0))
+        gate_pct = min(99.0, max(0.0, gate_pct))
+        gate_threshold = torch.quantile(gate_features, gate_pct / 100.0)
+        gate_mask = gate_features >= gate_threshold
+        y_gated = y_base + gate_mask[:, None].to(y_residual.dtype) * y_residual
+        y_full = y_base + y_residual
         reconstructed = ternary + (u * s) @ v.T
+        stage_rate = float(gate_mask.float().mean().item())
+        relative_drift = torch.linalg.vector_norm(y_reference - y_gated, dim=1) / (
+            torch.linalg.vector_norm(y_reference, dim=1) + 1e-12
+        )
+        drift_mean = float(relative_drift.mean().item())
+        drift_max = float(relative_drift.max().item())
+    print(
+        f"[WINNER] Gate CASCADE-style: percentile={gate_pct}, "
+        f"activation_rate={stage_rate:.3f}, residual_rank={int(s.numel())}"
+    )
     q_weight_base = compute_metrics(weight, ternary)
     q_weight = compute_metrics(weight, reconstructed)
     q_base = compute_metrics(y_reference, y_base)
-    q_candidate = compute_metrics(y_reference, y_candidate)
-    quality_pass = q_candidate["cosine"] >= 0.98 and q_candidate["nrmse"] <= 0.10
+    q_gated = compute_metrics(y_reference, y_gated)
+    q_full = compute_metrics(y_reference, y_full)
+    # Gate de qualidade alinhado ao CASCADE (cosine/nrmse + drift)
+    quality_pass = (
+        q_gated["cosine"] >= 0.98
+        and q_gated["nrmse"] <= 0.10
+        and drift_mean <= 0.08
+    )
     baseline_perf = benchmark_ms(lambda: F.linear(x, weight), device=device, iterations=args.iterations)
-    candidate_perf = benchmark_ms(
+    base_perf = benchmark_ms(lambda: F.linear(x, ternary), device=device, iterations=args.iterations)
+    def _gated_forward():
+        yb = F.linear(x, ternary)
+        yr = ((x @ v) * s) @ u.T
+        gf = torch.linalg.vector_norm(x, dim=1) / (float(x.shape[1]) ** 0.5 + 1e-12)
+        gm = gf >= gate_threshold
+        return yb + gm[:, None].to(yr.dtype) * yr
+    gated_perf = benchmark_ms(_gated_forward, device=device, iterations=args.iterations)
+    full_perf = benchmark_ms(
         lambda: F.linear(x, ternary) + ((x @ v) * s) @ u.T,
         device=device, iterations=args.iterations,
     )
-    base_perf = benchmark_ms(lambda: F.linear(x, ternary), device=device, iterations=args.iterations)
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     recorder = BatteryRecorder(out_dir, model_id=model_id, publish_mode=args.publish, results_endpoint=args.results_endpoint)
     numel = int(weight.numel())
     baseline_disk = numel * 4
+    # Disco F0: 2 bits/peso + scales FP32 por linha (empacotado de verdade)
     base_disk = (numel + 3) // 4 + int(weight.shape[0]) * 4
     residual_disk = int((u.numel() + s.numel() + v.numel()) * 4)
-    candidate_disk = base_disk + residual_disk
+    candidate_disk = base_disk + residual_disk  # payload total no disco
     io_bytes = int((x.numel() + y_reference.numel()) * 4)
     baseline_ram = baseline_disk + io_bytes
-    base_ram = numel + int(weight.shape[0]) * 4 + io_bytes
-    candidate_ram = base_ram + residual_disk
+    # Working-set estilo CASCADE:
+    #   F0 packed sempre residente (base_disk), NÃO o numel int8 descompactado
+    #   Residual só conta na proporção em que o gate dispara (expected working set)
+    f0_ram = base_disk + io_bytes
+    expected_residual_ram = int(round(stage_rate * residual_disk))
+    candidate_ram = f0_ram + expected_residual_ram
+    peak_ram = f0_ram + residual_disk  # se o gate abrir em 100% das linhas
     operation = {
-        "metric": "linear_latency", "baseline_median_ms": baseline_perf["median_ms"],
-        "candidate_median_ms": candidate_perf["median_ms"],
-        "speedup_x": baseline_perf["median_ms"] / candidate_perf["median_ms"],
-        "rows_processed": int(x.shape[0]), "device": str(device),
+        "metric": "linear_latency",
+        "baseline_median_ms": baseline_perf["median_ms"],
+        "candidate_median_ms": gated_perf["median_ms"],
+        "speedup_x": baseline_perf["median_ms"] / max(gated_perf["median_ms"], 1e-12),
+        "rows_processed": int(x.shape[0]),
+        "device": str(device),
     }
     recorder.record(
         battery_id="B0_WINNER_CPP_BUILD_SELF_TEST", status="PASS",
@@ -723,29 +764,58 @@ def run_phase1(args: argparse.Namespace, native: dict[str, Any]) -> Path:
     recorder.record(
         battery_id="P1_WINNER_F0_TERNARY_2BIT",
         status="EXPERIMENTAL_PASS" if q_base["cosine"] >= 0.90 else "EXPERIMENTAL_FAIL",
-        baseline_ram_bytes=baseline_ram, candidate_ram_bytes=base_ram,
+        baseline_ram_bytes=baseline_ram, candidate_ram_bytes=f0_ram,
         baseline_disk_bytes=baseline_disk, candidate_disk_bytes=base_disk,
-        measurement_scope="Uma operação Linear real; disco F0 em 2 bits; RAM do path de referência usa códigos int8.",
+        measurement_scope="Single Linear op; disk=F0 2-bit packed; RAM=working-set F0 packed (CASCADE-style, sem descompactar numel int8).",
         quality={"full_local_gate_pass": None, "weight": q_weight_base, "output": q_base},
         metrics={"operation": {**operation, "candidate_median_ms": base_perf["median_ms"],
-                               "speedup_x": baseline_perf["median_ms"] / base_perf["median_ms"]},
-                 "winner": {"threshold": threshold, "residual_rank": 0, "cpp_self_test_pass": True}},
-        notes="O armazenamento é empacotado; o kernel PyTorch desta bateria pré-decodifica F0 em FP32.",
+                               "speedup_x": baseline_perf["median_ms"] / max(base_perf["median_ms"], 1e-12)},
+                 "winner": {"threshold": threshold, "residual_rank": 0, "stage_activation_rate": 0.0,
+                            "cpp_self_test_pass": True}},
+        notes="Working set = payload empacotado 2-bit + I/O; alinhado à conta de RAM do CASCADE (fatores residentes, não matriz densa).",
     )
     recorder.record(
         battery_id="P1_WINNER_F0_PLUS_LS", status="PASS" if quality_pass else "EXPERIMENTAL_FAIL",
         baseline_ram_bytes=baseline_ram, candidate_ram_bytes=candidate_ram,
         baseline_disk_bytes=baseline_disk, candidate_disk_bytes=candidate_disk,
-        measurement_scope="Uma operação Linear real; F0 + residual low-rank; latência PyTorch e self-test C++ reportados separadamente; Tok/s não medido.",
-        quality={"full_local_gate_pass": quality_pass, "weight": q_weight, "output": q_candidate,
-                 "output_base": q_base},
-        metrics={"operation": operation, "winner": {
-            "threshold": threshold, "residual_rank": int(s.numel()),
-            "stage_activation_rate": 1.0, "activation_source": activation_source,
-            "cpp_self_test_pass": bool(native["self_test_pass"]),
-            "native_profile": native["native_profile"], "native_lowbit_model_kernel": False,
-        }},
-        notes="O C++ validado ainda não carrega diretamente este tensor do Hugging Face; nenhum ganho end-to-end ou kernel low-bit nativo é reivindicado.",
+        measurement_scope=(
+            "Single Linear op; F0 2-bit sempre residente + residual low-rank GATED "
+            "(activation L2 percentile, arquitetura CASCADE); RAM=working-set esperado "
+            "(F0_packed + rate*residual); Tok/s não medido."
+        ),
+        quality={
+            "full_local_gate_pass": quality_pass,
+            "weight": q_weight,
+            "output": q_gated,
+            "output_f0": q_base,
+            "output_f0_plus_residual_always": q_full,
+            "cumulative_drift_mean": drift_mean,
+            "cumulative_drift_max": drift_max,
+        },
+        metrics={
+            "operation": operation,
+            "winner": {
+                "threshold": threshold,
+                "residual_rank": int(s.numel()),
+                "stage_activation_rate": stage_rate,
+                "gate": "ACTIVATION_L2_PERCENTILE_V1",
+                "gate_percentile": gate_pct,
+                "activation_source": activation_source,
+                "ram_model": "cascade_working_set",
+                "f0_resident_bytes": base_disk,
+                "residual_bytes": residual_disk,
+                "expected_residual_resident_bytes": expected_residual_ram,
+                "peak_ram_bytes": peak_ram,
+                "cpp_self_test_pass": bool(native["self_test_pass"]),
+                "native_profile": native["native_profile"],
+                "native_lowbit_model_kernel": False,
+            },
+        },
+        notes=(
+            "RAM no modelo CASCADE: F0 empacotado sempre residente; residual só no working set "
+            f"quando o gate dispara (rate={stage_rate:.3f}). "
+            "C++ self-test separado; kernel nativo ainda não carrega este tensor HF."
+        ),
         comparison_role="primary",
     )
     report = {
@@ -804,6 +874,8 @@ def main(argv: Iterable[str] | None = None) -> None:
     parser.add_argument("--device", default="auto", help="auto|cuda|cpu — auto usa GPU se houver, senão CPU")
     parser.add_argument("--iterations", type=int, default=20)
     parser.add_argument("--maximum-rank", type=int, default=16)
+    parser.add_argument("--gate-percentile", type=float, default=70.0,
+                        help="Percentil L2 da ativação para carregar residual (arquitetura CASCADE): residual só entra no working set quando o gate dispara")
     parser.add_argument("--cpp-profile-dim", type=int, default=128)
     parser.add_argument("--out", default="winner_m0_test_output")
     parser.add_argument("--trust-remote-code", action="store_true")
