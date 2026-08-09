@@ -4089,6 +4089,111 @@
     "run_id": "20260809T232249Z-ae61d6eb",
     "technology": "WINNER",
     "model_id": "google/gemma-4-E4B-it",
+    "battery_id": "P1_WINNER_F0_PLUS_LS",
+    "status": "EXPERIMENTAL_FAIL",
+    "measurement_scope": "Single Linear op; F0 2-bit sempre residente + residual low-rank GATED (activation L2 percentile, arquitetura CASCADE); RAM=working-set esperado (F0_packed + rate*residual); Tok/s não medido.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "weight": {
+        "cosine": 0.5660957098007202,
+        "nrmse": 0.890684962272644
+      },
+      "output": {
+        "cosine": 0.7770277857780457,
+        "nrmse": 0.6321995258331299
+      },
+      "output_f0": {
+        "cosine": 0.6916345357894897,
+        "nrmse": 0.7458054423332214
+      },
+      "output_f0_plus_residual_always": {
+        "cosine": 0.8816314935684204,
+        "nrmse": 0.4722145199775696
+      },
+      "cumulative_drift_mean": 0.6762419939041138,
+      "cumulative_drift_max": 0.8079795241355896
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.15779949999999998,
+        "candidate_median_ms": 0.25568,
+        "speedup_x": 0.6171757665832289,
+        "rows_processed": 12,
+        "device": "cuda"
+      },
+      "winner": {
+        "threshold": 0.5,
+        "residual_rank": 16,
+        "stage_activation_rate": 0.3333333432674408,
+        "gate": "ACTIVATION_L2_PERCENTILE_V1",
+        "gate_percentile": 70,
+        "activation_source": "real_model_activation",
+        "ram_model": "cascade_working_set",
+        "f0_resident_bytes": 1318912,
+        "residual_bytes": 294976,
+        "expected_residual_resident_bytes": 98325,
+        "peak_ram_bytes": 1835072,
+        "cpp_self_test_pass": true,
+        "native_profile": {
+          "dim": 128,
+          "layers": 2,
+          "tokens": 4,
+          "profiles": [
+            {
+              "profile": "MINMEM",
+              "rank": 0,
+              "us_gemv": 9.00853,
+              "ms_tok": 0.037779,
+              "tok_s": 26469.7,
+              "rss_mb": 0.00878906,
+              "residual_pct": 0
+            },
+            {
+              "profile": "FAST",
+              "rank": 16,
+              "us_gemv": 10.7358,
+              "ms_tok": 0.03619,
+              "tok_s": 27631.9,
+              "rss_mb": 0.0244141,
+              "residual_pct": 25
+            },
+            {
+              "profile": "BALANCED",
+              "rank": 64,
+              "us_gemv": 12.934,
+              "ms_tok": 0.0444958,
+              "tok_s": 22474.1,
+              "rss_mb": 0.0712891,
+              "residual_pct": 56.25
+            },
+            {
+              "profile": "SAFE",
+              "rank": 128,
+              "us_gemv": 21.2962,
+              "ms_tok": 0.084659,
+              "tok_s": 11812.1,
+              "rss_mb": 0.133789,
+              "residual_pct": 93.75
+            }
+          ]
+        },
+        "native_lowbit_model_kernel": false
+      }
+    },
+    "notes": "RAM no modelo CASCADE: F0 empacotado sempre residente; residual só no working set quando o gate dispara (rate=0.333). C++ self-test separado; kernel nativo ainda não carrega este tensor HF.",
+    "baseline_ram_bytes": 21192704,
+    "candidate_ram_bytes": 1638421,
+    "baseline_disk_bytes": 20971520,
+    "candidate_disk_bytes": 1613888,
+    "comparison_role": "primary"
+  },
+  {
+    "schema_version": 1,
+    "timestamp_utc": "2026-08-09T23:22:49Z",
+    "run_id": "20260809T232249Z-ae61d6eb",
+    "technology": "WINNER",
+    "model_id": "google/gemma-4-E4B-it",
     "battery_id": "P1_WINNER_F0_TERNARY_2BIT",
     "status": "EXPERIMENTAL_FAIL",
     "measurement_scope": "Single Linear op; disk=F0 2-bit packed; RAM=working-set F0 packed (CASCADE-style, sem descompactar numel int8).",
