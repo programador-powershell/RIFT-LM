@@ -3844,6 +3844,111 @@
     "run_id": "20260809T231442Z-c9ec1925",
     "technology": "WINNER",
     "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_WINNER_F0_PLUS_LS",
+    "status": "EXPERIMENTAL_FAIL",
+    "measurement_scope": "Single Linear op; F0 2-bit sempre residente + residual low-rank GATED (activation L2 percentile, arquitetura CASCADE); RAM=working-set esperado (F0_packed + rate*residual); Tok/s não medido.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "weight": {
+        "cosine": 0.5839565396308899,
+        "nrmse": 0.8767431974411011
+      },
+      "output": {
+        "cosine": 0.8552576899528503,
+        "nrmse": 0.5190341472625732
+      },
+      "output_f0": {
+        "cosine": 0.7746873497962952,
+        "nrmse": 0.6345943212509155
+      },
+      "output_f0_plus_residual_always": {
+        "cosine": 0.9017684459686279,
+        "nrmse": 0.4415571689605713
+      },
+      "cumulative_drift_mean": 0.5323280692100525,
+      "cumulative_drift_max": 0.6570929884910583
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.4172445,
+        "candidate_median_ms": 0.5746275000000001,
+        "speedup_x": 0.7261130036414895,
+        "rows_processed": 14,
+        "device": "cuda"
+      },
+      "winner": {
+        "threshold": 0.5,
+        "residual_rank": 16,
+        "stage_activation_rate": 0.2857142984867096,
+        "gate": "ACTIVATION_L2_PERCENTILE_V1",
+        "gate_percentile": 70,
+        "activation_source": "real_model_activation",
+        "ram_model": "cascade_working_set",
+        "f0_resident_bytes": 2637824,
+        "residual_bytes": 426048,
+        "expected_residual_resident_bytes": 121728,
+        "peak_ram_bytes": 3436608,
+        "cpp_self_test_pass": true,
+        "native_profile": {
+          "dim": 128,
+          "layers": 2,
+          "tokens": 4,
+          "profiles": [
+            {
+              "profile": "MINMEM",
+              "rank": 0,
+              "us_gemv": 9.04303,
+              "ms_tok": 0.0360655,
+              "tok_s": 27727.3,
+              "rss_mb": 0.00878906,
+              "residual_pct": 0
+            },
+            {
+              "profile": "FAST",
+              "rank": 16,
+              "us_gemv": 11.1455,
+              "ms_tok": 0.035982,
+              "tok_s": 27791.7,
+              "rss_mb": 0.0244141,
+              "residual_pct": 25
+            },
+            {
+              "profile": "BALANCED",
+              "rank": 64,
+              "us_gemv": 13.0086,
+              "ms_tok": 0.0444703,
+              "tok_s": 22486.9,
+              "rss_mb": 0.0712891,
+              "residual_pct": 56.25
+            },
+            {
+              "profile": "SAFE",
+              "rank": 128,
+              "us_gemv": 25.6448,
+              "ms_tok": 0.103807,
+              "tok_s": 9633.26,
+              "rss_mb": 0.133789,
+              "residual_pct": 93.75
+            }
+          ]
+        },
+        "native_lowbit_model_kernel": false
+      }
+    },
+    "notes": "RAM no modelo CASCADE: F0 empacotado sempre residente; residual só no working set quando o gate dispara (rate=0.286). C++ self-test separado; kernel nativo ainda não carrega este tensor HF.",
+    "baseline_ram_bytes": 42315776,
+    "candidate_ram_bytes": 3132288,
+    "baseline_disk_bytes": 41943040,
+    "candidate_disk_bytes": 3063872,
+    "comparison_role": "primary"
+  },
+  {
+    "schema_version": 1,
+    "timestamp_utc": "2026-08-09T23:14:42Z",
+    "run_id": "20260809T231442Z-c9ec1925",
+    "technology": "WINNER",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
     "battery_id": "P1_WINNER_F0_TERNARY_2BIT",
     "status": "EXPERIMENTAL_FAIL",
     "measurement_scope": "Single Linear op; disk=F0 2-bit packed; RAM=working-set F0 packed (CASCADE-style, sem descompactar numel int8).",
