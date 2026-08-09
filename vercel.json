@@ -1,0 +1,63 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "rewrites": [
+    {
+      "source": "/rift/:model*",
+      "destination": "/api/test?technology=rift&model=:model*"
+    },
+    {
+      "source": "/cascade/:model*",
+      "destination": "/api/test?technology=cascade&model=:model*"
+    },
+    {
+      "source": "/aether/:model*",
+      "destination": "/api/test?technology=aether&model=:model*"
+    },
+    {
+      "source": "/spectra/:model*",
+      "destination": "/api/test?technology=spectra&model=:model*"
+    },
+    {
+      "source": "/winner/:model*",
+      "destination": "/api/test?technology=winner&model=:model*"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/data/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, s-maxage=10, stale-while-revalidate=30"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        }
+      ]
+    }
+  ]
+}
