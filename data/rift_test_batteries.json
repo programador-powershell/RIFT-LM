@@ -3374,55 +3374,6 @@
     "comparison_role": null
   },
   {
-    "timestamp_utc": "2026-08-09T22:00:48Z",
-    "run_id": "20260809T220048Z-fbeefea5",
-    "spec": "RIFT-LM v0.3.5",
-    "technology": "RIFT",
-    "model_id": "google/gemma-4-E4B-it",
-    "battery_id": "B0_BINARY_IR_FOUNDATION",
-    "status": "PASS",
-    "comparison_role": null,
-    "baseline_tok_s": null,
-    "rift_tok_s": null,
-    "baseline_ram_bytes": null,
-    "rift_ram_bytes": null,
-    "baseline_disk_bytes": 20971520,
-    "rift_disk_bytes": 20971776,
-    "candidate_tok_s": null,
-    "candidate_ram_bytes": null,
-    "candidate_disk_bytes": 20971776,
-    "gains": {
-      "tok_s_gain_pct": null,
-      "ram_reduction_pct": null,
-      "disk_reduction_pct": -0.001220703125004441,
-      "disk_compression_ratio_x": 0.9999877931177598,
-      "overall_gain_pct": -0.001220703125004441
-    },
-    "measurement_scope": "B0 binary/container validation. Tok/s e RAM não se aplicam; disk compara tensor FP32 raw com Container M0 raw one-tensor.",
-    "quality": {
-      "full_local_gate_pass": true
-    },
-    "metrics": {
-      "container": {
-        "file_size": 20971776,
-        "payload_bytes": 20971520,
-        "container_overhead_bytes": 256,
-        "payload_offset": 256,
-        "shape_blob_offset": 160,
-        "page_entry_size_test_local": 44,
-        "tensor_id": 1,
-        "shape": [
-          2048,
-          2560
-        ],
-        "codec_id_test_local": 0,
-        "mapped_file_bytes": 20971776
-      },
-      "golden_checksum": "0x8db3a70fc08a38f3"
-    },
-    "notes": "B0 mede correção/overhead do container, não compressão. Ganho de disco pode ser negativo por design."
-  },
-  {
     "timestamp_utc": "2026-08-09T22:00:54Z",
     "run_id": "20260809T220048Z-fbeefea5",
     "spec": "RIFT-LM v0.3.5",
@@ -3551,5 +3502,54 @@
       }
     },
     "notes": "BASE+REF 4-bit packed. Q4_LINEAR_TEST não é MXFP4. O path ainda materializa FP32 antes da GEMM."
+  },
+  {
+    "timestamp_utc": "2026-08-09T22:31:21Z",
+    "run_id": "20260809T223120Z-f758ee8a",
+    "spec": "RIFT-LM v0.3.5",
+    "technology": "RIFT",
+    "model_id": "google/gemma-4-E4B-it",
+    "battery_id": "B0_BINARY_IR_FOUNDATION",
+    "status": "PASS",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "rift_tok_s": null,
+    "baseline_ram_bytes": null,
+    "rift_ram_bytes": null,
+    "baseline_disk_bytes": 20971520,
+    "rift_disk_bytes": 20971776,
+    "candidate_tok_s": null,
+    "candidate_ram_bytes": null,
+    "candidate_disk_bytes": 20971776,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": -0.001220703125004441,
+      "disk_compression_ratio_x": 0.9999877931177598,
+      "overall_gain_pct": -0.001220703125004441
+    },
+    "measurement_scope": "B0 binary/container validation. Tok/s e RAM não se aplicam; disk compara tensor FP32 raw com Container M0 raw one-tensor.",
+    "quality": {
+      "full_local_gate_pass": true
+    },
+    "metrics": {
+      "container": {
+        "file_size": 20971776,
+        "payload_bytes": 20971520,
+        "container_overhead_bytes": 256,
+        "payload_offset": 256,
+        "shape_blob_offset": 160,
+        "page_entry_size_test_local": 44,
+        "tensor_id": 1,
+        "shape": [
+          2048,
+          2560
+        ],
+        "codec_id_test_local": 0,
+        "mapped_file_bytes": 20971776
+      },
+      "golden_checksum": "0x8db3a70fc08a38f3"
+    },
+    "notes": "B0 mede correção/overhead do container, não compressão. Ganho de disco pode ser negativo por design."
   }
 ]
