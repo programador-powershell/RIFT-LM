@@ -1,4 +1,4 @@
-const REPOSITORY = "programador-powershell/RIFT-LM";
+const REPOSITORY = "programador-powershell/llm-battery-test";
 const DEFAULT_REF = "main";
 const RESULTS_ENDPOINT = "https://rift-lm.vercel.app/api/results";
 const TOKENIZER_DEPENDENCIES = {
