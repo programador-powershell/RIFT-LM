@@ -3147,5 +3147,74 @@
       }
     },
     "notes": "A bateria mede somente decisões da política, não I/O real."
+  },
+  {
+    "schema_version": 1,
+    "timestamp_utc": "2026-08-09T21:07:13Z",
+    "run_id": "20260809T210713Z-483e8385",
+    "technology": "WINNER",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "B0_WINNER_CPP_BUILD_SELF_TEST",
+    "status": "PASS",
+    "measurement_scope": "Compilação nativa C++17 e --self-test; perfil nativo sintético separado da bateria do modelo.",
+    "quality": {
+      "full_local_gate_pass": true
+    },
+    "metrics": {
+      "winner": {
+        "source": "https://github.com/programador-powershell/RIFT-LM/archive/42ed734730e88a9f0a42bbe11e45e7efd7b3ba99.tar.gz",
+        "build_seconds": 17.81311618000018,
+        "self_test_pass": true,
+        "native_profile": {
+          "dim": 128,
+          "layers": 2,
+          "tokens": 4,
+          "profiles": [
+            {
+              "profile": "MINMEM",
+              "rank": 0,
+              "us_gemv": 2.53366,
+              "ms_tok": 0.0106062,
+              "tok_s": 94284,
+              "rss_mb": 0.0322266,
+              "residual_pct": 0
+            },
+            {
+              "profile": "FAST",
+              "rank": 16,
+              "us_gemv": 6.69531,
+              "ms_tok": 0.0145077,
+              "tok_s": 68928.7,
+              "rss_mb": 0.0478516,
+              "residual_pct": 25
+            },
+            {
+              "profile": "BALANCED",
+              "rank": 64,
+              "us_gemv": 17.5353,
+              "ms_tok": 0.044539,
+              "tok_s": 22452.2,
+              "rss_mb": 0.0947266,
+              "residual_pct": 56.25
+            },
+            {
+              "profile": "SAFE",
+              "rank": 128,
+              "us_gemv": 34.5407,
+              "ms_tok": 0.131478,
+              "tok_s": 7605.81,
+              "rss_mb": 0.157227,
+              "residual_pct": 93.75
+            }
+          ]
+        }
+      }
+    },
+    "notes": "Valida limites Q4, residual, árvore especulativa e page table; não mede o LLM end-to-end.",
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "comparison_role": null
   }
 ]
