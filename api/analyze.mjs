@@ -174,7 +174,6 @@ function buildRanking(models) {
 
 const ANALYSIS_SCHEMA = {
   type: "object",
-  additionalProperties: false,
   properties: {
     global_summary: { type: "string", description: "Resumo geral em português do Brasil, máximo 300 caracteres." },
     analyses: {
@@ -182,7 +181,6 @@ const ANALYSIS_SCHEMA = {
       maxItems: MAX_MODELS,
       items: {
         type: "object",
-        additionalProperties: false,
         properties: {
           model_id: { type: "string" },
           recommendation: { type: "string", enum: ["RIFT", "CASCADE", "AETHER", "SPECTRA", "WINNER", "INCONCLUSIVO"] },

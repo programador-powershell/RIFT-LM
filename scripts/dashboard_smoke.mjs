@@ -171,6 +171,10 @@ assert.throws(() => analysisApi.enforceSameOrigin(new Request("https://dashboard
 
 const geminiBody = analysisApi.buildGeminiBody("benchmark");
 assert.equal(geminiBody.generationConfig.responseFormat.text.mimeType, "application/json");
+const legacyGeminiBody = analysisApi.buildGeminiBody("benchmark", true);
+assert.equal(legacyGeminiBody.generationConfig.responseMimeType, "application/json");
+assert.ok(legacyGeminiBody.generationConfig.responseSchema);
+assert.doesNotMatch(JSON.stringify(legacyGeminiBody), /additionalProperties/);
 
 assert.equal(modelSearchApi.normalizeSearch("  qwen  "), "qwen");
 assert.throws(() => modelSearchApi.normalizeSearch("<script>"));
