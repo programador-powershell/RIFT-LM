@@ -96,6 +96,13 @@ um formato de inferência para engines como `llama.cpp`, não um substituto dire
 do checkpoint Safetensors usado para analisar e reconstruir camadas. Para a
 bateria, selecione o model ID original sem `-GGUF`.
 
+A fila também recusa antecipadamente checkpoints `DeepSeek-V4` e `NVFP4/MTP`.
+O DeepSeek V4 Flash tem aproximadamente 284 bilhões de parâmetros totais e um
+limite teórico de cerca de 142 GB apenas para pesos em 4 bits. Já NVFP4/MTP
+exige loader, kernels e GPU NVIDIA específicos que não fazem parte desta bateria
+baseada em `AutoModel`. Esses itens não são inseridos na fila e, portanto, não
+impedem a execução dos modelos compatíveis selecionados depois deles.
+
 ### Limite explícito para Kimi-K3
 
 `Kimi-K3` resolve para `moonshotai/Kimi-K3`, mas não é colocado na fila do Colab. O modelo possui 2,8 trilhões de parâmetros; mesmo no limite teórico de 4 bits, somente os pesos exigiriam pelo menos 1,4 TB. Além disso, o código remoto da revisão atual declara `transformers==4.56.2`, enquanto versões mais novas podem falhar ao importar `OutputRecorder` e `check_model_inputs`.

@@ -26,8 +26,11 @@ assert.match(html, /wait_for_resource_release/);
 assert.match(html, /from google\.colab import userdata/);
 assert.match(html, /env=CHILD_ENV/);
 assert.match(html, /RIFT_INGEST_TOKEN precisa ter pelo menos 32 caracteres/);
-assert.match(html, /COLAB_BLOCKED_MODELS/);
-assert.match(html, /Teste não gerado: Kimi-K3/);
+assert.match(html, /COLAB_BLOCK_REASONS/);
+assert.match(html, /Teste não gerado: modelo incompatível/);
+assert.match(html, /Garantindo dependências \(sentencepiece, tiktoken\)/);
+assert.match(html, /deepseek-v4/);
+assert.match(html, /nvfp4/);
 assert.doesNotMatch(html, /RIFT_GITHUB_TOKEN\s*=/);
 assert.doesNotMatch(html, /API_GOOGLE\s*=/);
 
@@ -192,6 +195,12 @@ assert.equal(kimiGguf.compatibility.colabSupported, false);
 const qwenGguf = launcherApi.normalizeModel("Qwen/Qwen3-8B-GGUF");
 assert.equal(qwenGguf.compatibility.colabSupported, false);
 assert.match(qwenGguf.compatibility.reason, /checkpoint Transformers original/);
+const deepseekV4 = launcherApi.normalizeModel("deepseek-ai/DeepSeek-V4-Flash-0731");
+assert.equal(deepseekV4.compatibility.colabSupported, false);
+assert.equal(deepseekV4.compatibility.minimumPackedWeightBytes, 142_000_000_000);
+const qwenNvfp4 = launcherApi.normalizeModel("example/Qwen3.6-27B-Text-NVFP4-MTP");
+assert.equal(qwenNvfp4.compatibility.colabSupported, false);
+assert.match(qwenNvfp4.compatibility.reason, /NVFP4\/MTP/);
 const launcherResponse = await testLauncher.fetch(new Request(
   "https://rift-lm.vercel.app/api/test?technology=aether&model=Kimi-K3",
 ));

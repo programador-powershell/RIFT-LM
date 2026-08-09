@@ -256,7 +256,12 @@ details{margin-top:18px}.help{color:var(--muted);font-size:13px;line-height:1.6}
 
 <script>
 const state={records:[],analysis:null,analysisError:null,analysisLoading:false,ranking:[],analysisRequest:0,queue:[],modelSearchRequest:0,dataSource:"published",publishedFingerprint:null,publishedLoading:false};
-const COLAB_BLOCKED_MODELS=new Map([["moonshotai/kimi-k3","Kimi-K3 possui 2,8 trilhões de parâmetros e esta bateria carrega o modelo completo em um único dispositivo. Mesmo a 4 bits, o limite teórico dos pesos é 1,4 TB. Use infraestrutura distribuída compatível ou escolha outro checkpoint para o Colab."]]);
+const COLAB_BLOCK_REASONS={
+  kimi:"Kimi-K3 possui 2,8 trilhões de parâmetros e esta bateria carrega o modelo completo em um único dispositivo. Mesmo a 4 bits, o limite teórico dos pesos é 1,4 TB. Use infraestrutura distribuída compatível ou escolha outro checkpoint para o Colab.",
+  deepseekV4:"DeepSeek V4 Flash possui cerca de 284 bilhões de parâmetros totais. Mesmo a 4 bits, somente os pesos exigem aproximadamente 142 GB, além do KV cache e buffers. Ele não cabe na bateria Colab de dispositivo único.",
+  gguf:"As baterias Python exigem o checkpoint Transformers original. GGUF deve ser executado por um runtime como llama.cpp; selecione o model ID original sem -GGUF.",
+  nvfp4:"Este checkpoint NVFP4/MTP exige loader, kernels e GPU NVIDIA compatíveis. A bateria atual usa AutoModel do Transformers e não suporta esse formato especializado.",
+};
 const $=id=>document.getElementById(id);
 const SAO_PAULO_TZ="America/Sao_Paulo";
 const dateFormatter=new Intl.DateTimeFormat("pt-BR",{timeZone:SAO_PAULO_TZ,day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false,timeZoneName:"shortOffset"});
@@ -366,7 +371,7 @@ function renderTable(rows){const body=$("historyBody");if(!rows.length){body.inn
 function render(){const models=[...new Set(state.records.map(r=>r.model))].sort(),batteries=[...new Set(state.records.map(r=>r.battery))].sort(),mf=$("modelFilter"),bf=$("batteryFilter"),oldM=mf.value,oldB=bf.value;mf.innerHTML='<option value="">Todos os modelos</option>'+models.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");bf.innerHTML='<option value="">Todas as baterias</option>'+batteries.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");if(models.includes(oldM))mf.value=oldM;if(batteries.includes(oldB))bf.value=oldB;const tf=$("technologyFilter"),rows=state.records.filter(r=>(!mf.value||r.model===mf.value)&&(!tf.value||r.technology===tf.value)&&(!bf.value||r.battery===bf.value));renderSummary(rows);$("batteries").innerHTML=rows.length?rows.slice().reverse().map(renderBattery).join(""):'<div class="card empty">Nenhuma bateria corresponde aos filtros.</div>';renderTable(rows);renderAI();renderRanking();renderCompare()}
 
 function normalizeModelInput(value){const raw=String(value||"").trim();try{const url=new URL(raw);if(!["huggingface.co","www.huggingface.co"].includes(url.hostname.toLowerCase()))throw new Error();const parts=url.pathname.split("/").filter(Boolean);if(parts.length<2)throw new Error();return `${parts[0]}/${parts[1]}`}catch{if(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(raw))return raw;return null}}
-function colabBlockReason(model){return COLAB_BLOCKED_MODELS.get(String(model||"").toLowerCase())||null}
+function colabBlockReason(model){const value=String(model||"").toLowerCase();if(value.includes("kimi-k3"))return COLAB_BLOCK_REASONS.kimi;if(value.includes("deepseek-v4"))return COLAB_BLOCK_REASONS.deepseekV4;if(value.includes("gguf"))return COLAB_BLOCK_REASONS.gguf;if(value.includes("nvfp4"))return COLAB_BLOCK_REASONS.nvfp4;return null}
 function launcherUrl(technology,model,target,trust){const path=model.split("/").map(encodeURIComponent).join("/"),params=new URLSearchParams();if(target!=="auto")params.set("target_layer",target);if(trust)params.set("trust_remote_code","1");return `${launcherOrigin}/${technology}/${path}${params.size?`?${params}`:""}`}
 function colabSecretBootstrapLines(){return [
   "# Transfere os Secrets do kernel do Colab aos processos de benchmark.",
@@ -418,6 +423,12 @@ function buildSerialColabCode(){
   const tasks=queueTasks();if(!tasks.length)return "# Adicione modelos à fila para gerar a célula serial.";
   const serialized=JSON.stringify(tasks,null,2);
   return [
+    "# Instala dependências críticas antes de iniciar a fila.",
+    "import subprocess",
+    "import sys",
+    "print('[FILA] Garantindo dependências (sentencepiece, tiktoken)...')",
+    "subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', 'sentencepiece>=0.2.0', 'tiktoken>=0.7.0'])",
+    "",
     "# Fila serial RIFT / CASCADE / AETHER / SPECTRA / WINNER",
     "# Cada benchmark roda isolado; falhas interrompem a fila.",
     "",
@@ -425,8 +436,6 @@ function buildSerialColabCode(){
     "",
     "import gc",
     "import json",
-    "import subprocess",
-    "import sys",
     "import time",
     "from pathlib import Path",
     "from urllib.request import Request, urlopen",
@@ -512,7 +521,7 @@ function updateCommand(){
   if(!model){$("commandOutput").textContent="# Informe org/modelo ou uma URL válida do Hugging Face.";$("modelValidation").textContent="Formato inválido. Exemplo: microsoft/Phi-3.5-mini-instruct";$("modelValidation").className="note bad";$("openModelBtn").href="https://huggingface.co/models";return}
   $("openModelBtn").href=`https://huggingface.co/${model}`;
   const blockedReason=colabBlockReason(model);
-  if(blockedReason){$("commandOutput").textContent="# Teste não gerado: Kimi-K3 não cabe na arquitetura atual da bateria Colab.";$("modelValidation").textContent=`${blockedReason} O código remoto oficial indica transformers==4.56.2, mas corrigir somente essa dependência ainda levaria a uma falha de recursos.`;$("modelValidation").className="note bad";return}
+  if(blockedReason){$("commandOutput").textContent="# Teste não gerado: modelo incompatível com a bateria Colab atual.";$("modelValidation").textContent=blockedReason;$("modelValidation").className="note bad";return}
   if(!/^(auto|[A-Za-z0-9_.-]+)$/.test(target)){$("commandOutput").textContent="# Informe 'auto' ou um nome de tensor válido.";$("modelValidation").textContent="Camada inválida; use apenas letras, números, ponto, hífen e sublinhado.";$("modelValidation").className="note bad";return}
   const trust=$("trustRemoteInput").checked,technologies=tech==="all"?["rift","cascade","aether","spectra","winner"]:[tech],commands=technologies.map(technology=>`!curl -fsSL "${launcherUrl(technology,model,target,trust)}" -o /content/${technology}_launcher.py && python /content/${technology}_launcher.py`);
   $("commandOutput").textContent=[...colabSecretBootstrapLines(),"",...commands].join("\n");$("modelValidation").textContent=`Modelo normalizado: ${model}. A célula lê RIFT_INGEST_TOKEN no kernel e o transfere aos launchers sem exibir o valor.`;$("modelValidation").className="note good";

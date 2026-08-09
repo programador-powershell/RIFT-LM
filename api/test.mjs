@@ -89,15 +89,35 @@ function normalizeModel(value) {
     (entry) => entry.modelId.toLowerCase() === modelId.toLowerCase(),
   );
   if (knownModel) return { ...knownModel, alias: null };
-  if (modelId.toLowerCase().includes("kimi-k3")) {
-    return { ...MODEL_ALIASES["kimi-k3"], modelId, alias: null };
-  }
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(modelId)) {
     throw new ApiError(
       "Modelo inválido; use org/modelo, uma URL do Hugging Face ou o alias Kimi-K3",
     );
   }
-  if (modelId.toLowerCase().includes("gguf")) {
+  const lowerModelId = modelId.toLowerCase();
+  if (lowerModelId.includes("kimi-k3")) {
+    return { ...MODEL_ALIASES["kimi-k3"], modelId, alias: null };
+  }
+  if (lowerModelId.includes("deepseek-v4")) {
+    return {
+      modelId,
+      trustRemoteCode: false,
+      warning: null,
+      compatibility: {
+        colabSupported: false,
+        totalParameters: 284_000_000_000,
+        minimumPackedWeightBytes: 142_000_000_000,
+        reason: (
+          "DeepSeek V4 Flash possui cerca de 284 bilhões de parâmetros totais. "
+          + "Mesmo no limite teórico de 4 bits, somente os pesos exigem cerca de "
+          + "142 GB, sem contar KV cache e buffers; a bateria Colab atual carrega "
+          + "o checkpoint completo em um único dispositivo."
+        ),
+      },
+      alias: null,
+    };
+  }
+  if (lowerModelId.includes("gguf")) {
     return {
       modelId,
       trustRemoteCode: false,
@@ -109,6 +129,22 @@ function normalizeModel(value) {
           + "Um repositório GGUF é destinado a runtimes como llama.cpp e não pode ser "
           + "carregado por esta bateria como se fosse um checkpoint Safetensors. "
           + "Selecione o model ID original sem o sufixo -GGUF."
+        ),
+      },
+      alias: null,
+    };
+  }
+  if (lowerModelId.includes("nvfp4")) {
+    return {
+      modelId,
+      trustRemoteCode: false,
+      warning: null,
+      compatibility: {
+        colabSupported: false,
+        reason: (
+          "Este checkpoint usa NVFP4/MTP e requer um loader e kernels específicos "
+          + "para hardware NVIDIA compatível. A bateria atual usa AutoModel do "
+          + "Transformers e não pode tratá-lo como um checkpoint FP16/BF16 comum."
         ),
       },
       alias: null,
