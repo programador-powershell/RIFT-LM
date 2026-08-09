@@ -2474,5 +2474,44 @@
       "negative_tests_passed": 11
     },
     "notes": "CSCD v0.3 test-local container; ABI de produção ainda não congelada."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:03:40Z",
+    "run_id": "20260809T210338Z-14e1d30e",
+    "spec": "CASCADE v0.3",
+    "technology": "CASCADE",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_CASCADE_BASE_STAGE_F0",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 42315776,
+    "candidate_ram_bytes": 798796,
+    "baseline_disk_bytes": 41943040,
+    "candidate_disk_bytes": 426060,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": 98.11229740889071,
+      "disk_reduction_pct": 98.98419380187988,
+      "disk_compression_ratio_x": 98.44397502699151,
+      "overall_gain_pct": 98.54824560538529
+    },
+    "measurement_scope": "Single Linear op; disk=FP32 raw vs F0 FP16 low-rank payload; RAM=working-set estimate; model Tok/s not measured.",
+    "quality": {
+      "full_local_gate_pass": null,
+      "output": {
+        "cosine": 0.9068016409873962,
+        "nrmse": 0.010501112788915634
+      }
+    },
+    "metrics": {
+      "operation": {
+        "baseline_median_ms": 0.40865749997465173,
+        "candidate_median_ms": 0.11179100010849652,
+        "speedup_x": 3.655549190704416
+      }
+    },
+    "notes": "F0 sempre residente; resultado aproximado isolado."
   }
 ]
