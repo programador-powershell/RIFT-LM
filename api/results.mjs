@@ -101,7 +101,7 @@ async function githubRequest(url, token, options = {}) {
       headers: {
         Accept: "application/vnd.github+json",
         Authorization: `Bearer ${token}`,
-        "User-Agent": "rift-lm-vercel-ingest/0.3.5",
+        "User-Agent": "rift-cascade-aether-spectra-vercel-ingest/0.6",
         "X-GitHub-Api-Version": GITHUB_API_VERSION,
         ...(options.body ? { "Content-Type": "application/json" } : {}),
         ...options.headers,
@@ -193,7 +193,7 @@ async function publishToGitHub(incoming) {
     const runIds = [...new Set(incoming.map((record) => String(record.run_id)))];
     const runLabel = runIds.slice(0, 2).join(", ") || "sem-run-id";
     const update = {
-      message: `data: publish RIFT-LM results ${runLabel}`,
+      message: `data: publish benchmark results ${runLabel}`,
       content: Buffer.from(`${JSON.stringify(merged, null, 2)}\n`, "utf8").toString(
         "base64",
       ),

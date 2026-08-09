@@ -1,369 +1,468 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>RIFT-LM Test Observatory</title>
-<meta name="description" content="Dashboard de benchmarks RIFT-LM: baseline vs RIFT em Tok/s, RAM, espaço em disco, qualidade e ganho.">
-<meta name="theme-color" content="#0b0e14">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RIFT-LM, CASCADE, AETHER & SPECTRA Test Observatory</title>
+<meta name="description" content="Dashboard comparativo de baterias RIFT-LM, CASCADE, AETHER e SPECTRA.">
+<meta name="theme-color" content="#f3f6fb">
 <style>
 :root{
-  --bg:#0b0e14;--panel:#121722;--panel2:#171d2a;--text:#eef2f7;--muted:#91a0b4;
-  --border:#263043;--accent:#7c9cff;--good:#48c78e;--bad:#ff6b6b;--warn:#f5b942;
-  --baseline:#70809a;--rift:#7c9cff;
+  --bg:#f3f6fb;--panel:#fff;--panel2:#f8fafc;--text:#172033;--muted:#64748b;
+  --border:#dbe3ee;--accent:#315efb;--accentSoft:#edf2ff;--good:#087f5b;--bad:#cf304a;--warn:#a16207;
+  --baseline:#94a3b8;--rift:#315efb;--riftSoft:#edf2ff;--cascade:#8b5cf6;--cascadeSoft:#f4efff;--aether:#0f9f8f;--aetherSoft:#e8fbf7;--spectra:#d65a31;--spectraSoft:#fff1eb;
+  --winner:#059669;--winnerSoft:#ecfdf5;--grid:#e9eef5;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+body{margin:0;background:linear-gradient(180deg,#fff 0,#f6f8fc 260px,var(--bg) 100%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 .shell{max-width:1440px;margin:auto;padding:24px}
 header{display:flex;gap:16px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;margin-bottom:20px}
-h1{font-size:24px;margin:0 0 6px}
-.sub{color:var(--muted);font-size:14px}
-.controls{display:flex;gap:10px;flex-wrap:wrap}
-button,.fileBtn,select{border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:10px;padding:9px 12px;font-size:14px}
-button,.fileBtn{cursor:pointer}
-.fileBtn input{display:none}
-.grid{display:grid;gap:14px}
-.metrics{grid-template-columns:repeat(4,minmax(180px,1fr));margin-bottom:16px}
-.card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px}
-.metricLabel{color:var(--muted);font-size:13px;margin-bottom:8px}
-.metricMain{font-size:28px;font-weight:750;letter-spacing:-.02em}
-.metricCompare{display:flex;justify-content:space-between;gap:8px;margin-top:8px;color:var(--muted);font-size:12px}
-.gain{font-weight:700}
-.good{color:var(--good)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+h1{font-size:24px;margin:0 0 6px}.sub{color:var(--muted);font-size:13px;line-height:1.5}
+.controls,.actions,.filters,.legend,.badges{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button,.fileBtn,select,input{border:1px solid var(--border);background:#fff;color:var(--text);border-radius:10px;padding:9px 12px;font-size:14px}
+button,.fileBtn{cursor:pointer;box-shadow:0 1px 2px rgba(15,23,42,.05)}.fileBtn input{display:none}button:hover,.fileBtn:hover{border-color:var(--accent);background:var(--accentSoft)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:750}
+a.button{display:inline-flex;text-decoration:none;border:1px solid var(--border);background:#fff;color:var(--text);border-radius:10px;padding:9px 12px;font-size:14px}
+.grid{display:grid;gap:14px}.metrics{grid-template-columns:repeat(4,minmax(180px,1fr));margin:16px 0}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px;box-shadow:0 8px 26px rgba(30,41,59,.055)}
+.sectionTitle{font-size:17px;font-weight:750;margin:26px 0 10px}.sectionTitle small{font-weight:400;color:var(--muted)}
+.metricLabel{color:var(--muted);font-size:13px;margin-bottom:8px}.metricMain{font-size:27px;font-weight:750;letter-spacing:-.02em}
+.metricCompare{display:flex;justify-content:space-between;gap:8px;margin-top:8px;color:var(--muted);font-size:12px}.gain{font-weight:700}
+.good{color:var(--good)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.launcher{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(340px,.95fr);gap:16px;align-items:start}
+.queueBuilder{display:grid;grid-template-columns:minmax(0,1fr) minmax(420px,1fr);gap:18px;align-items:start}.queueSearch{position:relative}.searchResults{position:absolute;z-index:20;top:100%;left:0;right:0;margin-top:5px;max-height:330px;overflow:auto;border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:0 16px 34px rgba(15,23,42,.16)}.searchResults[hidden]{display:none}.modelResult{display:grid;width:100%;grid-template-columns:minmax(0,1fr) auto;gap:8px;text-align:left;border:0;border-bottom:1px solid var(--border);border-radius:0;padding:10px 12px;box-shadow:none}.modelResult:last-child{border-bottom:0}.modelResult:hover{background:var(--accentSoft)}.modelResultName{font-weight:750;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.modelResultMeta{grid-column:1/-1;color:var(--muted);font-size:11px}.queueToolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:14px 0 8px}.queueList{display:flex;flex-direction:column;gap:8px}.queueItem{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:11px;background:#fff}.queueOrder{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--accentSoft);color:#2547bd;font-weight:800;font-size:12px}.queueModel{font-weight:750;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.queueMeta{color:var(--muted);font-size:11px;margin-top:3px}.queueRemove{padding:6px 9px;color:var(--bad)}.queueCommand{min-height:360px;max-height:560px;overflow:auto}.queueSafety{margin-top:10px;padding:11px 12px;border-radius:10px;background:var(--winnerSoft);color:#176b54;font-size:12px;line-height:1.5}
+.formGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:flex;flex-direction:column;gap:6px}.formGrid>.wide{grid-column:1/-1}
+.field label{font-size:12px;color:var(--muted)}.field input,.field select{width:100%}.check{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12px}.check input{width:auto}
+.commandBox{margin:8px 0 10px;padding:12px;border:1px solid var(--border);border-radius:10px;background:#f8fafc;color:#263b72;white-space:pre-wrap;word-break:break-word;min-height:128px;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}
 .toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:12px 0 16px}
-.filters{display:flex;gap:8px;flex-wrap:wrap}
-.legend{display:flex;gap:12px;color:var(--muted);font-size:12px}
-.dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:5px}.baseline{background:var(--baseline)}.rift{background:var(--rift)}
-.empty{padding:44px 20px;text-align:center;color:var(--muted)}
-.battery{margin-bottom:16px}
-.batteryHead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px}
-.batteryTitle{font-size:18px;font-weight:700}
-.badges{display:flex;gap:7px;flex-wrap:wrap}
-.badge{border:1px solid var(--border);background:var(--panel2);padding:4px 8px;border-radius:999px;font-size:11px;color:var(--muted)}
-.charts{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:12px}
-.chart{background:var(--panel2);border:1px solid var(--border);border-radius:12px;padding:12px}
-.chartTitle{display:flex;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:10px}
-.chartTitle span:last-child{color:var(--muted)}
-.barRow{display:grid;grid-template-columns:58px 1fr 72px;gap:8px;align-items:center;margin:8px 0;font-size:12px}
-.track{height:11px;background:#0c111a;border:1px solid var(--border);border-radius:999px;overflow:hidden}
-.fill{height:100%;border-radius:999px}
-.fill.base{background:var(--baseline)} .fill.rift{background:var(--rift)}
-.value{text-align:right;font-variant-numeric:tabular-nums}
-.note{color:var(--muted);font-size:11px;margin-top:8px;line-height:1.4}
-.quality{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:10px;margin-top:12px}
-.qitem{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:10px}
-.qitem b{display:block;margin-top:4px}
-.tableWrap{overflow:auto;border:1px solid var(--border);border-radius:12px}
-table{border-collapse:collapse;width:100%;min-width:920px;background:var(--panel)}
-th,td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:left;font-size:12px}
-th{color:var(--muted);background:var(--panel2);position:sticky;top:0}
-td.num{text-align:right;font-variant-numeric:tabular-nums}
-.sectionTitle{font-size:17px;font-weight:700;margin:24px 0 10px}
-details{margin-top:16px}.help{color:var(--muted);font-size:13px;line-height:1.55}
-code{color:#b7c7ff}
-@media(max-width:1050px){.metrics,.charts{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:600px){.shell{padding:14px}.metrics,.charts,.quality{grid-template-columns:1fr}.metricMain{font-size:24px}}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:5px}.baseline{background:var(--baseline)}.rift{background:var(--rift)}.cascade{background:var(--cascade)}.aether{background:var(--aether)}.spectra{background:var(--spectra)}
+.empty{padding:36px 20px;text-align:center;color:var(--muted)}.battery{margin-bottom:16px}.battery.riftCard{border-left:4px solid var(--rift)}.battery.cascadeCard{border-left:4px solid var(--cascade)}.battery.aetherCard{border-left:4px solid var(--aether)}.battery.spectraCard{border-left:4px solid var(--spectra)}
+.battery.recommended{border-color:var(--winner);box-shadow:0 0 0 2px rgba(5,150,105,.12),0 10px 30px rgba(5,150,105,.08)}
+.batteryHead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px}.batteryTitle{font-size:18px;font-weight:700}
+.badge{border:1px solid var(--border);background:#f8fafc;padding:4px 8px;border-radius:999px;font-size:11px;color:var(--muted)}.badge.techRift{color:#2547bd;background:var(--riftSoft)}.badge.techCascade{color:#6d3bd1;background:var(--cascadeSoft)}.badge.techAether{color:#08766a;background:var(--aetherSoft)}.badge.techSpectra{color:#a83f20;background:var(--spectraSoft)}.badge.aiRecommended{color:#047857;background:var(--winnerSoft);border-color:#a7f3d0}
+.charts{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:12px}.chart{background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;box-shadow:0 3px 12px rgba(30,41,59,.04)}
+.chartTitle{display:flex;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:10px}.chartTitle span:last-child{color:var(--muted)}
+.barRow{display:grid;grid-template-columns:68px 1fr 82px;gap:8px;align-items:center;margin:9px 0;font-size:12px}.track{height:13px;background:repeating-linear-gradient(90deg,#eef2f7 0,#eef2f7 calc(25% - 1px),#dbe3ee 25%);border:1px solid var(--border);border-radius:999px;overflow:hidden}
+.fill{height:100%;border-radius:999px;min-width:2px}.fill.base{background:linear-gradient(90deg,#cbd5e1,var(--baseline))}.fill.riftFill{background:linear-gradient(90deg,#6f8fff,var(--rift))}.fill.cascadeFill{background:linear-gradient(90deg,#b394ff,var(--cascade))}.fill.aetherFill{background:linear-gradient(90deg,#73d9cb,var(--aether))}.fill.spectraFill{background:linear-gradient(90deg,#f5a98f,var(--spectra))}
+.value{text-align:right;font-variant-numeric:tabular-nums}.note{color:var(--muted);font-size:11px;margin-top:8px;line-height:1.5}
+.quality{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;margin-top:12px}.qitem{background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px}.qitem b{display:block;margin-top:4px}
+.compareGrid{display:grid;grid-template-columns:260px 1fr;gap:14px}.compareSide{display:flex;flex-direction:column;gap:10px}.compareStatus{padding:12px;border-radius:10px;border:1px solid var(--border);background:#fff}.compareStatus.aiWinner{border-color:var(--winner);background:var(--winnerSoft)}
+.tableWrap{overflow:auto;border:1px solid var(--border);border-radius:12px}table{border-collapse:collapse;width:100%;min-width:980px;background:var(--panel)}
+th,td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:left;font-size:12px}th{color:#475569;background:#f8fafc;position:sticky;top:0}td.num{text-align:right;font-variant-numeric:tabular-nums}
+.compareTable{min-width:900px}.compareTable th:first-child{width:24%}.compareTable th:nth-child(n+2),.compareTable td:nth-child(n+2){text-align:right}
+.aiHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}.aiModel{display:inline-flex;gap:7px;align-items:center;color:var(--muted);font-size:12px}.aiSpark{width:10px;height:10px;border-radius:50%;background:linear-gradient(135deg,#4285f4 10%,#a142f4 55%,#fbbc05);box-shadow:0 0 0 4px #f4efff}
+.aiSummary{margin-top:12px;padding:13px 14px;border-radius:11px;background:linear-gradient(90deg,#eef4ff,#f7f2ff);color:#334155;line-height:1.55;font-size:13px}.aiCards{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:12px;margin-top:14px}.aiCard{border:1px solid var(--border);border-radius:12px;padding:14px;background:#fff}.aiCard.winnerRift{border-top:4px solid var(--rift);background:linear-gradient(180deg,var(--riftSoft),#fff 48%)}.aiCard.winnerCascade{border-top:4px solid var(--cascade);background:linear-gradient(180deg,var(--cascadeSoft),#fff 48%)}.aiCard.winnerAether{border-top:4px solid var(--aether);background:linear-gradient(180deg,var(--aetherSoft),#fff 48%)}.aiCard.winnerSpectra{border-top:4px solid var(--spectra);background:linear-gradient(180deg,var(--spectraSoft),#fff 48%)}.aiCard.inconclusive{border-top:4px solid var(--warn)}
+.aiVerdict{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0}.aiVerdict strong{font-size:19px}.confidence{height:7px;background:var(--grid);border-radius:99px;overflow:hidden;margin-top:6px}.confidence>i{display:block;height:100%;background:linear-gradient(90deg,#60a5fa,#8b5cf6);border-radius:99px}.miniList{margin:9px 0 0;padding-left:17px;color:var(--muted);font-size:12px;line-height:1.5}
+.rankingCard{overflow:hidden}.rankingHeader{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}.rankRows{display:flex;flex-direction:column;gap:10px;margin-top:16px}.rankRow{display:grid;grid-template-columns:34px minmax(190px,1.1fr) 92px minmax(180px,2fr) 58px 76px;gap:10px;align-items:center;padding:9px 10px;border:1px solid var(--border);border-radius:11px;background:#fff}.rankRow.aiRankWinner{border-color:#86efac;background:linear-gradient(90deg,var(--winnerSoft),#fff 40%)}.rankPosition{font-size:18px;font-weight:800;color:#64748b;text-align:center}.rankPosition.podium{color:#b7791f}.rankModel{min-width:0;font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rankBar{height:20px;border-radius:6px;background:repeating-linear-gradient(90deg,#edf1f6 0,#edf1f6 calc(20% - 1px),#dbe3ee 20%);overflow:hidden}.rankBar>i{display:block;height:100%;border-radius:6px}.rankBar>i.riftScore{background:linear-gradient(90deg,#8da5ff,var(--rift))}.rankBar>i.cascadeScore{background:linear-gradient(90deg,#c2a9ff,var(--cascade))}.rankBar>i.aetherScore{background:linear-gradient(90deg,#73d9cb,var(--aether))}.rankBar>i.spectraScore{background:linear-gradient(90deg,#f5a98f,var(--spectra))}.rankScore{font-size:16px;font-weight:800;text-align:right}.coverage{text-align:right;color:var(--muted);font-size:11px}.techPill{display:inline-flex;justify-content:center;padding:4px 8px;border-radius:99px;font-size:11px;font-weight:800}.techPill.RIFT{color:#2547bd;background:var(--riftSoft)}.techPill.CASCADE{color:#6d3bd1;background:var(--cascadeSoft)}.techPill.AETHER{color:#08766a;background:var(--aetherSoft)}.techPill.SPECTRA{color:#a83f20;background:var(--spectraSoft)}.techPill.INCONCLUSIVO{color:#92400e;background:#fff7ed}
+details{margin-top:18px}.help{color:var(--muted);font-size:13px;line-height:1.6}code{color:#3156b9}
+@media(max-width:1050px){.metrics,.charts{grid-template-columns:repeat(2,1fr)}.launcher,.queueBuilder,.compareGrid{grid-template-columns:1fr}.aiCards{grid-template-columns:repeat(2,1fr)}.rankRow{grid-template-columns:34px minmax(160px,1fr) 82px minmax(130px,1.4fr) 52px}.coverage{display:none}}
+@media(max-width:620px){.shell{padding:14px}.metrics,.charts,.quality,.formGrid,.aiCards{grid-template-columns:1fr}.formGrid>.wide{grid-column:auto}.metricMain{font-size:24px}.rankRow{grid-template-columns:30px 1fr 78px 48px}.rankBar,.coverage{display:none}}
 </style>
 </head>
 <body>
-<div class="shell">
+<main class="shell">
 <header>
   <div>
-    <h1>RIFT-LM Test Observatory</h1>
-    <div class="sub">Acompanhamento de baterias • baseline vs. RIFT • velocidade, memória, espaço e ganho</div><div class="sub" id="dataStatus" aria-live="polite">Carregando histórico publicado…</div>
+    <h1>RIFT-LM, CASCADE, AETHER & SPECTRA Test Observatory</h1>
+    <div class="sub">Baterias de referência • qualidade, memória, disco e latência • comparação transparente</div>
+    <div class="sub" id="dataStatus" aria-live="polite">Carregando histórico publicado…</div>
+    <div class="sub">Datas exibidas em <strong>America/Sao_Paulo</strong> (GMT−3).</div>
   </div>
   <div class="controls">
     <label class="fileBtn">Carregar JSON/CSV<input id="files" type="file" multiple accept=".json,.csv"></label>
     <button id="demoBtn" type="button">Carregar exemplo</button>
-    <button id="reloadBtn" type="button">Recarregar publicado</button><button id="clearBtn" type="button">Limpar</button>
+    <button id="reloadBtn" type="button">Recarregar publicado</button>
+    <button id="clearBtn" type="button">Limpar</button>
   </div>
 </header>
+
+<div class="sectionTitle">Enviar um modelo para teste <small>• gera uma célula pronta para o Google Colab</small></div>
+<section class="card launcher">
+  <div>
+    <div class="formGrid">
+      <div class="field wide">
+        <label for="modelPreset">Modelo sugerido</label>
+        <select id="modelPreset">
+          <option value="Qwen/Qwen2.5-0.5B">Qwen 2.5 0.5B — rápido</option>
+          <option value="Qwen/Qwen2.5-1.5B-Instruct">Qwen 2.5 1.5B Instruct — mais forte</option>
+          <option value="TinyLlama/TinyLlama-1.1B-Chat-v1.0">TinyLlama 1.1B — outra família</option>
+          <option value="HuggingFaceTB/SmolLM2-1.7B-Instruct">SmolLM2 1.7B — Hugging Face</option>
+          <option value="microsoft/Phi-3.5-mini-instruct">Phi 3.5 Mini — Microsoft</option>
+          <option value="google/gemma-2-2b-it">Gemma 2 2B — Google (pode exigir acesso)</option>
+          <option value="moonshotai/Kimi-K3">Kimi K3 — Moonshot (escala extrema)</option>
+          <option value="custom">Outro modelo / URL…</option>
+        </select>
+      </div>
+      <div class="field wide">
+        <label for="modelInput">Model ID ou URL do projeto no Hugging Face</label>
+        <input id="modelInput" value="Qwen/Qwen2.5-0.5B" placeholder="org/modelo ou https://huggingface.co/org/modelo" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="technologyInput">Tecnologia</label>
+        <select id="technologyInput"><option value="all">Todas as 4 tecnologias</option><option value="rift">Somente RIFT</option><option value="cascade">Somente CASCADE</option><option value="aether">Somente AETHER</option><option value="spectra">Somente SPECTRA</option></select>
+      </div>
+      <div class="field">
+        <label for="targetLayerInput">Camada alvo</label>
+        <input id="targetLayerInput" value="auto" placeholder="auto">
+      </div>
+      <label class="check wide"><input id="trustRemoteInput" type="checkbox"> Permitir <code>trust_remote_code</code> — habilite apenas se confiar no repositório do modelo.</label>
+    </div>
+    <p class="help">O dashboard não executa GPU no navegador. Ele transforma o model ID/URL em comandos seguros para o Colab. A opção <code>auto</code> procura uma camada Linear compatível em Qwen, Llama, Gemma, Phi e outras famílias.</p>
+  </div>
+  <div>
+    <div class="sub">Cole esta célula no Colab após configurar <code>RIFT_INGEST_TOKEN</code> e, quando necessário, <code>HF_TOKEN</code> em Secrets. O endpoint é configurado pelo launcher:</div>
+    <pre class="commandBox" id="commandOutput" aria-live="polite"></pre>
+    <div class="actions">
+      <button class="primary" id="copyCommandBtn" type="button">Copiar célula</button>
+      <a class="button" id="openModelBtn" href="https://huggingface.co/Qwen/Qwen2.5-0.5B" target="_blank" rel="noopener">Abrir modelo</a>
+      <a class="button" href="https://colab.research.google.com/" target="_blank" rel="noopener">Abrir Colab</a>
+    </div>
+    <div class="note" id="modelValidation"></div>
+  </div>
+</section>
+
+<div class="sectionTitle">Fila serial de baterias <small>• pesquise no Hugging Face e teste vários modelos sem sobrepor recursos</small></div>
+<section class="card queueBuilder">
+  <div>
+    <div class="formGrid">
+      <div class="field wide queueSearch">
+        <label for="batchModelSearch">Buscar modelo no Hugging Face</label>
+        <input id="batchModelSearch" placeholder="Digite qwen, llama, gemma, phi…" autocomplete="off" aria-controls="modelSearchResults" aria-expanded="false">
+        <div class="searchResults" id="modelSearchResults" role="listbox" hidden></div>
+        <div class="note" id="batchSearchStatus">Digite pelo menos 2 caracteres para listar modelos públicos de geração de texto.</div>
+      </div>
+      <div class="field">
+        <label for="batchTechnologyInput">Tecnologias deste modelo</label>
+        <select id="batchTechnologyInput"><option value="all">Todas as 4 tecnologias</option><option value="rift">Somente RIFT</option><option value="cascade">Somente CASCADE</option><option value="aether">Somente AETHER</option><option value="spectra">Somente SPECTRA</option></select>
+      </div>
+      <div class="field">
+        <label for="batchTargetLayerInput">Camada alvo</label>
+        <input id="batchTargetLayerInput" value="auto" placeholder="auto">
+      </div>
+      <label class="check wide"><input id="batchTrustRemoteInput" type="checkbox"> Permitir <code>trust_remote_code</code> para este modelo.</label>
+      <div class="actions wide">
+        <button class="primary" id="addBatchModelBtn" type="button">Adicionar modelo digitado</button>
+      </div>
+    </div>
+    <div class="queueToolbar">
+      <strong id="batchQueueCount">Fila vazia</strong>
+      <button id="clearBatchQueueBtn" type="button">Limpar fila</button>
+    </div>
+    <div class="queueList" id="batchQueue"><div class="empty">Pesquise e selecione um ou mais modelos.</div></div>
+  </div>
+  <div>
+    <div class="sub">Cole a célula inteira no Colab. Cada launcher executa em um processo isolado e o próximo benchmark só começa após o processo anterior terminar, publicar o resultado e a VRAM estabilizar:</div>
+    <pre class="commandBox queueCommand" id="batchCommandOutput" aria-live="polite"># Adicione modelos à fila para gerar a célula serial.</pre>
+    <div class="actions">
+      <button class="primary" id="copyBatchCommandBtn" type="button" disabled>Copiar lista serial</button>
+    </div>
+    <div class="queueSafety"><strong>Isolamento:</strong> falhas interrompem a fila; o encerramento do subprocesso libera RAM/VRAM e uma verificação com <code>nvidia-smi</code> aguarda três leituras estáveis antes do próximo teste.</div>
+  </div>
+</section>
 
 <section class="grid metrics" id="summary">
   <div class="card"><div class="metricLabel">Tok/s — último teste</div><div class="metricMain" id="mTok">—</div><div class="metricCompare"><span id="mTokBase">Baseline: —</span><span class="gain" id="mTokGain">—</span></div></div>
   <div class="card"><div class="metricLabel">RAM necessária</div><div class="metricMain" id="mRam">—</div><div class="metricCompare"><span id="mRamBase">Baseline: —</span><span class="gain" id="mRamGain">—</span></div></div>
   <div class="card"><div class="metricLabel">Espaço em disco</div><div class="metricMain" id="mDisk">—</div><div class="metricCompare"><span id="mDiskBase">Baseline: —</span><span class="gain" id="mDiskGain">—</span></div></div>
-  <div class="card"><div class="metricLabel">Ganho composto</div><div class="metricMain" id="mOverall">—</div><div class="metricCompare"><span>Velocidade + memória + disco</span><span class="gain" id="mOverallHint">—</span></div></div>
+  <div class="card"><div class="metricLabel">Ganho composto medido</div><div class="metricMain" id="mOverall">—</div><div class="metricCompare"><span id="mTechnology">Tecnologia: —</span><span class="gain" id="mOverallHint">—</span></div></div>
+</section>
+
+<div class="sectionTitle">Análise de IA <small>• recomendação por modelo com Gemini 2.5 Flash</small></div>
+<section class="card" id="aiAnalysisPanel">
+  <div class="aiHeader">
+    <div>
+      <div class="aiModel"><i class="aiSpark"></i><strong>Gemini 2.5 Flash</strong> • análise estruturada das baterias publicadas</div>
+      <div class="sub" id="aiStatus" aria-live="polite">Preparando métricas para análise…</div>
+    </div>
+    <button class="primary" id="analyzeBtn" type="button">Analisar novamente</button>
+  </div>
+  <div class="aiSummary" id="aiSummary">A IA compara somente tecnologias com baterias principais. Com menos de duas tecnologias, o resultado será inconclusivo.</div>
+  <div class="aiCards" id="aiCards"><div class="empty">Aguardando baterias principais.</div></div>
+</section>
+
+<div class="sectionTitle">Ranking das baterias <small>• modelos e tecnologias ordenados por score auditável</small></div>
+<section class="card rankingCard">
+  <div class="rankingHeader">
+    <div>
+      <strong>Score composto de referência</strong>
+      <div class="sub">Qualidade 45% • disco 20% • RAM 15% • latência da operação 20% • ajuste por cobertura</div>
+    </div>
+    <div class="sub">0 → pior resultado medido &nbsp;•&nbsp; 100 → referência ideal</div>
+  </div>
+  <div class="rankRows" id="rankingRows"><div class="empty">Sem baterias principais para classificar.</div></div>
+  <div class="note">O ranking não compara inteligência geral do modelo. Ele resume somente a bateria Linear publicada e penaliza resultados com métricas ausentes.</div>
+</section>
+
+<div class="sectionTitle">Comparador RIFT × CASCADE × AETHER × SPECTRA <small>• mesma família de modelo, métricas de referência</small></div>
+<section class="card compareGrid">
+  <aside class="compareSide">
+    <div class="field"><label for="compareModel">Modelo</label><select id="compareModel"><option value="">Selecione um modelo</option></select></div>
+    <div class="compareStatus" id="riftCompareStatus"><b>RIFT</b><div class="sub">Sem bateria principal.</div></div>
+    <div class="compareStatus" id="cascadeCompareStatus"><b>CASCADE</b><div class="sub">Sem bateria principal.</div></div>
+    <div class="compareStatus" id="aetherCompareStatus"><b>AETHER</b><div class="sub">Sem bateria principal.</div></div>
+    <div class="compareStatus" id="spectraCompareStatus"><b>SPECTRA</b><div class="sub">Sem bateria principal.</div></div>
+    <div class="note">Latência só é comparável quando hardware, camada e tamanho da ativação são equivalentes. O dashboard não transforma uma operação Linear em Tok/s do modelo.</div>
+  </aside>
+  <div class="tableWrap">
+    <table class="compareTable">
+      <thead><tr><th>Métrica</th><th>Baseline</th><th>RIFT</th><th>CASCADE</th><th>AETHER</th><th>SPECTRA</th></tr></thead>
+      <tbody id="compareBody"><tr><td colspan="6" class="empty">Execute ao menos duas tecnologias para o mesmo modelo.</td></tr></tbody>
+    </table>
+  </div>
 </section>
 
 <div class="toolbar">
   <div class="filters">
     <select id="modelFilter"><option value="">Todos os modelos</option></select>
+    <select id="technologyFilter"><option value="">Todas as tecnologias</option><option value="RIFT">RIFT</option><option value="CASCADE">CASCADE</option><option value="AETHER">AETHER</option><option value="SPECTRA">SPECTRA</option></select>
     <select id="batteryFilter"><option value="">Todas as baterias</option></select>
   </div>
-  <div class="legend"><span><i class="dot baseline"></i>Baseline</span><span><i class="dot rift"></i>RIFT</span></div>
+  <div class="legend"><span><i class="dot baseline"></i>Baseline</span><span><i class="dot rift"></i>RIFT</span><span><i class="dot cascade"></i>CASCADE</span><span><i class="dot aether"></i>AETHER</span><span><i class="dot spectra"></i>SPECTRA</span></div>
 </div>
 
-<div id="batteries"><div class="card empty">Carregue os relatórios dos testes para iniciar o acompanhamento.</div></div>
+<div id="batteries"><div class="card empty">Carregue os relatórios para iniciar o acompanhamento.</div></div>
 
 <div class="sectionTitle">Histórico consolidado</div>
 <div class="tableWrap">
 <table>
 <thead><tr>
-  <th>Data</th><th>Modelo</th><th>Bateria</th><th>Tok/s antes</th><th>Tok/s RIFT</th><th>Ganho vel.</th>
-  <th>RAM antes</th><th>RAM RIFT</th><th>Redução RAM</th><th>Disco antes</th><th>Disco RIFT</th><th>Redução disco</th>
+  <th>Data (São Paulo)</th><th>Modelo</th><th>Tecnologia</th><th>Bateria</th><th>Tok/s antes</th><th>Tok/s resultado</th><th>Ganho vel.</th>
+  <th>RAM antes</th><th>RAM resultado</th><th>Redução RAM</th><th>Disco antes</th><th>Disco resultado</th><th>Redução disco</th>
 </tr></thead>
-<tbody id="historyBody"><tr><td colspan="12" class="empty">Sem dados.</td></tr></tbody>
+<tbody id="historyBody"><tr><td colspan="13" class="empty">Sem dados.</td></tr></tbody>
 </table>
 </div>
 
 <details>
-<summary>Formato de dados e compatibilidade</summary>
+<summary>Formato, segurança e limites da comparação</summary>
 <div class="help">
-  <p>A página aceita o <code>rift_phase1_gain_report.json</code> e o <code>rift_phase1_gain_history.csv</code> gerados pelo script atual. Quando o teste ainda é apenas de uma operação Linear, a página não chama operações/s de Tok/s: Tok/s fica como “não medido”.</p>
-  <p>Para baterias completas de inferência, use campos como <code>baseline_tok_s</code>, <code>rift_tok_s</code>, <code>baseline_ram_bytes</code>, <code>rift_ram_bytes</code>, <code>baseline_disk_bytes</code> e <code>rift_disk_bytes</code>. O ganho é calculado automaticamente.</p>
+  <p>Os registros novos usam <code>technology</code> e campos neutros <code>candidate_*</code>. O dashboard continua aceitando o histórico RIFT anterior com campos <code>rift_*</code>.</p>
+  <p>RIFT, CASCADE, AETHER e SPECTRA publicam pela mesma Function <code>/api/results</code>. O PAT do GitHub permanece apenas na Vercel; o Colab recebe somente a chave independente de ingestão.</p>
+  <p>A chave <code>API_GOOGLE</code> permanece na Function <code>/api/analyze</code> e nunca é enviada ao navegador. O ranking é calculado de forma determinística; o Gemini apenas interpreta as métricas e sua recomendação pode ser inconclusiva.</p>
+  <p>O CASCADE v0.3 incluído é uma implementação de referência da Fase 1. O prefetch é simulado e não existe kernel fused nativo. Portanto, resultados de latência não autorizam reivindicar ganho nativo de inferência.</p>
+  <p>O AETHER v1.0 incluído também é um caminho de referência: usa base ternária fisicamente empacotada em 2 bits. HQR-ANS 0,85 bit, P-IO assíncrono e o kernel SRFA nativo não estão implementados e não são reivindicados.</p>
+  <p>O SPECTRA v0.1 mede Gate/TADDS, bundle físico e um proxy de drift de uma única Linear. Prefetch assíncrono, kernel fused, compensação de drift, speculative path e certificação end-to-end ainda não estão implementados.</p>
 </div>
 </details>
-</div>
+</main>
 
 <script>
-const state={records:[]};
+const state={records:[],analysis:null,analysisError:null,analysisLoading:false,ranking:[],analysisRequest:0,queue:[],modelSearchRequest:0};
 const $=id=>document.getElementById(id);
+const SAO_PAULO_TZ="America/Sao_Paulo";
+const dateFormatter=new Intl.DateTimeFormat("pt-BR",{timeZone:SAO_PAULO_TZ,day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false,timeZoneName:"shortOffset"});
+const TECHNOLOGIES=["RIFT","CASCADE","AETHER","SPECTRA"];
+const launcherOrigin=["localhost","127.0.0.1","::1"].includes(location.hostname)?"https://rift-lm.vercel.app":location.origin;
 
 function n(v){const x=Number(v);return Number.isFinite(x)?x:null}
-function pctGainHigherBetter(base,rift){return base&&rift?((rift/base)-1)*100:null}
-function pctReduction(base,rift){return base&&rift?(1-rift/base)*100:null}
-function fmtNum(v,d=2){return v==null?"—":Number(v).toFixed(d)}
-function fmtBytes(v){
-  if(v==null)return "—"; const units=["B","KB","MB","GB","TB"]; let x=Number(v),i=0;
-  while(Math.abs(x)>=1024&&i<units.length-1){x/=1024;i++}
-  return `${x.toFixed(i<2?1:2)} ${units[i]}`
-}
+function pctGainHigherBetter(base,candidate){return base&&candidate!=null?((candidate/base)-1)*100:null}
+function pctReduction(base,candidate){return base&&candidate!=null?(1-candidate/base)*100:null}
+function fmtBytes(v){if(v==null)return "—";const units=["B","KB","MB","GB","TB"];let x=Number(v),i=0;while(Math.abs(x)>=1024&&i<units.length-1){x/=1024;i++}return `${x.toFixed(i<2?1:2)} ${units[i]}`}
 function fmtTok(v){return v==null?"não medido":`${Number(v).toFixed(2)} tok/s`}
 function fmtPct(v){return v==null?"—":`${v>=0?"+":""}${v.toFixed(1)}%`}
+function fmtMs(v){return v==null?"—":`${Number(v).toFixed(4)} ms`}
+function fmtMetric(v,d=6){return v==null?"—":Number(v).toFixed(d)}
 function gainClass(v){return v==null?"warn":v>0?"good":v<0?"bad":"warn"}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
+function fmtDate(value){if(!value)return "—";const date=new Date(value);return Number.isNaN(date.getTime())?String(value):dateFormatter.format(date).replace(",","")}
+function inferTechnology(o){const explicit=String(o.technology||"").toUpperCase();if(TECHNOLOGIES.includes(explicit))return explicit;const hint=`${o.spec||""} ${o.battery_id||o.battery||""}`.toUpperCase();return hint.includes("SPECTRA")?"SPECTRA":hint.includes("AETHER")?"AETHER":hint.includes("CASCADE")?"CASCADE":"RIFT"}
 
 function normalizePreferred(o,source="json"){
   const op=o.metrics?.operation||{};
+  const technology=inferTechnology(o);
   return {
-    timestamp:o.timestamp_utc||o.timestamp||new Date().toISOString(),
-    model:o.model_id||o.model||"Modelo não informado",
-    battery:o.battery_id||o.battery||o.stage||"Phase 1",
-    status:o.status||((o.quality&&o.quality.full_local_gate_pass)?"PASS":"EXPERIMENTAL"),
-    baselineTok:n(o.baseline_tok_s ?? o.baseline?.tok_s),
-    riftTok:n(o.rift_tok_s ?? o.rift?.tok_s),
-    baselineRam:n(o.baseline_ram_bytes ?? o.baseline?.ram_bytes),
-    riftRam:n(o.rift_ram_bytes ?? o.rift?.ram_bytes),
-    baselineDisk:n(o.baseline_disk_bytes ?? o.baseline?.disk_bytes),
-    riftDisk:n(o.rift_disk_bytes ?? o.rift?.disk_bytes),
-    linearBaselineMs:n(o.baseline_operation_ms ?? op.baseline_median_ms),
-    linearRiftMs:n(o.rift_operation_ms ?? op.rift_median_ms),
-    operationSpeedup:n(o.operation_speedup_x ?? op.speedup_x),
-    quality:o.quality||null,
-    gains:o.gains||null,
-    measurementScope:o.measurement_scope||"",
-    notes:o.notes||"",
-    source,
-    raw:o
+    timestamp:o.timestamp_utc||o.timestamp||new Date().toISOString(),model:o.model_id||o.model||"Modelo não informado",
+    technology,battery:o.battery_id||o.battery||o.stage||"Phase 1",status:o.status||((o.quality&&o.quality.full_local_gate_pass)?"PASS":"EXPERIMENTAL"),
+    comparisonRole:o.comparison_role||null,baselineTok:n(o.baseline_tok_s??o.baseline?.tok_s),candidateTok:n(o.candidate_tok_s??o.rift_tok_s??o.cascade_tok_s??o.aether_tok_s??o.spectra_tok_s??o.rift?.tok_s),
+    baselineRam:n(o.baseline_ram_bytes??o.baseline?.ram_bytes),candidateRam:n(o.candidate_ram_bytes??o.rift_ram_bytes??o.cascade_ram_bytes??o.aether_ram_bytes??o.spectra_ram_bytes??o.rift?.ram_bytes),
+    baselineDisk:n(o.baseline_disk_bytes??o.baseline?.disk_bytes),candidateDisk:n(o.candidate_disk_bytes??o.rift_disk_bytes??o.cascade_disk_bytes??o.aether_disk_bytes??o.spectra_disk_bytes??o.rift?.disk_bytes),
+    linearBaselineMs:n(o.baseline_operation_ms??op.baseline_median_ms),linearCandidateMs:n(o.candidate_operation_ms??o.rift_operation_ms??op.candidate_median_ms??op.rift_median_ms),
+    operationSpeedup:n(o.operation_speedup_x??op.speedup_x),quality:o.quality||null,gains:o.gains||null,measurementScope:o.measurement_scope||"",notes:o.notes||"",source,raw:o
   };
 }
+function normalizeCurrentReport(o){return normalizePreferred({
+  ...o,technology:"RIFT",battery_id:o.b0?.b0_passed_reference?"Phase 1 • B0 + codec":"Phase 1",
+  baseline_disk_bytes:o.storage?.source_tensor_bytes??o.storage?.baseline_raw_file_bytes,candidate_disk_bytes:o.storage?.full?.candidate_bytes,
+  baseline_operation_ms:o.performance?.baseline_fp32_matmul?.median_ms,candidate_operation_ms:o.performance?.rift_full_decode_plus_matmul?.median_ms
+},"rift_phase1_gain_report");}
+function normalizeCsvRow(r){const normalized=normalizePreferred(r,r.technology?"technology-history.csv":"rift-history.csv");if(!normalized.quality&&("quality_gate_pass" in r)){normalized.quality={full_local_gate_pass:String(r.quality_gate_pass).toLowerCase()==="true",output:{cosine:n(r.output_cosine_full),nrmse:n(r.output_nrmse_full)},weight:{cosine:n(r.weight_cosine_full),nrmse:n(r.weight_nrmse_full)}}}return normalized}
+function parseCsv(txt){const lines=txt.trim().split(/\r?\n/);if(lines.length<2)return[];const parseLine=line=>{let a=[],v="",q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(q&&line[i+1]==='"'){v+='"';i++}else q=!q}else if(c===","&&!q){a.push(v);v=""}else v+=c}a.push(v);return a};const h=parseLine(lines[0]);return lines.slice(1).filter(Boolean).map(line=>{const vals=parseLine(line),o={};h.forEach((k,i)=>o[k]=vals[i]??"");return o})}
 
-function normalizeCurrentReport(o){
-  const baseDisk=n(o.storage?.source_tensor_bytes ?? o.storage?.baseline_raw_file_bytes);
-  const riftDisk=n(o.storage?.full?.candidate_bytes);
-  return {
-    timestamp:o.timestamp_utc||new Date().toISOString(),
-    model:o.model_id||"Modelo não informado",
-    battery:o.b0?.b0_passed_reference ? "Phase 1 • B0 + codec" : "Phase 1",
-    status:o.quality?.full_local_gate_pass?"PASS":"EXPERIMENTAL",
-    baselineTok:null,
-    riftTok:null,
-    baselineRam:n(o.memory?.baseline_ram_bytes),
-    riftRam:n(o.memory?.rift_ram_bytes),
-    baselineDisk:baseDisk,
-    riftDisk:riftDisk,
-    linearBaselineMs:n(o.performance?.baseline_fp32_matmul?.median_ms),
-    linearRiftMs:n(o.performance?.rift_full_decode_plus_matmul?.median_ms),
-    quality:o.quality||null,
-    source:"rift_phase1_gain_report",
-    raw:o
-  };
+async function loadPublishedData(){const status=$("dataStatus");try{const res=await fetch("/data/rift_test_batteries.json",{cache:"no-store"});if(!res.ok)throw new Error(`HTTP ${res.status}`);const payload=await res.json();const arr=Array.isArray(payload)?payload:(Array.isArray(payload.records)?payload.records:[payload]);arr.forEach(o=>state.records.push(o.storage&&o.performance&&o.model_id?normalizeCurrentReport(o):normalizePreferred(o,"published-data")));dedupe();state.analysis=null;state.analysisError=null;state.ranking=[];render();status.textContent=`Histórico publicado carregado • ${arr.length} bateria(s)`;status.className="sub good";requestAIAnalysis()}catch(err){status.textContent="Sem histórico publicado disponível • use Carregar JSON/CSV";status.className="sub warn";render()}}
+async function loadFiles(files){for(const file of files){const txt=await file.text();try{if(file.name.toLowerCase().endsWith(".csv"))parseCsv(txt).forEach(r=>state.records.push(normalizeCsvRow(r)));else{const j=JSON.parse(txt),arr=Array.isArray(j)?j:[j];arr.forEach(o=>state.records.push(o.storage&&o.performance&&o.model_id?normalizeCurrentReport(o):normalizePreferred(o,file.name)))}}catch(e){alert(`Falha ao ler ${file.name}: ${e.message}`)}}dedupe();state.analysis=null;state.analysisError=null;state.ranking=[];render();requestAIAnalysis(true)}
+function dedupe(){const m=new Map();state.records.forEach(r=>m.set([r.timestamp,r.model,r.technology,r.battery,r.source].join("|"),r));state.records=[...m.values()].sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)))}
+
+function technologyFill(technology){return technology==="SPECTRA"?"spectraFill":technology==="AETHER"?"aetherFill":technology==="CASCADE"?"cascadeFill":"riftFill"}
+function technologyCard(technology){return technology==="SPECTRA"?"spectraCard":technology==="AETHER"?"aetherCard":technology==="CASCADE"?"cascadeCard":"riftCard"}
+function technologyBadge(technology){return technology==="SPECTRA"?"techSpectra":technology==="AETHER"?"techAether":technology==="CASCADE"?"techCascade":"techRift"}
+function adaptiveStageRate(r){return n(r?.raw?.metrics?.[String(r?.technology||"").toLowerCase()]?.stage_activation_rate)}
+function overallGain(r){const vals=[];const tg=pctGainHigherBetter(r.baselineTok,r.candidateTok);if(tg!=null)vals.push(tg);const rg=pctReduction(r.baselineRam,r.candidateRam);if(rg!=null)vals.push(rg);const dg=pctReduction(r.baselineDisk,r.candidateDisk);if(dg!=null)vals.push(dg);return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null}
+function metricChart(title,unit,base,candidate,technology,higherBetter=true,note=""){
+  if(base==null&&candidate==null)return `<div class="chart"><div class="chartTitle"><b>${title}</b><span>${unit}</span></div><div class="note">Ainda não medido nesta bateria.</div></div>`;
+  const max=Math.max(base||0,candidate||0,1),bw=base==null?0:base/max*100,cw=candidate==null?0:candidate/max*100,g=higherBetter?pctGainHigherBetter(base,candidate):pctReduction(base,candidate);
+  const formatter=unit==="bytes"?fmtBytes:(v=>v==null?"—":unit==="tok/s"?`${v.toFixed(2)} tok/s`:`${v.toFixed(2)} ${unit}`),fill=technologyFill(technology);
+  return `<div class="chart"><div class="chartTitle"><b>${title}</b><span class="${gainClass(g)}">${fmtPct(g)}</span></div><div class="barRow"><span>Antes</span><div class="track"><div class="fill base" style="width:${bw}%"></div></div><span class="value">${formatter(base)}</span></div><div class="barRow"><span>${technology}</span><div class="track"><div class="fill ${fill}" style="width:${cw}%"></div></div><span class="value">${formatter(candidate)}</span></div>${note?`<div class="note">${esc(note)}</div>`:""}</div>`;
 }
+function gainSummaryChart(r){const items=[["Velocidade",pctGainHigherBetter(r.baselineTok,r.candidateTok)],["RAM",pctReduction(r.baselineRam,r.candidateRam)],["Disco",pctReduction(r.baselineDisk,r.candidateDisk)]].filter(x=>x[1]!=null);if(!items.length)return `<div class="chart"><div class="chartTitle"><b>Ganhos</b><span>—</span></div><div class="note">Sem métricas comparáveis.</div></div>`;const max=Math.max(...items.map(x=>Math.abs(x[1])),1),fill=technologyFill(r.technology);return `<div class="chart"><div class="chartTitle"><b>Ganhos medidos</b><span>${fmtPct(overallGain(r))}</span></div>${items.map(([label,v])=>`<div class="barRow"><span>${label}</span><div class="track"><div class="fill ${v>=0?fill:"base"}" style="width:${Math.min(100,Math.abs(v)/max*100)}%"></div></div><span class="value ${gainClass(v)}">${fmtPct(v)}</span></div>`).join("")}<div class="note">Valores negativos permanecem visíveis como regressão.</div></div>`}
 
-function normalizeCsvRow(r){
-  const isNew=("baseline_disk_bytes" in r)||("battery_id" in r&&"measurement_scope" in r);
-  return {
-    timestamp:r.timestamp_utc||"",
-    model:r.model_id||"Modelo não informado",
-    battery:r.battery_id||"Phase 1 history",
-    status:r.status||"EXPERIMENTAL",
-    baselineTok:n(r.baseline_tok_s),
-    riftTok:n(r.rift_tok_s),
-    baselineRam:n(r.baseline_ram_bytes),
-    riftRam:n(r.rift_ram_bytes),
-    baselineDisk:n(isNew?r.baseline_disk_bytes:r.source_tensor_bytes),
-    riftDisk:n(isNew?r.rift_disk_bytes:r.rift_full_payload_bytes),
-    linearBaselineMs:n(isNew?r.baseline_operation_ms:r.baseline_median_ms),
-    linearRiftMs:n(isNew?r.rift_operation_ms:r.rift_full_reference_path_median_ms),
-    operationSpeedup:n(r.operation_speedup_x),
-    quality:{full_local_gate_pass:String(r.quality_gate_pass).toLowerCase()==="true",weight_full:{cosine:n(r.weight_cosine_full),nrmse:n(r.weight_nrmse_full)},output_full:{cosine:n(r.output_cosine_full),nrmse:n(r.output_nrmse_full)}},
-    measurementScope:r.measurement_scope||"",
-    notes:r.notes||"",
-    source:isNew?"rift_test_batteries.csv":"rift_phase1_gain_history",
-    raw:r
-  };
+function qualityOutput(q){return q?.output_full??q?.output??null}
+function renderBattery(r){let throughputNote="";if(r.baselineTok==null&&r.linearBaselineMs!=null)throughputNote=`Latência de uma operação Linear: ${fmtMs(r.linearBaselineMs)} → ${fmtMs(r.linearCandidateMs)}. Não é Tok/s do modelo.`;const q=r.quality||{},out=qualityOutput(q)||{},weight=q.weight_full??q.weight??{},stageRate=adaptiveStageRate(r),recommended=analysisForModel(r.model)?.recommendation===r.technology;return `<section class="card battery ${technologyCard(r.technology)} ${recommended?"recommended":""}"><div class="batteryHead"><div><div class="batteryTitle">${esc(r.model)}</div><div class="sub" title="UTC: ${esc(r.timestamp)}">${esc(r.battery)} • ${esc(fmtDate(r.timestamp))}</div></div><div class="badges"><span class="badge ${technologyBadge(r.technology)}">${r.technology}</span>${recommended?'<span class="badge aiRecommended">★ IA recomenda</span>':""}<span class="badge">${esc(r.status||"")}</span><span class="badge">${esc(r.source||"")}</span></div></div><div class="charts">${metricChart("Throughput","tok/s",r.baselineTok,r.candidateTok,r.technology,true,throughputNote)}${metricChart("RAM necessária","bytes",r.baselineRam,r.candidateRam,r.technology,false)}${metricChart("Espaço em disco","bytes",r.baselineDisk,r.candidateDisk,r.technology,false)}${gainSummaryChart(r)}</div><div class="quality"><div class="qitem"><span class="sub">Weight cosine</span><b>${fmtMetric(weight.cosine)}</b></div><div class="qitem"><span class="sub">Output cosine</span><b>${fmtMetric(out.cosine)}</b></div><div class="qitem"><span class="sub">Quality gate</span><b>${q.full_local_gate_pass===true?"PASS":q.full_local_gate_pass===false?"FAIL":"—"}</b></div><div class="qitem"><span class="sub">Estágio adaptativo</span><b>${stageRate==null?"—":`${(stageRate*100).toFixed(1)}%`}</b></div></div>${(r.measurementScope||r.notes)?`<div class="note" style="margin-top:12px">${esc(r.measurementScope)}${r.notes?`<br>${esc(r.notes)}`:""}</div>`:""}</section>`}
+
+function renderSummary(rows){const r=rows.at(-1);if(!r){["mTok","mRam","mDisk","mOverall"].forEach(id=>$(id).textContent="—");$("mTechnology").textContent="Tecnologia: —";return}const tg=pctGainHigherBetter(r.baselineTok,r.candidateTok),rg=pctReduction(r.baselineRam,r.candidateRam),dg=pctReduction(r.baselineDisk,r.candidateDisk),og=overallGain(r);$("mTok").textContent=fmtTok(r.candidateTok);$("mTokBase").textContent=`Baseline: ${fmtTok(r.baselineTok)}`;$("mTokGain").textContent=fmtPct(tg);$("mTokGain").className=`gain ${gainClass(tg)}`;$("mRam").textContent=fmtBytes(r.candidateRam);$("mRamBase").textContent=`Baseline: ${fmtBytes(r.baselineRam)}`;$("mRamGain").textContent=rg==null?"—":`${fmtPct(rg)} RAM`;$("mRamGain").className=`gain ${gainClass(rg)}`;$("mDisk").textContent=fmtBytes(r.candidateDisk);$("mDiskBase").textContent=`Baseline: ${fmtBytes(r.baselineDisk)}`;$("mDiskGain").textContent=dg==null?"—":`${fmtPct(dg)} espaço`;$("mDiskGain").className=`gain ${gainClass(dg)}`;$("mOverall").textContent=og==null?"dados parciais":fmtPct(og);$("mTechnology").textContent=`Tecnologia: ${r.technology}`;$("mOverallHint").textContent=r.status||"—";$("mOverallHint").className=`gain ${og==null?"warn":gainClass(og)}`}
+
+function isPrimary(r){return r.comparisonRole==="primary"||r.battery==="P1_Q4_LINEAR_BASE_PLUS_REF_4BIT"||r.battery==="P1_CASCADE_GATED_F0_PLUS_F1"||r.battery==="P1_AETHER_HQR_PLUS_TADDS_DYNAMIC"||r.battery==="P1_SPECTRA_HQR_PLUS_TADDS_DYNAMIC"}
+function latestPrimary(model,technology){return state.records.filter(r=>r.model===model&&r.technology===technology&&isPrimary(r)).at(-1)||null}
+
+const SCORE_WEIGHTS={output_cosine:25,output_nrmse:15,disk_reduction_pct:20,ram_reduction_pct:15,operation_speedup_x:20,quality_gate_pass:5};
+function clamp(v,min,max){return Math.min(max,Math.max(min,v))}
+function analysisTechnology(r){if(!r)return null;const output=qualityOutput(r.quality)||{};return {battery_id:r.battery,status:r.status,output_cosine:n(output.cosine),output_nrmse:n(output.nrmse),quality_gate_pass:typeof r.quality?.full_local_gate_pass==="boolean"?r.quality.full_local_gate_pass:null,disk_reduction_pct:pctReduction(r.baselineDisk,r.candidateDisk),ram_reduction_pct:pctReduction(r.baselineRam,r.candidateRam),operation_speedup_x:r.operationSpeedup,stage_activation_rate:adaptiveStageRate(r)}}
+function buildAnalysisPayload(){const models=[...new Set(state.records.filter(isPrimary).map(r=>r.model))].filter(model=>/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(model)).sort();return {models:models.slice(0,20).map(model=>({model_id:model,technologies:Object.fromEntries(TECHNOLOGIES.map(technology=>[technology,analysisTechnology(latestPrimary(model,technology))]))}))}}
+function normalizedScoreMetric(name,value){if(value==null)return null;if(name==="output_cosine")return clamp((value+1)*50,0,100);if(name==="output_nrmse")return 100*(1-clamp(value/.1,0,1));if(name==="disk_reduction_pct"||name==="ram_reduction_pct")return clamp(value,0,100);if(name==="operation_speedup_x")return clamp(value,0,1)*100;if(name==="quality_gate_pass")return value===true?100:value===false?0:null;return null}
+function scoreAnalysisTechnology(modelId,technology,data){let weighted=0,available=0;const components={};for(const [name,weight] of Object.entries(SCORE_WEIGHTS)){const value=normalizedScoreMetric(name,data[name]);components[name]=value;if(value!=null){weighted+=value*weight;available+=weight}}const coverage=available/100,raw=available?weighted/available:0,score=raw*(.65+.35*coverage);return {model_id:modelId,technology,score:Number(score.toFixed(2)),raw_score:Number(raw.toFixed(2)),coverage_pct:Math.round(coverage*100),quality_gate_pass:data.quality_gate_pass,status:data.status,components}}
+function buildLocalRanking(payload=buildAnalysisPayload()){const rows=[];for(const model of payload.models){for(const technology of TECHNOLOGIES){const data=model.technologies[technology];if(data)rows.push(scoreAnalysisTechnology(model.model_id,technology,data))}}rows.sort((a,b)=>b.score-a.score||b.coverage_pct-a.coverage_pct||a.model_id.localeCompare(b.model_id)||a.technology.localeCompare(b.technology));return rows.map((row,index)=>({position:index+1,...row}))}
+function analysisForModel(model){return state.analysis?.analyses?.find(item=>item.model_id===model)||null}
+function renderRanking(){const rows=state.ranking.length?state.ranking:buildLocalRanking();state.ranking=rows;const root=$("rankingRows");if(!rows.length){root.innerHTML='<div class="empty">Sem baterias principais para classificar.</div>';return}root.innerHTML=rows.map(row=>{const recommended=analysisForModel(row.model_id)?.recommendation===row.technology,scoreClass=row.technology==="SPECTRA"?"spectraScore":row.technology==="AETHER"?"aetherScore":row.technology==="CASCADE"?"cascadeScore":"riftScore";return `<div class="rankRow ${recommended?"aiRankWinner":""}" title="Score bruto ${row.raw_score?.toFixed?.(2)??row.raw_score} • cobertura ${row.coverage_pct}%"><span class="rankPosition ${row.position<=3?"podium":""}">${row.position}</span><span class="rankModel">${esc(row.model_id)}${recommended?' <span class="good">• IA recomenda</span>':""}</span><span class="techPill ${row.technology}">${row.technology}</span><span class="rankBar"><i class="${scoreClass}" style="width:${clamp(row.score,0,100)}%"></i></span><span class="rankScore">${Number(row.score).toFixed(1)}</span><span class="coverage">${row.coverage_pct}% dados</span></div>`}).join("")}
+function renderAI(){const status=$("aiStatus"),summary=$("aiSummary"),root=$("aiCards"),button=$("analyzeBtn");button.disabled=state.analysisLoading;if(state.analysisLoading){status.textContent="Gemini está analisando as baterias…";status.className="sub warn";root.innerHTML='<div class="empty">Comparando qualidade, compressão, memória e latência…</div>';return}if(!state.analysis){const models=buildAnalysisPayload().models;status.textContent=state.analysisError?"Gemini indisponível • ranking local preservado":models.length?"Ranking calculado localmente • análise Gemini pendente":"Nenhuma bateria principal disponível.";status.className=state.analysisError?"sub bad":"sub";summary.textContent=state.analysisError?`A análise de IA não ficou disponível: ${state.analysisError}. O ranking auditável continua válido.`:"A IA compara somente tecnologias com baterias principais. Com menos de duas tecnologias, o resultado será inconclusivo.";root.innerHTML=models.length?models.map(model=>`<div class="aiCard inconclusive"><strong>${esc(model.model_id)}</strong><div class="aiVerdict"><strong>${state.analysisError?"RANKING LOCAL":"ANÁLISE PENDENTE"}</strong><span class="techPill INCONCLUSIVO">—</span></div><div class="sub">${state.analysisError?"A recomendação de IA não foi aplicada.":"Aguardando resposta segura da Function da Vercel."}</div></div>`).join(""):'<div class="empty">Aguardando baterias principais.</div>';return}status.textContent=`Analisado por ${state.analysis.model||"gemini-2.5-flash"}${state.analysis.cached?" • cache seguro":""}`;status.className="sub good";summary.textContent=state.analysis.global_summary||"Análise concluída.";root.innerHTML=state.analysis.analyses.map(item=>{const cls=item.recommendation==="RIFT"?"winnerRift":item.recommendation==="CASCADE"?"winnerCascade":item.recommendation==="AETHER"?"winnerAether":item.recommendation==="SPECTRA"?"winnerSpectra":"inconclusive";const decisive=item.decisive_metrics?.length?`<div class="sub" style="margin-top:10px"><b>Métricas decisivas</b></div><ul class="miniList">${item.decisive_metrics.map(value=>`<li>${esc(value)}</li>`).join("")}</ul>`:"";const caveats=item.caveats?.length?`<div class="sub" style="margin-top:10px"><b>Ressalvas</b></div><ul class="miniList">${item.caveats.map(value=>`<li>${esc(value)}</li>`).join("")}</ul>`:"";return `<article class="aiCard ${cls}"><strong>${esc(item.model_id)}</strong><div class="aiVerdict"><strong>${esc(item.recommendation)}</strong><span class="techPill ${item.recommendation}">${item.confidence}% confiança</span></div><div class="confidence"><i style="width:${clamp(item.confidence,0,100)}%"></i></div><p class="help">${esc(item.summary)}</p>${decisive}${caveats}</article>`}).join("")}
+async function requestAIAnalysis(force=false){const payload=buildAnalysisPayload();state.ranking=buildLocalRanking(payload);renderRanking();if(!payload.models.length){state.analysis=null;state.analysisError=null;renderAI();return}if(["localhost","127.0.0.1","::1"].includes(location.hostname)){state.analysis=null;state.analysisError=null;renderAI();$("aiStatus").textContent="Ranking local pronto • Gemini será executado no deploy da Vercel";return}const requestId=++state.analysisRequest;state.analysisLoading=true;state.analysisError=null;renderAI();try{const response=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),cache:"no-store"});const body=await response.json().catch(()=>({}));if(!response.ok||!body.ok)throw new Error(body.error||`HTTP ${response.status}`);if(requestId!==state.analysisRequest)return;state.analysis=body;state.analysisError=null;state.ranking=Array.isArray(body.ranking)?body.ranking:state.ranking}catch(error){if(requestId!==state.analysisRequest)return;state.analysis=null;state.analysisError=error.message}finally{if(requestId===state.analysisRequest){state.analysisLoading=false;render()}}}
+
+function renderCompare(){const select=$("compareModel"),models=[...new Set(state.records.filter(isPrimary).map(r=>r.model))].sort(),old=select.value;select.innerHTML='<option value="">Selecione um modelo</option>'+models.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");select.value=models.includes(old)?old:(models[0]||"");const model=select.value,recommendation=analysisForModel(model)?.recommendation,byTechnology=Object.fromEntries(TECHNOLOGIES.map(technology=>[technology,latestPrimary(model,technology)])),ids={RIFT:"riftCompareStatus",CASCADE:"cascadeCompareStatus",AETHER:"aetherCompareStatus",SPECTRA:"spectraCompareStatus"};for(const technology of TECHNOLOGIES){const r=byTechnology[technology],id=ids[technology];$(id).className=`compareStatus ${recommendation===technology?"aiWinner":""}`;$(id).innerHTML=r?`<b>${technology} • ${esc(r.status)}${recommendation===technology?" • ★ IA recomenda":""}</b><div class="sub" title="UTC: ${esc(r.timestamp)}">${esc(fmtDate(r.timestamp))}<br>${esc(r.battery)}</div>`:`<b>${technology}</b><div class="sub">Sem bateria principal para este modelo.</div>`}const available=TECHNOLOGIES.map(technology=>byTechnology[technology]).filter(Boolean);if(!available.length){$("compareBody").innerHTML='<tr><td colspan="6" class="empty">Execute ao menos duas tecnologias para o mesmo modelo.</td></tr>';return}const [rift,cascade,aether,spectra]=TECHNOLOGIES.map(technology=>byTechnology[technology]),baseline=available[0],ro=qualityOutput(rift?.quality),co=qualityOutput(cascade?.quality),ao=qualityOutput(aether?.quality),so=qualityOutput(spectra?.quality),cascadeRate=adaptiveStageRate(cascade),aetherRate=adaptiveStageRate(aether),spectraRate=adaptiveStageRate(spectra),spectraDrift=n(spectra?.raw?.metrics?.spectra?.single_layer_drift_proxy_max),gate=r=>r?.quality?.full_local_gate_pass===true?"PASS":r?.quality?.full_local_gate_pass===false?"FAIL":"—",speed=r=>r?.operationSpeedup==null?"—":`${r.operationSpeedup.toFixed(3)}x`;const rows=[
+  ["Payload / bundle",fmtBytes(baseline?.baselineDisk),fmtBytes(rift?.candidateDisk),fmtBytes(cascade?.candidateDisk),fmtBytes(aether?.candidateDisk),fmtBytes(spectra?.candidateDisk)],
+  ["RAM estimada",fmtBytes(baseline?.baselineRam),fmtBytes(rift?.candidateRam),fmtBytes(cascade?.candidateRam),fmtBytes(aether?.candidateRam),fmtBytes(spectra?.candidateRam)],
+  ["Latência Linear",fmtMs(baseline?.linearBaselineMs),fmtMs(rift?.linearCandidateMs),fmtMs(cascade?.linearCandidateMs),fmtMs(aether?.linearCandidateMs),fmtMs(spectra?.linearCandidateMs)],
+  ["Speedup da operação","1.000x",speed(rift),speed(cascade),speed(aether),speed(spectra)],
+  ["Output cosine","1.000000",fmtMetric(ro?.cosine),fmtMetric(co?.cosine),fmtMetric(ao?.cosine),fmtMetric(so?.cosine)],
+  ["Output NRMSE","0.000000",fmtMetric(ro?.nrmse),fmtMetric(co?.nrmse),fmtMetric(ao?.nrmse),fmtMetric(so?.nrmse)],
+  ["Quality gate","—",gate(rift),gate(cascade),gate(aether),gate(spectra)],
+  ["Estágio adaptativo","—","Sempre (BASE+REF)",cascadeRate==null?"—":`${(cascadeRate*100).toFixed(1)}%`,aetherRate==null?"—":`${(aetherRate*100).toFixed(1)}%`,spectraRate==null?"—":`${(spectraRate*100).toFixed(1)}%`],
+  ["Drift proxy máx.","0.000000","—","—","—",fmtMetric(spectraDrift)]
+];$("compareBody").innerHTML=rows.map(row=>`<tr>${row.map((cell,i)=>`<td class="${i?"num":""}">${esc(cell)}</td>`).join("")}</tr>`).join("")}
+
+function renderTable(rows){const body=$("historyBody");if(!rows.length){body.innerHTML='<tr><td colspan="13" class="empty">Sem dados.</td></tr>';return}body.innerHTML=rows.slice().reverse().map(r=>{const tg=pctGainHigherBetter(r.baselineTok,r.candidateTok),rg=pctReduction(r.baselineRam,r.candidateRam),dg=pctReduction(r.baselineDisk,r.candidateDisk);return `<tr><td title="UTC: ${esc(r.timestamp)}">${esc(fmtDate(r.timestamp))}</td><td>${esc(r.model)}</td><td>${r.technology}</td><td>${esc(r.battery)}</td><td class="num">${fmtTok(r.baselineTok)}</td><td class="num">${fmtTok(r.candidateTok)}</td><td class="num ${gainClass(tg)}">${fmtPct(tg)}</td><td class="num">${fmtBytes(r.baselineRam)}</td><td class="num">${fmtBytes(r.candidateRam)}</td><td class="num ${gainClass(rg)}">${fmtPct(rg)}</td><td class="num">${fmtBytes(r.baselineDisk)}</td><td class="num">${fmtBytes(r.candidateDisk)}</td><td class="num ${gainClass(dg)}">${fmtPct(dg)}</td></tr>`}).join("")}
+function render(){const models=[...new Set(state.records.map(r=>r.model))].sort(),batteries=[...new Set(state.records.map(r=>r.battery))].sort(),mf=$("modelFilter"),bf=$("batteryFilter"),oldM=mf.value,oldB=bf.value;mf.innerHTML='<option value="">Todos os modelos</option>'+models.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");bf.innerHTML='<option value="">Todas as baterias</option>'+batteries.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");if(models.includes(oldM))mf.value=oldM;if(batteries.includes(oldB))bf.value=oldB;const tf=$("technologyFilter"),rows=state.records.filter(r=>(!mf.value||r.model===mf.value)&&(!tf.value||r.technology===tf.value)&&(!bf.value||r.battery===bf.value));renderSummary(rows);$("batteries").innerHTML=rows.length?rows.slice().reverse().map(renderBattery).join(""):'<div class="card empty">Nenhuma bateria corresponde aos filtros.</div>';renderTable(rows);renderAI();renderRanking();renderCompare()}
+
+function normalizeModelInput(value){const raw=String(value||"").trim();try{const url=new URL(raw);if(!["huggingface.co","www.huggingface.co"].includes(url.hostname.toLowerCase()))throw new Error();const parts=url.pathname.split("/").filter(Boolean);if(parts.length<2)throw new Error();return `${parts[0]}/${parts[1]}`}catch{if(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(raw))return raw;return null}}
+function launcherUrl(technology,model,target,trust){const path=model.split("/").map(encodeURIComponent).join("/"),params=new URLSearchParams();if(target!=="auto")params.set("target_layer",target);if(trust)params.set("trust_remote_code","1");return `${launcherOrigin}/${technology}/${path}${params.size?`?${params}`:""}`}
+function queueTechnologies(value){return value==="all"?["rift","cascade","aether","spectra"]:[value]}
+function compactNumber(value){return new Intl.NumberFormat("pt-BR",{notation:"compact",maximumFractionDigits:1}).format(Number(value)||0)}
+function renderModelSearchResults(models,message=""){
+  const root=$("modelSearchResults");
+  if(!models.length){root.innerHTML=`<div class="empty">${esc(message||"Nenhum modelo encontrado.")}</div>`;root.hidden=false;$("batchModelSearch").setAttribute("aria-expanded","true");return}
+  root.innerHTML=models.map(model=>`<button class="modelResult" type="button" role="option" data-model="${esc(model.id)}"><span class="modelResultName">${esc(model.id)}</span><span>${compactNumber(model.downloads)} downloads</span><span class="modelResultMeta">${esc(model.pipeline_tag||"pipeline não informada")} • ${esc(model.library_name||"biblioteca não informada")}${model.gated?" • acesso controlado":""}</span></button>`).join("");
+  root.hidden=false;$("batchModelSearch").setAttribute("aria-expanded","true");
 }
-
-function parseCsv(txt){
-  const lines=txt.trim().split(/\r?\n/); if(lines.length<2)return[];
-  const parseLine=line=>{let a=[],v="",q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c=='"'){if(q&&line[i+1]=='"'){v+='"';i++}else q=!q}else if(c==","&&!q){a.push(v);v=""}else v+=c}a.push(v);return a}
-  const h=parseLine(lines[0]);
-  return lines.slice(1).filter(Boolean).map(line=>{const vals=parseLine(line),o={};h.forEach((k,i)=>o[k]=vals[i]??"");return o});
+function hideModelSearchResults(){const root=$("modelSearchResults");root.hidden=true;$("batchModelSearch").setAttribute("aria-expanded","false")}
+function addQueueModel(value){
+  const model=normalizeModelInput(value),technology=$("batchTechnologyInput").value,target=$("batchTargetLayerInput").value.trim()||"auto",status=$("batchSearchStatus");
+  if(!model){status.textContent="Selecione um resultado ou informe um model ID completo no formato org/modelo.";status.className="note bad";return}
+  if(!/^(auto|[A-Za-z0-9_.-]+)$/.test(target)){status.textContent="Camada inválida; use auto ou um nome de tensor válido.";status.className="note bad";return}
+  const trust=$("batchTrustRemoteInput").checked||model==="moonshotai/Kimi-K3",key=[model,technology,target,trust].join("|");
+  if(state.queue.some(item=>item.key===key)){status.textContent="Este modelo já está na fila com a mesma configuração.";status.className="note warn";return}
+  state.queue.push({key,model,technology,target,trust});
+  $("batchModelSearch").value="";hideModelSearchResults();status.textContent=`${model} adicionado à fila.`;status.className="note good";renderBatchQueue();
 }
-
-async function loadPublishedData(){
-  const status=$("dataStatus");
-  try{
-    const res=await fetch("/data/rift_test_batteries.json",{cache:"no-store"});
-    if(!res.ok)throw new Error(`HTTP ${res.status}`);
-    const payload=await res.json();
-    const arr=Array.isArray(payload)?payload:(Array.isArray(payload.records)?payload.records:[payload]);
-    arr.forEach(o=>{
-      if(o.storage&&o.performance&&o.model_id)state.records.push(normalizeCurrentReport(o));
-      else state.records.push(normalizePreferred(o,"published-data"));
-    });
-    dedupe();
-    render();
-    status.textContent=`Histórico publicado carregado • ${arr.length} bateria(s)`;
-    status.className="sub good";
-  }catch(err){
-    status.textContent="Sem histórico publicado disponível • use “Carregar JSON/CSV”";
-    status.className="sub warn";
-    render();
-  }
+function queueTasks(){return state.queue.flatMap(item=>queueTechnologies(item.technology).map(technology=>({model:item.model,technology,target:item.target,trust:item.trust,url:launcherUrl(technology,item.model,item.target,item.trust)})))}
+function buildSerialColabCode(){
+  const tasks=queueTasks();if(!tasks.length)return "# Adicione modelos à fila para gerar a célula serial.";
+  const serialized=JSON.stringify(tasks,null,2);
+  return [
+    "# Fila serial RIFT / CASCADE / AETHER / SPECTRA",
+    "# Cada benchmark roda isolado; falhas interrompem a fila.",
+    "import gc",
+    "import json",
+    "import subprocess",
+    "import sys",
+    "import time",
+    "from pathlib import Path",
+    "from urllib.request import Request, urlopen",
+    "",
+    `TASKS = json.loads(r'''${serialized}''')`,
+    "WORK_DIR = Path('/content/rift_serial_queue')",
+    "WORK_DIR.mkdir(parents=True, exist_ok=True)",
+    "",
+    "def gpu_memory_used_mb():",
+    "    try:",
+    "        output = subprocess.check_output([",
+    "            'nvidia-smi', '--query-gpu=memory.used',",
+    "            '--format=csv,noheader,nounits',",
+    "        ], text=True, stderr=subprocess.DEVNULL, timeout=10)",
+    "        values = [int(line.strip()) for line in output.splitlines() if line.strip()]",
+    "        return sum(values) if values else None",
+    "    except (FileNotFoundError, ValueError, subprocess.SubprocessError):",
+    "        return None",
+    "",
+    "def wait_for_resource_release(baseline_mb, timeout_s=180):",
+    "    gc.collect()",
+    "    if baseline_mb is None:",
+    "        print('[FILA] GPU não detectada; aguardando cooldown de CPU/RAM...')",
+    "        time.sleep(5)",
+    "        return",
+    "    deadline = time.time() + timeout_s",
+    "    stable_reads = 0",
+    "    while time.time() < deadline:",
+    "        current_mb = gpu_memory_used_mb()",
+    "        if current_mb is not None and current_mb <= baseline_mb + 128:",
+    "            stable_reads += 1",
+    "        else:",
+    "            stable_reads = 0",
+    "        print(f'[FILA] VRAM: {current_mb} MB; alvo <= {baseline_mb + 128} MB; estabilidade {stable_reads}/3')",
+    "        if stable_reads >= 3:",
+    "            time.sleep(2)",
+    "            return",
+    "        time.sleep(2)",
+    "    raise RuntimeError('A VRAM não retornou ao nível seguro em 180 segundos')",
+    "",
+    "def download_launcher(url, path):",
+    "    request = Request(url, headers={'User-Agent': 'rift-serial-colab/1.0'})",
+    "    with urlopen(request, timeout=60) as response:",
+    "        path.write_bytes(response.read())",
+    "",
+    "for index, task in enumerate(TASKS, start=1):",
+    "    baseline_mb = gpu_memory_used_mb()",
+    "    launcher_path = WORK_DIR / f'launcher_{index:03d}.py'",
+    "    print('\\n' + '=' * 78)",
+    "    print(f\"[FILA] {index}/{len(TASKS)} — {task['technology'].upper()} — {task['model']}\")",
+    "    print('=' * 78)",
+    "    try:",
+    "        download_launcher(task['url'], launcher_path)",
+    "        process = subprocess.Popen([sys.executable, str(launcher_path)])",
+    "        return_code = process.wait()",
+    "        if return_code != 0:",
+    "            raise RuntimeError(f'Benchmark terminou com código {return_code}; fila interrompida')",
+    "        print('[FILA] Benchmark publicado; processo encerrado.')",
+    "    finally:",
+    "        launcher_path.unlink(missing_ok=True)",
+    "        wait_for_resource_release(baseline_mb)",
+    "",
+    "print('\\n[FILA] Todos os benchmarks foram concluídos e publicados em série.')",
+  ].join("\n")
 }
-
-async function loadFiles(files){
-  for(const file of files){
-    const txt=await file.text();
-    try{
-      if(file.name.toLowerCase().endsWith(".csv")){
-        parseCsv(txt).forEach(r=>state.records.push(normalizeCsvRow(r)));
-      }else{
-        const j=JSON.parse(txt),arr=Array.isArray(j)?j:[j];
-        arr.forEach(o=>{
-          if(o.storage&&o.performance&&o.model_id)state.records.push(normalizeCurrentReport(o));
-          else state.records.push(normalizePreferred(o,file.name));
-        });
-      }
-    }catch(e){alert(`Falha ao ler ${file.name}: ${e.message}`)}
-  }
-  dedupe(); render();
+function renderBatchQueue(){
+  const root=$("batchQueue"),tasks=queueTasks();
+  $("batchQueueCount").textContent=state.queue.length?`${state.queue.length} modelo(s) • ${tasks.length} benchmark(s) em série`:"Fila vazia";
+  root.innerHTML=state.queue.length?state.queue.map((item,index)=>{const tech=item.technology==="all"?"RIFT + CASCADE + AETHER + SPECTRA":item.technology.toUpperCase();return `<div class="queueItem"><span class="queueOrder">${index+1}</span><div><div class="queueModel">${esc(item.model)}</div><div class="queueMeta">${esc(tech)} • camada ${esc(item.target)}${item.trust?" • trust_remote_code":""}</div></div><button class="queueRemove" type="button" data-remove-index="${index}" aria-label="Remover ${esc(item.model)}">Remover</button></div>`}).join(""):'<div class="empty">Pesquise e selecione um ou mais modelos.</div>';
+  $("batchCommandOutput").textContent=buildSerialColabCode();$("copyBatchCommandBtn").disabled=!tasks.length;
 }
-
-function dedupe(){
-  const m=new Map();
-  state.records.forEach(r=>m.set([r.timestamp,r.model,r.battery,r.source].join("|"),r));
-  state.records=[...m.values()].sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
+var batchSearchTimer=null;
+async function searchBatchModels(){
+  const input=$("batchModelSearch"),query=input.value.trim(),status=$("batchSearchStatus"),requestId=++state.modelSearchRequest;
+  if(query.length<2){hideModelSearchResults();status.textContent="Digite pelo menos 2 caracteres para listar modelos públicos de geração de texto.";status.className="note";return}
+  status.textContent="Buscando modelos no Hugging Face…";status.className="note warn";
+  try{const response=await fetch(`/api/models?q=${encodeURIComponent(query)}`,{cache:"force-cache"}),body=await response.json().catch(()=>({}));if(requestId!==state.modelSearchRequest)return;if(!response.ok||!body.ok)throw new Error(body.error||`HTTP ${response.status}`);renderModelSearchResults(body.models||[]);status.textContent=`${body.models?.length||0} modelo(s) encontrado(s). Selecione para adicionar.`;status.className="note good"}catch(error){if(requestId!==state.modelSearchRequest)return;renderModelSearchResults([],"Busca indisponível");status.textContent=`Não foi possível buscar: ${error.message}`;status.className="note bad"}
 }
+function updateCommand(){const model=normalizeModelInput($("modelInput").value),tech=$("technologyInput").value,target=$("targetLayerInput").value.trim()||"auto";if(!model){$("commandOutput").textContent="# Informe org/modelo ou uma URL válida do Hugging Face.";$("modelValidation").textContent="Formato inválido. Exemplo: microsoft/Phi-3.5-mini-instruct";$("modelValidation").className="note bad";$("openModelBtn").href="https://huggingface.co/models";return}if(!/^(auto|[A-Za-z0-9_.-]+)$/.test(target)){$("commandOutput").textContent="# Informe 'auto' ou um nome de tensor válido.";$("modelValidation").textContent="Camada inválida; use apenas letras, números, ponto, hífen e sublinhado.";$("modelValidation").className="note bad";return}const trust=$("trustRemoteInput").checked||model==="moonshotai/Kimi-K3",technologies=tech==="all"?["rift","cascade","aether","spectra"]:[tech],commands=technologies.map(technology=>`!curl -fsSL "${launcherUrl(technology,model,target,trust)}" -o /content/${technology}_launcher.py && python /content/${technology}_launcher.py`);$("commandOutput").textContent=commands.join("\n");const kimi=model==="moonshotai/Kimi-K3"?" Kimi-K3 exige trust_remote_code e recursos muito superiores a um Colab comum.":"";$("modelValidation").textContent=`Modelo normalizado: ${model}. O launcher configura RIFT_RESULTS_ENDPOINT automaticamente.${kimi}`;$("modelValidation").className=`note ${kimi?"warn":"good"}`;$("openModelBtn").href=`https://huggingface.co/${model}`}
 
-function metricChart(title,unit,base,rift,higherBetter=true,note=""){
-  if(base==null&&rift==null)return `<div class="chart"><div class="chartTitle"><b>${title}</b><span>${unit}</span></div><div class="note">Ainda não medido nesta bateria.</div></div>`;
-  const max=Math.max(base||0,rift||0,1), bw=base==null?0:(base/max*100), rw=rift==null?0:(rift/max*100);
-  const g=higherBetter?pctGainHigherBetter(base,rift):pctReduction(base,rift);
-  const formatter=unit==="bytes"?fmtBytes:(v=>v==null?"—":unit==="tok/s"?`${v.toFixed(2)} tok/s`:`${v.toFixed(2)} ${unit}`);
-  return `<div class="chart">
-    <div class="chartTitle"><b>${title}</b><span class="${gainClass(g)}">${fmtPct(g)}</span></div>
-    <div class="barRow"><span>Antes</span><div class="track"><div class="fill base" style="width:${bw}%"></div></div><span class="value">${formatter(base)}</span></div>
-    <div class="barRow"><span>RIFT</span><div class="track"><div class="fill rift" style="width:${rw}%"></div></div><span class="value">${formatter(rift)}</span></div>
-    ${note?`<div class="note">${note}</div>`:""}
-  </div>`;
-}
-
-function overallGain(r){
-  const vals=[];
-  const tg=pctGainHigherBetter(r.baselineTok,r.riftTok); if(tg!=null)vals.push(tg);
-  const rg=pctReduction(r.baselineRam,r.riftRam); if(rg!=null)vals.push(rg);
-  const dg=pctReduction(r.baselineDisk,r.riftDisk); if(dg!=null)vals.push(dg);
-  return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
-}
-
-function gainSummaryChart(r){
-  const items=[
-    ["Velocidade",pctGainHigherBetter(r.baselineTok,r.riftTok)],
-    ["RAM",pctReduction(r.baselineRam,r.riftRam)],
-    ["Disco",pctReduction(r.baselineDisk,r.riftDisk)]
-  ].filter(x=>x[1]!=null);
-  if(!items.length)return `<div class="chart"><div class="chartTitle"><b>Ganhos</b><span>—</span></div><div class="note">Ainda não há métricas comparáveis nesta bateria.</div></div>`;
-  const max=Math.max(...items.map(x=>Math.abs(x[1])),1);
-  return `<div class="chart"><div class="chartTitle"><b>Ganhos medidos</b><span>${fmtPct(overallGain(r))}</span></div>`+
-    items.map(([label,v])=>`<div class="barRow"><span>${label}</span><div class="track"><div class="fill ${v>=0?"rift":"base"}" style="width:${Math.min(100,Math.abs(v)/max*100)}%"></div></div><span class="value ${gainClass(v)}">${fmtPct(v)}</span></div>`).join("")+
-    `<div class="note">Valores negativos são regressões e permanecem visíveis.</div></div>`;
-}
-
-function renderSummary(records){
-  const r=records.at(-1);
-  if(!r){["mTok","mRam","mDisk","mOverall"].forEach(id=>$(id).textContent="—");return}
-  const tg=pctGainHigherBetter(r.baselineTok,r.riftTok), rg=pctReduction(r.baselineRam,r.riftRam), dg=pctReduction(r.baselineDisk,r.riftDisk), og=overallGain(r);
-  $("mTok").textContent=fmtTok(r.riftTok); $("mTokBase").textContent=`Baseline: ${fmtTok(r.baselineTok)}`; $("mTokGain").textContent=fmtPct(tg); $("mTokGain").className=`gain ${gainClass(tg)}`;
-  $("mRam").textContent=fmtBytes(r.riftRam); $("mRamBase").textContent=`Baseline: ${fmtBytes(r.baselineRam)}`; $("mRamGain").textContent=rg==null?"—":`${fmtPct(rg)} RAM`; $("mRamGain").className=`gain ${gainClass(rg)}`;
-  $("mDisk").textContent=fmtBytes(r.riftDisk); $("mDiskBase").textContent=`Baseline: ${fmtBytes(r.baselineDisk)}`; $("mDiskGain").textContent=dg==null?"—":`${fmtPct(dg)} espaço`; $("mDiskGain").className=`gain ${gainClass(dg)}`;
-  $("mOverall").textContent=og==null?"dados parciais":fmtPct(og); $("mOverallHint").textContent=r.status||"—"; $("mOverallHint").className=`gain ${og==null?"warn":gainClass(og)}`;
-}
-
-function render(){
-  const models=[...new Set(state.records.map(r=>r.model))], batteries=[...new Set(state.records.map(r=>r.battery))];
-  const mf=$("modelFilter"), bf=$("batteryFilter"), oldM=mf.value, oldB=bf.value;
-  mf.innerHTML='<option value="">Todos os modelos</option>'+models.map(x=>`<option>${esc(x)}</option>`).join("");
-  bf.innerHTML='<option value="">Todas as baterias</option>'+batteries.map(x=>`<option>${esc(x)}</option>`).join("");
-  if(models.includes(oldM))mf.value=oldM;if(batteries.includes(oldB))bf.value=oldB;
-  const rows=state.records.filter(r=>(!mf.value||r.model===mf.value)&&(!bf.value||r.battery===bf.value));
-  renderSummary(rows);
-  const root=$("batteries");
-  if(!rows.length){root.innerHTML='<div class="card empty">Nenhuma bateria corresponde aos filtros.</div>'}
-  else root.innerHTML=rows.slice().reverse().map(renderBattery).join("");
-  renderTable(rows);
-}
-
-function renderBattery(r){
-  let throughputNote="";
-  if(r.baselineTok==null&&r.linearBaselineMs!=null) throughputNote=`Este teste mede latência de uma operação Linear (${r.linearBaselineMs.toFixed(4)} ms → ${r.linearRiftMs?.toFixed(4)??"—"} ms). Não é correto chamar isso de Tok/s.`;
-  const q=r.quality||{}, wf=q.weight_full||{}, of=q.output_full||{};
-  return `<section class="card battery">
-    <div class="batteryHead">
-      <div><div class="batteryTitle">${esc(r.model)}</div><div class="sub">${esc(r.battery)} • ${esc(r.timestamp||"")}</div></div>
-      <div class="badges"><span class="badge">${esc(r.status||"")}</span><span class="badge">${esc(r.source||"")}</span></div>
-    </div>
-    <div class="charts">
-      ${metricChart("Throughput","tok/s",r.baselineTok,r.riftTok,true,throughputNote)}
-      ${metricChart("RAM necessária","bytes",r.baselineRam,r.riftRam,false)}
-      ${metricChart("Espaço em disco","bytes",r.baselineDisk,r.riftDisk,false)}
-      ${gainSummaryChart(r)}
-    </div>
-    <div class="quality">
-      <div class="qitem"><span class="sub">Weight cosine</span><b>${(q.weight_full?.cosine??q.weight?.cosine)==null?"—":Number(q.weight_full?.cosine??q.weight?.cosine).toFixed(6)}</b></div>
-      <div class="qitem"><span class="sub">Output cosine</span><b>${(q.output_full?.cosine??q.output?.cosine)==null?"—":Number(q.output_full?.cosine??q.output?.cosine).toFixed(6)}</b></div>
-      <div class="qitem"><span class="sub">Quality gate</span><b>${q.full_local_gate_pass===true?"PASS":q.full_local_gate_pass===false?"FAIL":"—"}</b></div>
-    </div>
-    ${(r.measurementScope||r.notes)?`<div class="note" style="margin-top:12px">${esc(r.measurementScope)}${r.notes?`<br>${esc(r.notes)}`:""}</div>`:""}
-  </section>`;
-}
-
-function renderTable(rows){
-  const b=$("historyBody"); if(!rows.length){b.innerHTML='<tr><td colspan="12" class="empty">Sem dados.</td></tr>';return}
-  b.innerHTML=rows.slice().reverse().map(r=>{
-    const tg=pctGainHigherBetter(r.baselineTok,r.riftTok), rg=pctReduction(r.baselineRam,r.riftRam), dg=pctReduction(r.baselineDisk,r.riftDisk);
-    return `<tr><td>${esc(r.timestamp||"")}</td><td>${esc(r.model)}</td><td>${esc(r.battery)}</td>
-    <td class="num">${fmtTok(r.baselineTok)}</td><td class="num">${fmtTok(r.riftTok)}</td><td class="num ${gainClass(tg)}">${fmtPct(tg)}</td>
-    <td class="num">${fmtBytes(r.baselineRam)}</td><td class="num">${fmtBytes(r.riftRam)}</td><td class="num ${gainClass(rg)}">${fmtPct(rg)}</td>
-    <td class="num">${fmtBytes(r.baselineDisk)}</td><td class="num">${fmtBytes(r.riftDisk)}</td><td class="num ${gainClass(dg)}">${fmtPct(dg)}</td></tr>`;
-  }).join("");
-}
-
-function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
-
-$("files").addEventListener("change",e=>loadFiles([...e.target.files]));
-$("reloadBtn").addEventListener("click",()=>{state.records=[];loadPublishedData()});
-$("clearBtn").addEventListener("click",()=>{state.records=[];render();$("dataStatus").textContent="Dados removidos da visualização.";$("dataStatus").className="sub";});
-$("modelFilter").addEventListener("change",render);
-$("batteryFilter").addEventListener("change",render);
-$("demoBtn").addEventListener("click",()=>{
-  state.records=[
-    {timestamp:"exemplo",model:"Modelo demo",battery:"Bateria A",status:"EXEMPLO",baselineTok:2.4,riftTok:4.1,baselineRam:8*1024**3,riftRam:5.2*1024**3,baselineDisk:12*1024**3,riftDisk:4.2*1024**3,quality:{full_local_gate_pass:true,weight_full:{cosine:.997},output_full:{cosine:.995}},source:"dados ilustrativos"},
-    {timestamp:"exemplo 2",model:"Modelo demo",battery:"Bateria B",status:"EXEMPLO",baselineTok:2.5,riftTok:5.0,baselineRam:8*1024**3,riftRam:4.8*1024**3,baselineDisk:12*1024**3,riftDisk:3.9*1024**3,quality:{full_local_gate_pass:true,weight_full:{cosine:.996},output_full:{cosine:.994}},source:"dados ilustrativos"}
-  ];render()
-});
-loadPublishedData();
+$("files").addEventListener("change",e=>loadFiles([...e.target.files]));$("reloadBtn").addEventListener("click",()=>{state.records=[];state.analysis=null;state.analysisError=null;state.ranking=[];loadPublishedData()});$("clearBtn").addEventListener("click",()=>{state.records=[];state.analysis=null;state.analysisError=null;state.ranking=[];render();$("dataStatus").textContent="Dados removidos da visualização.";$("dataStatus").className="sub"});["modelFilter","technologyFilter","batteryFilter"].forEach(id=>$(id).addEventListener("change",render));$("compareModel").addEventListener("change",renderCompare);$("analyzeBtn").addEventListener("click",()=>requestAIAnalysis(true));
+$("modelPreset").addEventListener("change",e=>{if(e.target.value!=="custom"){$("modelInput").value=e.target.value;if(e.target.value==="moonshotai/Kimi-K3")$("trustRemoteInput").checked=true}else $("modelInput").focus();updateCommand()});["modelInput","technologyInput","targetLayerInput","trustRemoteInput"].forEach(id=>$(id).addEventListener("input",updateCommand));
+$("copyCommandBtn").addEventListener("click",async()=>{try{await navigator.clipboard.writeText($("commandOutput").textContent);const old=$("copyCommandBtn").textContent;$("copyCommandBtn").textContent="Copiado!";setTimeout(()=>$("copyCommandBtn").textContent=old,1500)}catch{alert("Não foi possível copiar automaticamente; selecione o texto da célula.")}});
+$("batchModelSearch").addEventListener("input",()=>{clearTimeout(batchSearchTimer);batchSearchTimer=setTimeout(searchBatchModels,300)});
+$("batchModelSearch").addEventListener("keydown",event=>{if(event.key==="Enter"){event.preventDefault();addQueueModel(event.currentTarget.value)}});
+$("modelSearchResults").addEventListener("click",event=>{const button=event.target.closest("[data-model]");if(button)addQueueModel(button.dataset.model)});
+$("addBatchModelBtn").addEventListener("click",()=>addQueueModel($("batchModelSearch").value));
+$("batchQueue").addEventListener("click",event=>{const button=event.target.closest("[data-remove-index]");if(!button)return;state.queue.splice(Number(button.dataset.removeIndex),1);renderBatchQueue()});
+$("clearBatchQueueBtn").addEventListener("click",()=>{state.queue=[];renderBatchQueue();$("batchSearchStatus").textContent="Fila removida.";$("batchSearchStatus").className="note"});
+$("copyBatchCommandBtn").addEventListener("click",async()=>{try{await navigator.clipboard.writeText($("batchCommandOutput").textContent);const old=$("copyBatchCommandBtn").textContent;$("copyBatchCommandBtn").textContent="Lista copiada!";setTimeout(()=>$("copyBatchCommandBtn").textContent=old,1500)}catch{alert("Não foi possível copiar automaticamente; selecione o código da fila.")}});
+$("demoBtn").addEventListener("click",()=>{state.records=[normalizePreferred({timestamp_utc:"2026-08-09T14:56:43Z",run_id:"demo-rift",technology:"RIFT",model_id:"Qwen/Qwen2.5-1.5B-Instruct",battery_id:"P1_Q4_LINEAR_BASE_PLUS_REF_4BIT",status:"EXPERIMENTAL_FAIL",comparison_role:"primary",baseline_ram_bytes:13000000,candidate_ram_bytes:14000000,baseline_disk_bytes:12000000,candidate_disk_bytes:1500000,quality:{full_local_gate_pass:false,output:{cosine:.9803,nrmse:.0068}},metrics:{operation:{baseline_median_ms:.07,candidate_median_ms:3.3,speedup_x:.021}}},"demo"),normalizePreferred({timestamp_utc:"2026-08-09T15:02:00Z",run_id:"demo-cascade",technology:"CASCADE",model_id:"Qwen/Qwen2.5-1.5B-Instruct",battery_id:"P1_CASCADE_GATED_F0_PLUS_F1",status:"EXPERIMENTAL_FAIL",comparison_role:"primary",baseline_ram_bytes:13000000,candidate_ram_bytes:3400000,baseline_disk_bytes:12000000,candidate_disk_bytes:3100000,quality:{full_local_gate_pass:false,output:{cosine:.972,nrmse:.011}},metrics:{operation:{baseline_median_ms:.07,candidate_median_ms:.18,speedup_x:.389},cascade:{stage_activation_rate:.5}}},"demo"),normalizePreferred({timestamp_utc:"2026-08-09T15:06:00Z",run_id:"demo-aether",technology:"AETHER",model_id:"Qwen/Qwen2.5-1.5B-Instruct",battery_id:"P1_AETHER_HQR_PLUS_TADDS_DYNAMIC",status:"EXPERIMENTAL_FAIL",comparison_role:"primary",baseline_ram_bytes:13000000,candidate_ram_bytes:5200000,baseline_disk_bytes:12000000,candidate_disk_bytes:900000,quality:{full_local_gate_pass:false,weight:{cosine:.958},output:{cosine:.987,nrmse:.0045}},metrics:{operation:{baseline_median_ms:.07,candidate_median_ms:.12,speedup_x:.583},aether:{stage_activation_rate:.1875,hqr_ans_native:false,pio_async_native:false,srfa_fused_native:false}}},"demo"),normalizePreferred({timestamp_utc:"2026-08-09T15:10:00Z",run_id:"demo-spectra",technology:"SPECTRA",model_id:"Qwen/Qwen2.5-1.5B-Instruct",battery_id:"P1_SPECTRA_HQR_PLUS_TADDS_DYNAMIC",status:"EXPERIMENTAL_FAIL",comparison_role:"primary",baseline_ram_bytes:13000000,candidate_ram_bytes:4800000,baseline_disk_bytes:12000000,candidate_disk_bytes:1100000,quality:{full_local_gate_pass:false,weight:{cosine:.962},output:{cosine:.991,nrmse:.0038}},metrics:{operation:{baseline_median_ms:.07,candidate_median_ms:.1,speedup_x:.7},spectra:{stage_activation_rate:.15,single_layer_drift_proxy_max:.061,hqr_ans_native:false,pio_async_native:false,fused_kernel_native:false,drift_compensation_native:false,speculative_path_native:false}}},"demo")];state.analysis=null;state.analysisError=null;state.ranking=[];render();requestAIAnalysis(true)});
+updateCommand();renderBatchQueue();loadPublishedData();
 </script>
 </body>
 </html>

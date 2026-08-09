@@ -1,9 +1,10 @@
 {
-  "name": "rift-lm-test-observatory",
-  "version": "0.1.0",
+  "name": "rift-cascade-aether-spectra-test-observatory",
+  "version": "0.5.0",
   "private": true,
-  "description": "RIFT-LM benchmark dashboard for Vercel",
+  "description": "RIFT-LM, CASCADE, AETHER and SPECTRA benchmark dashboard for Vercel",
   "scripts": {
-    "dev": "python3 -m http.server 3000"
+    "dev": "node scripts/dev_server.mjs",
+    "test": "node scripts/dashboard_smoke.mjs"
   }
 }

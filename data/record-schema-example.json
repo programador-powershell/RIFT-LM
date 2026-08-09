@@ -1,16 +1,24 @@
 {
-  "description": "Formato preferencial para uma bateria completa do dashboard RIFT-LM. Valores abaixo são apenas estrutura de exemplo.",
+  "description": "Formato preferencial para uma bateria comparável RIFT, CASCADE, AETHER ou SPECTRA. Valores abaixo são apenas estrutura de exemplo.",
   "timestamp_utc": "2026-08-09T10:00:00Z",
+  "run_id": "20260809T100000Z-exemplo",
+  "spec": "RIFT-LM v0.3.5|CASCADE v0.3|AETHER-LM v1.0 reference|SPECTRA-LM v0.1 reference",
+  "technology": "RIFT|CASCADE|AETHER|SPECTRA",
   "model_id": "NOME_DO_MODELO",
   "battery_id": "PHASE_1_K1",
+  "comparison_role": "primary|null",
   "status": "PASS|FAIL|EXPERIMENTAL",
   "baseline_tok_s": null,
-  "rift_tok_s": null,
+  "candidate_tok_s": null,
   "baseline_ram_bytes": null,
-  "rift_ram_bytes": null,
+  "candidate_ram_bytes": null,
   "baseline_disk_bytes": null,
-  "rift_disk_bytes": null,
+  "candidate_disk_bytes": null,
   "quality": {
-    "full_local_gate_pass": null
+    "full_local_gate_pass": null,
+    "output": {
+      "cosine": null,
+      "nrmse": null
+    }
   }
 }

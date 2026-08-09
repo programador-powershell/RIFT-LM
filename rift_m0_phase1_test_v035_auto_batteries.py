@@ -117,6 +117,56 @@ def ensure_phase1_dependencies():
     AutoTokenizer = _AutoTokenizer
 
 
+def normalize_huggingface_model_id(value: str) -> str:
+    """Aceita ``org/modelo`` ou uma URL pública do Hugging Face."""
+    model_id = str(value or "").strip()
+    parsed = urlparse(model_id)
+    if parsed.scheme in {"http", "https"}:
+        if parsed.netloc.lower() not in {"huggingface.co", "www.huggingface.co"}:
+            raise ValueError("--model aceita somente um model ID ou URL do huggingface.co")
+        parts = [part for part in parsed.path.split("/") if part]
+        if len(parts) < 2:
+            raise ValueError("URL do Hugging Face incompleta; use https://huggingface.co/ORG/MODELO")
+        model_id = "/".join(parts[:2])
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", model_id):
+        raise ValueError("Model ID inválido; formato esperado: organizacao/modelo")
+    return model_id
+
+
+def resolve_linear_weight_name(model: Any, requested: str) -> str:
+    """Resolve automaticamente uma camada Linear 2D comparável entre famílias."""
+    state = model.state_dict()
+    if requested and requested.lower() != "auto":
+        if requested not in state:
+            raise KeyError(f"Tensor não encontrado: {requested}")
+        if getattr(state[requested], "ndim", 0) != 2:
+            raise ValueError(f"Tensor precisa ser uma matriz 2D: {requested}")
+        return requested
+
+    preferred_suffixes = (
+        "self_attn.q_proj",
+        "self_attn.qkv_proj",
+        "self_attn.query_key_value",
+        "attention.q_proj",
+        "attention.wq",
+        "attn.q_proj",
+    )
+    linear_names = [
+        name
+        for name, module in model.named_modules()
+        if isinstance(module, torch.nn.Linear)
+        and getattr(module, "weight", None) is not None
+        and module.weight.ndim == 2
+    ]
+    for suffix in preferred_suffixes:
+        match = next((name for name in linear_names if name.lower().endswith(suffix)), None)
+        if match:
+            return f"{match}.weight"
+    if linear_names:
+        return f"{linear_names[0]}.weight"
+    raise KeyError("O modelo não expõe nenhuma camada torch.nn.Linear com peso 2D")
+
+
 # ------------------------------------------------------------------------------
 # 1. Constantes congeladas — RIFT v0.3.5 / Seção 51
 # ------------------------------------------------------------------------------
@@ -1645,6 +1695,7 @@ class BatteryRecorder:
         model_id: str,
         run_id: str | None = None,
         spec: str = "RIFT-LM v0.3.5",
+        technology: str = "RIFT",
     ):
         self.out_dir = Path(out_dir)
         self.out_dir.mkdir(parents=True, exist_ok=True)
@@ -1653,6 +1704,7 @@ class BatteryRecorder:
 
         self.model_id = model_id
         self.spec = spec
+        self.technology = technology
         self.run_id = run_id or (
             time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
             + "-"
@@ -1691,6 +1743,7 @@ class BatteryRecorder:
         quality: Dict[str, Any] | None = None,
         metrics: Dict[str, Any] | None = None,
         notes: str = "",
+        comparison_role: str | None = None,
     ) -> Dict[str, Any]:
 
         tok_gain = _pct_gain_higher_is_better(baseline_tok_s, rift_tok_s)
@@ -1714,9 +1767,11 @@ class BatteryRecorder:
             "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "run_id": self.run_id,
             "spec": self.spec,
+            "technology": self.technology,
             "model_id": self.model_id,
             "battery_id": battery_id,
             "status": status,
+            "comparison_role": comparison_role,
 
             # Campos consumidos diretamente pelo dashboard:
             "baseline_tok_s": baseline_tok_s,
@@ -1725,6 +1780,10 @@ class BatteryRecorder:
             "rift_ram_bytes": rift_ram_bytes,
             "baseline_disk_bytes": baseline_disk_bytes,
             "rift_disk_bytes": rift_disk_bytes,
+            # Aliases neutros permitem comparar tecnologias no mesmo histórico.
+            "candidate_tok_s": rift_tok_s,
+            "candidate_ram_bytes": rift_ram_bytes,
+            "candidate_disk_bytes": rift_disk_bytes,
 
             "gains": {
                 "tok_s_gain_pct": tok_gain,
@@ -1956,28 +2015,34 @@ def run_phase1(
     prompt: str,
     iterations: int,
     device_str: str,
+    trust_remote_code: bool = False,
 ) -> Dict[str, Any]:
     ensure_phase1_dependencies()
     device = torch.device(device_str)
+    model_id = normalize_huggingface_model_id(model_id)
 
     print(f"\n[Phase1] Carregando {model_id} em {device}...")
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    hf_token = _read_setting("HF_TOKEN")
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_id,
+        token=hf_token,
+        trust_remote_code=trust_remote_code,
+    )
 
-    # float32 = referência portátil neste notebook. Registrar explicitamente:
-    # não confundir com dtype original do checkpoint.
+    # Em CUDA carregamos o checkpoint em FP16 para permitir modelos maiores;
+    # o tensor alvo e todas as métricas continuam convertidos a FP32.
+    load_dtype = torch.float16 if device.type == "cuda" else torch.float32
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
-        torch_dtype=torch.float32,
+        token=hf_token,
+        dtype=load_dtype,
+        trust_remote_code=trust_remote_code,
     ).to(device)
     model.eval()
 
     state = model.state_dict()
-    if target_layer_name not in state:
-        candidates = [k for k in state if k.endswith("self_attn.q_proj.weight")]
-        raise KeyError(
-            f"Tensor não encontrado: {target_layer_name}\n"
-            f"Candidatos q_proj: {candidates[:20]}"
-        )
+    target_layer_name = resolve_linear_weight_name(model, target_layer_name)
+    print(f"[Phase1] Camada Linear selecionada: {target_layer_name}")
 
     weight_t = state[target_layer_name].detach().cpu().float().contiguous()
     W = weight_t.numpy()
@@ -1985,7 +2050,7 @@ def run_phase1(
 
     valid_ir = build_linear_ir_m0(
         model_id=model_id,
-        architecture="qwen2",
+        architecture=str(getattr(model.config, "model_type", "unknown")),
         weight_name=target_layer_name,
         weight_shape=W.shape,
     )
@@ -2316,6 +2381,7 @@ def run_phase1(
             "BASE+REF 4-bit packed. Q4_LINEAR_TEST não é MXFP4. "
             "O path ainda materializa FP32 antes da GEMM."
         ),
+        comparison_role="primary",
     )
 
     report = {
@@ -2528,7 +2594,34 @@ def run_synthetic_self_test(out_dir: Path) -> None:
 # CLI
 # ------------------------------------------------------------------------------
 
-def main():
+def _without_ipykernel_connection_args(argv: Iterable[str]) -> List[str]:
+    """
+    Remove somente o par interno ``-f kernel-*.json`` injetado pelo Jupyter.
+
+    Não usamos parse_known_args porque ele esconderia erros reais de digitação
+    nos argumentos do benchmark.
+    """
+    values = list(argv)
+    filtered: List[str] = []
+    index = 0
+    while index < len(values):
+        value = values[index]
+        if value == "-f" and index + 1 < len(values):
+            connection_file = Path(values[index + 1]).name
+            if connection_file.startswith("kernel-") and connection_file.endswith(".json"):
+                index += 2
+                continue
+        if value.startswith("-f="):
+            connection_file = Path(value[3:]).name
+            if connection_file.startswith("kernel-") and connection_file.endswith(".json"):
+                index += 1
+                continue
+        filtered.append(value)
+        index += 1
+    return filtered
+
+
+def main(argv: Iterable[str] | None = None):
     parser = argparse.ArgumentParser(
         description="RIFT-LM v0.3.5 B0 + Phase 1 reference test"
     )
@@ -2541,10 +2634,17 @@ def main():
     parser.add_argument(
         "--model",
         default="Qwen/Qwen2.5-0.5B",
+        help="Model ID (org/modelo) ou URL https://huggingface.co/org/modelo",
     )
     parser.add_argument(
         "--target-layer",
-        default="model.layers.0.self_attn.q_proj.weight",
+        default="auto",
+        help="Nome do tensor .weight ou 'auto' para escolher uma camada Linear",
+    )
+    parser.add_argument(
+        "--trust-remote-code",
+        action="store_true",
+        help="Permite código remoto do modelo (use apenas se confiar no repositório)",
     )
     parser.add_argument(
         "--prompt",
@@ -2595,7 +2695,8 @@ def main():
         ),
         help="Caminho do histórico dentro do repositório do dashboard",
     )
-    args = parser.parse_args()
+    cli_args = sys.argv[1:] if argv is None else argv
+    args = parser.parse_args(_without_ipykernel_connection_args(cli_args))
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -2610,6 +2711,7 @@ def main():
             prompt=args.prompt,
             iterations=args.iterations,
             device_str=args.device,
+            trust_remote_code=args.trust_remote_code,
         )
 
     try:

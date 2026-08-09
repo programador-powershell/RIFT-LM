@@ -1,116 +1,198 @@
-# RIFT-LM Test Observatory — Vercel
+# RIFT-LM, CASCADE, AETHER & SPECTRA Test Observatory
 
-Dashboard estático para acompanhar baterias de benchmark RIFT-LM.
+Dashboard estático para executar, publicar e comparar baterias de referência das tecnologias RIFT-LM v0.3.5, CASCADE v0.3, AETHER-LM v1.0 e SPECTRA-LM v0.1.
 
-## Estrutura
+## O que o dashboard faz
+
+- carrega automaticamente `data/rift_test_batteries.json`;
+- exibe datas em `America/Sao_Paulo` (GMT−3), preservando UTC no dado original;
+- aceita históricos JSON e CSV locais;
+- gera uma célula pronta para testar qualquer model ID ou URL do Hugging Face no Google Colab;
+- seleciona automaticamente uma camada `torch.nn.Linear` compatível entre famílias;
+- compara as baterias principais de RIFT, CASCADE, AETHER e SPECTRA para o mesmo modelo;
+- calcula um ranking auditável de modelos e tecnologias a partir das métricas publicadas;
+- usa o Gemini 2.5 Flash para explicar qual tecnologia é mais adequada para cada modelo;
+- mantém métricas de operação Linear separadas de Tok/s do modelo;
+- entrega launchers Python por URLs curtas, sem duplicar os scripts dentro do notebook.
+- pesquisa modelos públicos no Hugging Face e monta uma fila Colab com vários modelos e tecnologias.
+
+## Executar localmente
+
+```bash
+npm test
+npm run dev
+```
+
+Abra `http://localhost:3000`.
+
+Se o PowerShell bloquear `npm.ps1`, use os executáveis `.cmd` sem alterar a política global:
+
+```powershell
+npm.cmd test
+npm.cmd run dev
+```
+
+## Deploy automático na Vercel
+
+Conecte este repositório a um projeto Vercel. Cada atualização da branch `main`, inclusive commits de dados feitos pela Function, dispara um novo deploy.
+
+Configure as variáveis abaixo em **Vercel → Project Settings → Environment Variables**:
+
+```dotenv
+RIFT_GITHUB_TOKEN=github_pat_SEU_FINE_GRAINED_PAT
+RIFT_GITHUB_REPOSITORY=programador-powershell/RIFT-LM
+RIFT_GITHUB_BRANCH=main
+RIFT_GITHUB_DATA_PATH=data/rift_test_batteries.json
+RIFT_INGEST_TOKEN=UMA_CHAVE_ALEATORIA_COM_PELO_MENOS_32_CARACTERES
+API_GOOGLE=SUA_CHAVE_DA_GOOGLE_AI_STUDIO
+```
+
+O PAT e `API_GOOGLE` devem ficar somente na Vercel. O PAT precisa ter `Contents: Read and write` apenas neste repositório. Nunca coloque esses segredos no Colab, no HTML ou em um arquivo versionado.
+
+A Function `/api/analyze` envia ao Gemini somente identificadores técnicos, o estado da bateria e métricas numéricas já publicadas. Ela valida e sanitiza a entrada, valida a resposta estruturada, limita tamanho e frequência das requisições e mantém um cache curto em memória. Em produção, o dashboard solicita a análise automaticamente; localmente, ele preserva apenas o ranking determinístico para não consumir a API.
+
+A Function pública `/api/models?q=...` faz o autocomplete de modelos públicos `text-generation` do Hugging Face, limita e sanitiza a busca e devolve apenas model ID, pipeline, biblioteca, downloads, likes e estado gated. A resposta usa cache da Vercel por cinco minutos.
+
+## Secrets do Google Colab
+
+Cadastre e autorize:
+
+- `RIFT_RESULTS_ENDPOINT`: `https://SEU-DOMINIO.vercel.app/api/results`;
+- `RIFT_INGEST_TOKEN`: o mesmo segredo de ingestão configurado na Vercel;
+- `HF_TOKEN`: opcional para limites maiores ou modelos gated.
+
+Os launchers por URL configuram `RIFT_RESULTS_ENDPOINT` automaticamente. Mesmo assim, `RIFT_INGEST_TOKEN` continua obrigatório no Colab e nunca é incluído na resposta pública da API.
+
+## Executar por URL no Colab
+
+As rotas amigáveis retornam um pequeno programa Python que baixa a bateria do mesmo commit implantado e a executa na GPU do Colab:
+
+```python
+!curl -fsSL "https://rift-lm.vercel.app/rift/Qwen/Qwen2.5-0.5B" -o /content/rift_launcher.py && python /content/rift_launcher.py
+!curl -fsSL "https://rift-lm.vercel.app/cascade/Qwen/Qwen2.5-0.5B" -o /content/cascade_launcher.py && python /content/cascade_launcher.py
+!curl -fsSL "https://rift-lm.vercel.app/aether/Qwen/Qwen2.5-0.5B" -o /content/aether_launcher.py && python /content/aether_launcher.py
+!curl -fsSL "https://rift-lm.vercel.app/spectra/Qwen/Qwen2.5-0.5B" -o /content/spectra_launcher.py && python /content/spectra_launcher.py
+```
+
+O alias pedido para Kimi também é aceito:
+
+```python
+!curl -fsSL "https://rift-lm.vercel.app/aether/Kimi-K3" -o /content/aether_launcher.py && python /content/aether_launcher.py
+```
+
+`Kimi-K3` resolve para `moonshotai/Kimi-K3` e habilita `trust_remote_code`, como exigido pelo repositório do modelo. Ele é um modelo de escala extrema e não deve caber na memória de um Colab comum; a rota simplifica o lançamento, mas não remove os requisitos de hardware.
+
+## Fila serial de benchmarks
+
+No card **Fila serial de baterias**, digite pelo menos dois caracteres, selecione um resultado público do Hugging Face e repita para todos os modelos desejados. A seleção de tecnologia, camada e `trust_remote_code` é capturada individualmente quando o modelo entra na fila.
+
+O botão **Copiar lista serial** gera uma única célula Python para o Colab. Ela:
+
+1. expande cada modelo para as tecnologias escolhidas;
+2. baixa um launcher por vez;
+3. executa o benchmark em um subprocesso isolado e aguarda sua publicação;
+4. encerra a fila imediatamente se um benchmark falhar;
+5. remove o launcher temporário, força coleta de lixo e aguarda três leituras estáveis de VRAM via `nvidia-smi` antes de iniciar o próximo.
+
+O encerramento do subprocesso é o limite de isolamento de RAM/VRAM. A tolerância de VRAM é de 128 MB sobre o nível medido antes do benchmark e o timeout de liberação é de 180 segundos.
+
+## Testar um modelo
+
+O campo do dashboard aceita tanto `org/modelo` quanto uma URL, por exemplo:
 
 ```text
-rift-dashboard-vercel/
-├── index.html
-├── vercel.json
-├── .vercelignore
-├── data/
-│   ├── rift_test_batteries.json
-│   └── record-schema-example.json
-└── scripts/
-    └── publish_batteries.py
+microsoft/Phi-3.5-mini-instruct
+https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct
 ```
 
-## Deploy com Vercel CLI
-
-Na raiz deste projeto:
-
-```bash
-npm i -g vercel
-vercel
-```
-
-Para produção:
-
-```bash
-vercel --prod
-```
-
-A CLI pode solicitar login e associação/criação do projeto na primeira execução.
-
-## Deploy pelo Dashboard/Drop
-
-Também é possível enviar esta pasta como projeto estático para a Vercel.
-
-## Atualizar os testes publicados
-
-O dashboard carrega automaticamente:
-
-```text
-/data/rift_test_batteries.json
-```
-
-Copie o histórico produzido pelo script de testes RIFT:
-
-```bash
-python scripts/publish_batteries.py /caminho/para/rift_test_batteries.json
-```
-
-Depois faça novo deploy/commit.
-
-## Publicação automática pelo Google Colab
-
-O script `rift_m0_phase1_test_v035_auto_batteries.py` pode mesclar os resultados
-no arquivo `data/rift_test_batteries.json` por meio da Function `/api/results`.
-O PAT do GitHub fica somente no Vercel; o Colab recebe apenas uma chave de
-ingestão independente. O commit de dados dispara automaticamente um novo deploy.
-
-1. Crie um Fine-grained Personal Access Token no GitHub limitado a este
-   repositório, com permissão **Contents: Read and write**.
-2. Abra o `.env` local, substitua `RIFT_GITHUB_TOKEN` pelo PAT e importe o
-   arquivo em **Vercel > Project Settings > Environment Variables** para
-   Production, Preview e Development. O `.env` é ignorado pelo Git.
-3. Faça um novo deploy para aplicar as variáveis.
-4. No painel **Secrets** do Colab, cadastre:
-   - `RIFT_RESULTS_ENDPOINT`: `https://SEU-DOMINIO.vercel.app/api/results`;
-   - `RIFT_INGEST_TOKEN`: exatamente o mesmo valor presente no `.env` importado.
-5. Autorize o notebook a acessar esses dois secrets e execute:
+### RIFT
 
 ```bash
 python rift_m0_phase1_test_v035_auto_batteries.py \
   --mode phase1 \
+  --model microsoft/Phi-3.5-mini-instruct \
+  --target-layer auto \
   --device cuda \
   --publish required
 ```
 
-Também é possível informar o endpoint sem salvá-lo como secret:
+### CASCADE
 
 ```bash
-python rift_m0_phase1_test_v035_auto_batteries.py \
-  --mode phase1 \
+python cascade_m0_phase1_test_v030_auto_batteries.py \
+  --model microsoft/Phi-3.5-mini-instruct \
+  --target-layer auto \
   --device cuda \
-  --publish required \
-  --results-endpoint https://SEU-DOMINIO.vercel.app/api/results
+  --publish required
 ```
 
-O PAT do GitHub nunca deve ser colocado no Colab, passado como argumento ou
-gravado no notebook. O modo `auto` é o padrão e, dentro do Colab, falha
-explicitamente quando endpoint ou chave não estão configurados. Use
-`--publish off` somente para execuções locais.
+### AETHER
 
-## Métricas
+```bash
+python aether_m0_phase1_test_v100_auto_batteries.py \
+  --mode phase1 \
+  --model microsoft/Phi-3.5-mini-instruct \
+  --target-layer auto \
+  --device cuda \
+  --publish required
+```
 
-O dashboard aceita, por bateria:
+### SPECTRA
 
-- `baseline_tok_s` / `rift_tok_s`
-- `baseline_ram_bytes` / `rift_ram_bytes`
-- `baseline_disk_bytes` / `rift_disk_bytes`
-- `quality`
-- `gains`
-- `metrics.operation`
+```bash
+python SPECTRA_Colab_Test_M0.py \
+  --mode phase1 \
+  --model microsoft/Phi-3.5-mini-instruct \
+  --target-layer auto \
+  --device cuda \
+  --publish required
+```
 
-Quando Tok/s real de modelo não foi medido, mantenha os campos como `null`.
-Não substitua Tok/s por throughput de uma única operação Linear.
+Use `--trust-remote-code` somente quando o modelo realmente exigir e você confiar no código do repositório.
 
-## Dados persistentes
+## Contrato das métricas
 
-Esta versão publica os resultados como arquivo estático versionado junto com o deploy.
-Isso é deliberado para a Fase 1: cada deploy preserva exatamente o conjunto de
-resultados usado naquele build. A API de ingestão não grava no filesystem efêmero
-da Function: ela atualiza o arquivo no GitHub, preservando o histórico e acionando
-o redeploy da branch de produção.
+Registros novos declaram:
+
+- `technology`: `RIFT`, `CASCADE`, `AETHER` ou `SPECTRA`;
+- `candidate_tok_s`, `candidate_ram_bytes` e `candidate_disk_bytes`;
+- `comparison_role: primary` na bateria indicada ao comparador;
+- `quality`, `metrics`, `measurement_scope` e `notes`.
+
+O dashboard continua compatível com registros RIFT anteriores que usam `rift_*`.
+
+## Ranking e análise de IA
+
+O score composto usa qualidade de saída (40%), quality gate (5%), redução em disco (20%), redução de RAM (15%) e speedup da operação Linear (20%). Métricas ausentes reduzem a cobertura e aplicam uma penalização explícita ao score. O ranking mede somente esta bateria de referência; não representa inteligência geral do modelo.
+
+O Gemini recebe as mesmas métricas e o ranking calculado pelo servidor. Ele pode recomendar `RIFT`, `CASCADE`, `AETHER`, `SPECTRA` ou `INCONCLUSIVO`, com resumo, confiança, métricas decisivas e ressalvas. Com menos de duas tecnologias medidas, ou quando a resposta recomenda uma tecnologia ausente, o servidor força `INCONCLUSIVO`.
+
+## Limites atuais
+
+O teste RIFT usa o codec experimental `Q4_LINEAR_TEST`; ele não é MXFP4. O teste CASCADE usa decomposição low-rank, Gate heurístico e simulação lag-one do prefetch. O AETHER usa base ternária realmente empacotada em 2 bits e TADDS low-rank por entropia, mas não implementa HQR-ANS 0,85 bit, P-IO assíncrono nem o kernel SRFA. O SPECTRA mede o mesmo tipo de base física, Gate/TADDS e um proxy de drift de uma única operação Linear; prefetch assíncrono, kernel fused, compensação de drift e speculative path permanecem simulados. Nenhum dos scripts contém o kernel low-bit/fused nativo de produção.
+
+Por isso:
+
+- latência de uma única operação Linear não deve ser chamada de Tok/s;
+- o prefetch CASCADE não representa I/O assíncrono real;
+- P-IO e SRFA do AETHER permanecem simulações do caminho Python;
+- o proxy de drift SPECTRA não equivale a certificação de qualidade end-to-end;
+- speedups nativos de inferência não devem ser reivindicados a partir dessas baterias de referência;
+- comparações de latência exigem o mesmo hardware, camada e forma de ativação.
+
+## Arquivos principais
+
+```text
+index.html
+api/results.mjs
+api/analyze.mjs
+api/models.mjs
+api/test.mjs
+rift_m0_phase1_test_v035_auto_batteries.py
+cascade_m0_phase1_test_v030_auto_batteries.py
+aether_m0_phase1_test_v100_auto_batteries.py
+SPECTRA_Colab_Test_M0.py
+SPECTRA_Especificacao_Tecnica_v0.1.txt
+data/rift_test_batteries.json
+data/record-schema-example.json
+```

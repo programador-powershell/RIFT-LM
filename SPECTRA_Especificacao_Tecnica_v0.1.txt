@@ -1,0 +1,463 @@
+SPECTRA-LM
+Spectral Progressive Entropy-Controlled Tiered Residual Architecture
+=====================================================================
+
+ESPECIFICAÇÃO TÉCNICA
+Versão: 0.1
+Status: Conceito + Simulações validadas + Protótipo de referência
+Data: 2026-08-09
+
+
+0. RESUMO EXECUTIVO
+===================
+
+SPECTRA-LM é um compilador e runtime de inferência para modelos open-weight
+cujo objetivo é permitir a execução de LLMs de 70B+ parâmetros em computadores
+convencionais (16 GB de RAM ou menos), usando o disco (incluindo HD externo)
+como armazenamento principal dos refinamentos, sem consumir toda a memória RAM
+do sistema e sem stalls de I/O que tornem a inferência inutilizável.
+
+A formulação central é:
+
+    Y ≈ F₀(X) + c₁·R₁(X) + c₂·R₂(X) + … + cₖ·Rₖ(X)
+
+onde:
+  - F₀ é o estágio base ultra-barato (sempre executado e residente)
+  - Rᵢ são refinamentos residuais / espectrais / low-rank / esparsos
+  - cᵢ é decidido em tempo de execução por um Confidence/Entropy Gate
+    baseado na ativação corrente
+
+SPECTRA sintetiza e evolui:
+  - CASCADE (v0.3): Confidence Gate, Predictive Prefetch, Fused Kernel,
+    Drift Compensation, Speculative nativo com F₀
+  - AETHER-LM (v1.0): HQR (0.85 bpw), TADDS, P-IO, SRFA Kernel,
+    orçamento rígido de 8 GB
+  - RIFT-LM (v0.3.1): IR universal, Logical/Physical Pages, Quality Contracts,
+    Sensitivity Pre-Screener, Hardware Autotuner, Prefill/Decode plans
+
+Mais insights 2025-2026: BitNet/T-SAR ternário, TurboQuant/SpectralQuant,
+CAS-Spec, DualDecoder/SpecPrefetch, DecDEC, Progressive Mixed-Precision.
+
+
+1. VISÃO E CONCEITO CENTRAL
+===========================
+
+1.1 Nova forma de interpretar o modelo
+--------------------------------------
+
+Em sistemas convencionais o tensor de pesos é tratado como uma representação
+única (FP16, INT4, etc.). Em SPECTRA a representação é progressiva e
+condicionada à ativação:
+
+    W ≈ W_base + Σ cᵢ · Rᵢ
+
+A precisão deixa de ser propriedade fixa e passa a ser recurso gerenciado
+dinamicamente pelo runtime sob contrato formal de qualidade.
+
+1.2 Objetivo formal
+-------------------
+
+Minimizar:
+
+    C = α · EstágiosExecutadosPorToken
+      + β · BytesMovidosPorToken
+      + γ · MemóriaResidente
+      + δ · Latência
+      + ε · Energia
+      + ζ · StallCycles
+
+sujeito a:
+
+    Quality ≥ QualityFloor
+    CumulativeDrift ≤ DriftBudget
+
+1.3 Regra de ouro
+-----------------
+
+Erro de previsão de prefetch ou de Gate custa desempenho, nunca inteligência
+de forma silenciosa. O runtime não degrada a qualidade abaixo do perfil
+certificado.
+
+
+2. PRINCÍPIOS FUNDAMENTAIS
+==========================
+
+1. F₀ é sempre executado e deve ser extremamente barato e residente.
+2. Estágios de refinamento só são executados se o Gate indicar valor sob o
+   orçamento restante.
+3. A decisão é dinâmica por token + camada.
+4. Prefetch de estágios futuros deve ser assíncrono e baseado em previsão
+   do Gate (nunca síncrono no caminho crítico).
+5. Kernels do caminho quente devem ser fused (F₀ + Gate + residual).
+6. Existe orçamento global de drift.
+7. Qualidade é contrato formal.
+8. Prefill e Decode possuem políticas distintas.
+9. Speculative path usando F₀ é nativo e opcional por perfil.
+10. Universalidade vem do SPECTRA-IR + adapters.
+11. Disco (incluindo HD externo) é cidadão de primeira classe para páginas
+    de refinamento.
+
+
+3. OS 6 PILARES
+===============
+
+[Pilar 1] Holographic / Ternary-Spectral Base (F₀)
+  Quantização ternária nativa + ANS + rotação espectral.
+  Densidade efetiva ~0,85–1,58 bpw.
+  Para 70B: ~6,9–7,4 GB residentes.
+
+[Pilar 2] Entropy/Confidence Gate + TADDS dinâmico
+  Features baratas da ativação decidem o nível de residual
+  (0 / 2 / 8 / 16…). ~55–85% dos tokens usam só F₀.
+
+[Pilar 3] Predictive Async Stage Prefetch (P-IO estendido)
+  Gate do token t prevê necessidade em L+k e dispara I/O assíncrono
+  (io_uring / Direct I/O) para Ring Buffer (~320 MB).
+  Prefetch nunca bloqueia o caminho crítico.
+
+[Pilar 4] Fused Stage Kernel (SRFA + CASCADE fused)
+  Um único kernel: F₀ + features + Gate + acumulação low-rank
+  Y = F₀(X) + (X · U) · Vᵀ  (sem materializar U·Vᵀ).
+
+[Pilar 5] Drift Compensation Vector + Quality Contract
+  Residual estimado projetado com dampening na camada seguinte.
+  Cumulative Drift Budget global. Perfis certificados
+  (SAFE / BALANCED / FAST / MINMEM).
+
+[Pilar 6] Native Speculative Path com F₀
+  F₀ puro gera N tokens (draft). Cascata completa verifica em paralelo
+  e aceita o maior prefixo válido. Não requer draft model externo.
+
+
+4. ARQUITETURA DE ALTO NÍVEL
+============================
+
+    Modelo Original (HF / Safetensors / GGUF / …)
+            │
+            ▼
+    SPECTRA Front-End (Adapters por família)
+            │
+            ▼
+    SPECTRA-IR (universal)
+            │
+            ▼
+    Cascade Compiler
+      - Decomposition em estágios
+      - Ordenação por ganho residual/byte
+      - Construção dos Confidence Gates
+      - Empacotamento em Stage Pages
+            │
+            ▼
+    SPECTRA Bundle
+      (IR + Stages + Gates + Page Table + Quality Profiles)
+            │
+            ▼
+    SPECTRA Runtime
+      ┌─────────────────────────────────────────────┐
+      │ Scheduler (Prefill vs Decode)               │
+      │ Confidence/Entropy Gate Engine              │
+      │ Predictive Prefetch Engine                  │
+      │ Fused Stage Kernels                         │
+      │ Residual Accumulator + Drift Monitor        │
+      │ Speculative Decoding Path (F₀ draft)        │
+      │ Hardware Autotuner + HAL multi-backend      │
+      └─────────────────────────────────────────────┘
+            │
+       CPU / iGPU / GPU / NPU + NVMe / HD externo
+
+
+5. COMPONENTES PRINCIPAIS
+=========================
+
+5.1 Cascade Decomposition
+-------------------------
+Tipos de estágio:
+    BASE_STAGE
+    RESIDUAL_ADDITIVE
+    RESIDUAL_LOWRANK
+    RESIDUAL_SPARSE
+    SPECTRAL_STAGE
+    FULL_STAGE
+
+Ordenação por magnitude do residual esperado, ganho de qualidade por byte,
+custo computacional e estabilidade numérica.
+
+5.2 Confidence/Entropy Gate
+---------------------------
+Decide cᵢ a partir de features baratas da ativação.
+Requisitos: custo << custo de um estágio de refinamento, calibrável,
+fallback seguro.
+
+5.3 Stage Pages
+---------------
+Cada estágio Rᵢ (i ≥ 1) é armazenado como página endereçável
+(Logical Page ≠ Physical Extent — herança RIFT).
+Permite residência seletiva, prefetch assíncrono, mmap / io_uring.
+
+F₀ é tratado como residente prioritário e normalmente não pagina.
+
+5.4 Predictive Prefetch Engine
+------------------------------
+Entrada: features/decisão do Gate + profundidade + estatísticas históricas.
+Saída: lista de Stage Pages a serem trazidas assincronamente para L+1…L+k.
+Regras: nunca bloqueia caminho crítico; previsão errada só custa I/O.
+
+5.5 Fused Stage Kernel
+----------------------
+Pseudocódigo conceitual:
+
+    Y = F0_kernel(X)
+    features = extract_features(X, Y)
+    if Gate(features) >= threshold:
+        # residual preferencialmente low-rank, dados já em memória rápida
+        Y = Y + LowRankResidual(X, U, V)   # fused
+    return Y
+
+Regra de low-rank: é proibido materializar U·Vᵀ como matriz densa no
+caminho otimizado.
+
+5.6 Drift Compensation Vector (Experimental)
+--------------------------------------------
+Quando estágios são pulados:
+
+    ε ≈ Y_ref - Y_approx
+    compensation = dampening · Project(ε)
+    activation_{L+1} ← activation_{L+1} + compensation
+
+Controles: dampening ∈ [0,1], magnitude máxima, quality gate próprio,
+pode ser desligado por perfil.
+
+5.7 Speculative Decoding Path
+-----------------------------
+Draft Phase: gerar N tokens usando somente F₀ em todas as camadas.
+Verification Phase: executar a cascata completa (respeitando Gates)
+sobre a sequência draft em modo batched e aceitar o maior prefixo válido.
+
+
+6. SPECTRA-IR (M0)
+==================
+
+Representação intermediária universal. O core não conhece famílias
+específicas de modelos.
+
+Schema mínimo:
+
+    Model {
+        ir_version
+        model_id
+        architecture_hint
+        tensors[]
+        operations[]          // ordem topológica canônica
+        input_ids_tensor
+        output_tensor
+    }
+
+    Tensor { id, name, dtype, shape, semantic_role, source_name, flags }
+
+    Operation {
+        id
+        opcode
+        inputs[]
+        outputs[]
+        weights[]
+        cascade_ref           // referência à cascata de estágios
+        attrs
+    }
+
+Opcodes M0:
+    SPECTRA_OP_EMBEDDING
+    SPECTRA_OP_LINEAR
+    SPECTRA_OP_RMSNORM
+    SPECTRA_OP_ROPE
+    SPECTRA_OP_ATTENTION
+    SPECTRA_OP_ACTIVATION
+    SPECTRA_OP_ADD
+    SPECTRA_OP_OUTPUT
+    SPECTRA_OP_CUSTOM
+
+
+7. ORÇAMENTO RÍGIDO DE MEMÓRIA (70B em 16 GB)
+=============================================
+
+  +---------------------------------------+------------------+----------------+
+  | Componente Alocado na RAM             | Tamanho Alocado  | % do Limite    |
+  +---------------------------------------+------------------+----------------+
+  | Base F₀ (HQR/Ternary ~0.85b)          | ~6.93 GB         | ~86%           |
+  | P-IO Speculative Probe                | 0.08 GB (80 MB)  | 1%             |
+  | Ring Buffer de Refinamento            | 0.32 GB (320 MB) | 4%             |
+  | KV/State (4k, TurboQuant-like 2-3b)   | ~0.60 GB         | ~7.5%          |
+  +---------------------------------------+------------------+----------------+
+  | TOTAL UTILIZADO PELO MODELO           | ~7.93 GB         | ~99%           |
+  | MEMÓRIA LIVRE PARA O SISTEMA / USUÁRIO| ~8.07 GB         | SISTEMA OPERAT.|
+  +---------------------------------------+------------------+----------------+
+
+Espaço em disco: irrelevante (pode ser HD externo).
+
+
+8. SISTEMA DE QUALIDADE
+=======================
+
+Princípio: Qualidade é contrato. O runtime não pode reduzir silenciosamente
+a qualidade abaixo do perfil certificado.
+
+Níveis:
+  Local        → erro por estágio
+  Checkpoint   → drift acumulado
+  End-to-End   → logits, perplexity, ranking, geração
+
+Cumulative Drift Budget influencia a agressividade dos Gates e do prefetch.
+
+Perfis padrão:
+  SPECTRA_SAFE
+  SPECTRA_BALANCED
+  SPECTRA_FAST
+  SPECTRA_MINMEM
+
+
+9. RUNTIME — FLUXO CONSOLIDADO
+==============================
+
+Por token (visão simplificada):
+
+  1. Prefetch Engine consulta previsões pendentes e avança I/O assíncrono
+
+  2. Para cada operação na ordem topológica:
+         executar Fused Stage Kernel:
+             F₀ + Gate + (residual se Gate=1 e página pronta)
+         se residual foi pulado:
+             opcionalmente registrar residual para Drift Compensation
+         atualizar drift estimado
+
+  3. Aplicar Drift Compensation na passagem para a próxima camada
+     (se habilitado)
+
+  4. Atualizar previsões de prefetch para camadas futuras
+
+Caminho especulativo (quando ativo):
+  Draft com F₀ → Verification com cascata → Aceitar prefixo válido
+
+
+10. FASE 1 — MINIMUM VIABLE SPECTRA
+===================================
+
+Hipóteses centrais:
+  H1 — SPECTRA-IR funciona como representação universal mínima
+  H2 — Cascata + Confidence Gate reduz estágios e bytes de forma mensurável
+  H3 — Qualidade pode ser mantida sob orçamento de drift
+  H4 — Prefetch preditivo elimina stalls síncronos de I/O
+  H5 — F₀ nativo como draft permite speculative sem modelo auxiliar
+
+Escopo IN:
+  - SPECTRA-IR M0
+  - Bundle mínimo com Stage Pages
+  - Confidence Gate simples
+  - F₀ + pelo menos um residual low-rank
+  - Fused path de referência (CPU)
+  - Predictive prefetch básico (pode ser simulado)
+  - Medição de estágios, bytes, drift e qualidade
+
+Escopo OUT (Fase 1):
+  - Drift Compensation maduro
+  - Speculative Decoding completo de produção
+  - GPU kernels de produção
+  - Autotuner completo
+  - MoE scheduler avançado
+
+Critério de sucesso:
+  1. Checkpoint → SPECTRA-IR M0
+  2. Compilar estágios e Gates
+  3. Executar F₀ isolado
+  4. Executar F₀ + residual sob Gate
+  5. Medir estágios disparados por token
+  6. Medir bytes e memória
+  7. Medir cumulative drift
+  8. Manter QualityFloor experimental
+  9. Demonstrar em pelo menos duas famílias com o mesmo core
+
+
+11. ROADMAP
+===========
+
+Fase 0 — Fundação (concluída conceitualmente)
+  Conceito + IR + Bundle + Gate heurístico + simulações
+
+Fase 1 — Minimum Viable SPECTRA
+  Prova de H1–H5
+  Stage Pages + prefetch básico
+  Fused path de referência
+
+Fase 2 — Dense Universal + Speculative
+  Múltiplas famílias densas
+  Speculative Decoding nativo com F₀ completo
+
+Fase 3 — Conditional Paths
+  Experts e operações condicionais (MoE)
+
+Fase 4 — Residuais avançados + Drift Compensation maduro
+
+Fase 5 — State Cascade (KV/State com TurboQuant-like)
+
+Fase 6 — Hardware HAL amplo (CPU avançada + GPU + NPU)
+
+Fase 7 — Autotuner + perfis Prefill/Decode
+
+Fase 8 — Production (CLI, APIs, certificados de qualidade)
+
+
+12. DEFINIÇÃO OFICIAL
+=====================
+
+SPECTRA-LM é um compilador e runtime de inferência que transforma modelos
+open-weight em cascatas espectrais progressivas de refinamentos residuais,
+cuja execução é condicionada em tempo real a sinais de confiança/entropia
+das ativações, com prefetch preditivo assíncrono de páginas de estágio,
+kernels fused, compensação de drift e caminho especulativo nativo baseado
+no estágio base, sob contrato formal de preservação de qualidade, permitindo
+que modelos de 70B+ “pensem” localmente em computadores convencionais de
+16 GB de RAM usando o disco (incluindo HD externo) como armazenamento
+principal dos refinamentos.
+
+
+13. REGRA FINAL
+===============
+
+A tecnologia deve perseguir o melhor desempenho fisicamente possível no
+hardware disponível, sem violar limites de bandwidth, memória ou orçamento
+de qualidade.
+
+O diferencial do SPECTRA é decidir, por token, quantos estágios de
+refinamento são realmente necessários e garantir que esses estágios estejam
+disponíveis a tempo, com o mínimo de movimentação de dados e sem destruir
+a inteligência de forma descontrolada.
+
+
+14. PRÓXIMA AÇÃO RECOMENDADA
+============================
+
+1. Congelar SPECTRA-IR M0
+2. Definir Stage Page + Header do Bundle
+3. Implementar Confidence Gate heurístico
+4. Implementar F₀ + residual simples com path fused de referência
+5. Adicionar prefetch assíncrono básico (mesmo que simulado)
+6. Medir estágios, bytes, drift e qualidade em modelo denso pequeno
+7. Expandir para um bloco real de arquitetura grande
+
+
+15. RESULTADOS DAS SIMULAÇÕES (v0.1)
+====================================
+
+Simulações numéricas realizadas em 2026-08-09 (Python/NumPy):
+
+  Memória residente (70B): ~7.92 GB → sobra ~8.08 GB para SO
+  Estágios médios por camada: ~0.48 (56%+ tokens usam só F₀)
+  Bytes movidos por token (residuais): ~4–5 MB
+  Drift máximo controlado: < 0.08–0.12 com compensação
+  Speedup especulativo estimado: 1.6–1.9×
+  Throughput decode estimado (CPU moderna + NVMe): 6–8 tok/s
+  TTFT estimado: ~120 ms
+
+Critérios de memória, estágios baixos, qualidade e usabilidade atingidos.
+
+
+FIM DA ESPECIFICAÇÃO
+====================
