@@ -3823,5 +3823,48 @@
     "baseline_disk_bytes": null,
     "candidate_disk_bytes": null,
     "comparison_role": null
+  },
+  {
+    "schema_version": 1,
+    "timestamp_utc": "2026-08-09T23:11:34Z",
+    "run_id": "20260809T231134Z-1df1253d",
+    "technology": "WINNER",
+    "model_id": "microsoft/Phi-3.5-mini-instruct",
+    "battery_id": "P1_WINNER_F0_TERNARY_2BIT",
+    "status": "EXPERIMENTAL_FAIL",
+    "measurement_scope": "Single Linear op; disk=F0 2-bit packed; RAM=working-set F0 packed (CASCADE-style, sem descompactar numel int8).",
+    "quality": {
+      "full_local_gate_pass": null,
+      "weight": {
+        "cosine": 0.49604567885398865,
+        "nrmse": 0.9295889139175415
+      },
+      "output": {
+        "cosine": 0.8214900493621826,
+        "nrmse": 0.5903517603874207
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.7606284999999999,
+        "candidate_median_ms": 0.7574475,
+        "speedup_x": 1.0041996309975276,
+        "rows_processed": 15,
+        "device": "cuda"
+      },
+      "winner": {
+        "threshold": 0.5,
+        "residual_rank": 0,
+        "stage_activation_rate": 0,
+        "cpp_self_test_pass": true
+      }
+    },
+    "notes": "Working set = payload empacotado 2-bit + I/O; alinhado à conta de RAM do CASCADE (fatores residentes, não matriz densa).",
+    "baseline_ram_bytes": 101339136,
+    "candidate_ram_bytes": 6979584,
+    "baseline_disk_bytes": 100663296,
+    "candidate_disk_bytes": 6303744,
+    "comparison_role": null
   }
 ]
