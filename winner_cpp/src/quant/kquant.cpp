@@ -53,7 +53,7 @@ int kquant_bytes_per_block(KQuantType t) {
         case KQuantType::Q5_K_M: return 176;
         case KQuantType::Q6_K: return 210;
         case KQuantType::Q8_0: return 34;   // 32 int8 + 2 scale
-        case KQuantType::F0_TERNARY: return 10; // ~1.58 bpw
+        case KQuantType::F0_TERNARY: return 8;  // 2 bits/weight: 32 codes -> 8 bytes
         default: return 18;
     }
 }

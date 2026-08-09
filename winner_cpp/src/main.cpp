@@ -37,7 +37,7 @@
 using namespace winner;
 
 static void print_banner() {
-    printf("WINNER.cpp v%u.%u.%u — F0 + LS residual (Gemma4-12B + VCpu + MoE LFU)\n",
+    printf("WINNER.cpp v%u.%u.%u — F0-2bit + LS residual AVX2 (Gemma4-12B + VCpu + MoE LFU)\n",
            WINNER_VERSION_MAJOR, WINNER_VERSION_MINOR, WINNER_VERSION_PATCH);
     printf("Profiles: MINMEM=r0 FAST=r16 BALANCED=r64 SAFE=r128\n\n");
 }

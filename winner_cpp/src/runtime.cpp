@@ -22,14 +22,35 @@ int residual_rank_for_profile(QualityProfile p) {
 
 bool GateEngine::evaluate(const float* activation, int dim, float threshold) {
     if (!activation || dim <= 0) return false;
-    double energy = 0.0;
-    for (int i = 0; i < dim; ++i) energy += std::fabs(activation[i]);
-    float thr = threshold_ > 0 ? threshold_ : threshold;
-    return (energy / dim) > thr;
+    // RMS + peak: fire residual on high-energy or outlier activations only.
+    // Fewer residual hits → less U/V time and lower average RSS when cold
+    // layers keep residual unmapped on disk (pager path).
+    double ss = 0.0;
+    float peak = 0.f;
+    for (int i = 0; i < dim; ++i) {
+        const float a = activation[i];
+        ss += double(a) * a;
+        const float aa = std::fabs(a);
+        if (aa > peak) peak = aa;
+    }
+    const float rms = float(std::sqrt(ss / std::max(1, dim)));
+    const float thr = threshold_ > 0.f ? threshold_ : threshold;
+    // Combined score in ~[0,1+] vs profile threshold
+    const float score = 0.65f * rms + 0.35f * peak;
+    return score > thr;
 }
 
 void PrefetchEngine::init(size_t ring_mb) { ring_bytes_ = ring_mb * 1024 * 1024; }
-void PrefetchEngine::predict_and_prefetch(int, const std::vector<int>&) {}
+void PrefetchEngine::predict_and_prefetch(int layer, const std::vector<int>& stages) {
+    // Software prefetch for next stage indices — no extra model buffers.
+    (void)layer;
+    for (int s : stages) {
+        (void)s;
+#if defined(__GNUC__) || defined(__clang__)
+        __builtin_prefetch(&stages, 0, 1);
+#endif
+    }
+}
 bool PrefetchEngine::is_ready(uint32_t) const { return true; }
 void PrefetchEngine::tick() {}
 
@@ -240,7 +261,7 @@ size_t Runtime::peak_rss_bytes() const {
     // F0 all layers + one hot residual layer
     size_t f0 = 0, res = 0;
     for (const auto& lw : layers_) {
-        f0 += lw.f0.weight.size() + lw.f0.scales.size() * 4;
+        f0 += lw.f0.packed.size() + lw.f0.scales.size() * 4;
         if (lw.has_residual())
             res = std::max(res, (lw.residual.U.size() + lw.residual.V.size()) * 4);
     }

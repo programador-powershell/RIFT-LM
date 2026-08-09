@@ -1,7 +1,8 @@
 #pragma once
 /**
- * Paged KV + FlashDecoding-style parallel attention over blocks
- * Expected: +30–50% tok/s on long context
+ * Paged KV + FlashDecoding-style parallel attention over blocks.
+ * KV content stored as INT8 + per-block scale to cut bandwidth/footprint ~2×
+ * without increasing weight RSS.
  */
 #include <cstdint>
 #include <vector>
@@ -13,8 +14,10 @@ namespace attention {
 
 struct KVBlock {
     static constexpr int kBlockTokens = 16;
-    std::vector<float> keys;
-    std::vector<float> values;
+    std::vector<int8_t> keys_q;    // quantized keys
+    std::vector<int8_t> values_q;  // quantized values
+    float key_scale = 1.f;
+    float value_scale = 1.f;
     int n_tokens = 0;
     int layer = 0;
 };
@@ -24,6 +27,8 @@ public:
     void init(int n_layers, int n_heads, int head_dim, int max_blocks);
     KVBlock* alloc_block(int layer);
     void free_block(KVBlock* b);
+    /** Quantize and append one token's key/value (head_dim floats each). */
+    bool append_kv(KVBlock* b, const float* key, const float* value, int head_dim);
     void flash_decode_scores(int layer, const float* query, int head_dim,
                              float* out_scores, int n_scores_cap);
     void prefetch_block(const KVBlock* b);

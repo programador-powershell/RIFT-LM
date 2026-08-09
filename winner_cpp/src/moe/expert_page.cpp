@@ -101,7 +101,7 @@ size_t ExpertPager::rss_bytes() const {
     std::lock_guard<std::mutex> lk(mu_);
     size_t n = 0;
     for (auto& kv : hot_) {
-        n += kv.second->f0.weight.size() + kv.second->f0.scales.size() * 4;
+        n += kv.second->f0.packed.size() + kv.second->f0.scales.size() * 4;
         if (kv.second->residual_loaded)
             n += (kv.second->residual.U.size() + kv.second->residual.V.size()) * 4;
     }
