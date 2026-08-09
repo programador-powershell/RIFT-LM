@@ -758,8 +758,7 @@ def cleanup_colab_workspace(*, label: str = "battery", wipe_hf_cache: bool = Fal
         "/tmp/cascade_load_fail*",
         "/tmp/rift_*",
         "/content/*_launcher.py",
-        "/content/rift_serial_queue",
-    ]
+            ]
     for pattern in patterns:
         for match in _glob.glob(pattern):
             p = Path(match)

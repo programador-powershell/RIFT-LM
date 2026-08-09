@@ -337,7 +337,26 @@ function renderCompare(){
 }
 
 function renderTable(rows){const body=$("historyBody");if(!rows.length){body.innerHTML='<tr><td colspan="13" class="empty">Sem dados.</td></tr>';return}body.innerHTML=rows.slice().reverse().map(r=>{const tg=pctGainHigherBetter(r.baselineTok,r.candidateTok),rg=pctReduction(r.baselineRam,r.candidateRam),dg=pctReduction(r.baselineDisk,r.candidateDisk);return `<tr><td title="UTC: ${esc(r.timestamp)}">${esc(fmtDate(r.timestamp))}</td><td>${esc(r.model)}</td><td>${r.technology}</td><td>${esc(r.battery)}</td><td class="num">${fmtTok(r.baselineTok)}</td><td class="num">${fmtTok(r.candidateTok)}</td><td class="num ${gainClass(tg)}">${fmtPct(tg)}</td><td class="num">${fmtBytes(r.baselineRam)}</td><td class="num">${fmtBytes(r.candidateRam)}</td><td class="num ${gainClass(rg)}">${fmtPct(rg)}</td><td class="num">${fmtBytes(r.baselineDisk)}</td><td class="num">${fmtBytes(r.candidateDisk)}</td><td class="num ${gainClass(dg)}">${fmtPct(dg)}</td></tr>`}).join("")}
-function render(){const models=[...new Set(state.records.map(r=>r.model))].sort(),batteries=[...new Set(state.records.map(r=>r.battery))].sort(),mf=$("modelFilter"),bf=$("batteryFilter"),oldM=mf.value,oldB=bf.value;mf.innerHTML='<option value="">Todos os modelos</option>'+models.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");bf.innerHTML='<option value="">Todas as baterias</option>'+batteries.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");if(models.includes(oldM))mf.value=oldM;if(batteries.includes(oldB))bf.value=oldB;const tf=$("technologyFilter"),rows=state.records.filter(r=>(!mf.value||r.model===mf.value)&&(!tf.value||r.technology===tf.value)&&(!bf.value||r.battery===bf.value));renderSummary(rows);$("batteries").innerHTML=rows.length?groupRowsByModel(rows).map(renderModelGroup).join(""):'<div class="card empty">Nenhuma bateria corresponde aos filtros.</div>';renderTable(rows);renderAI();renderRanking();renderCompare()}
+function hasUsefulResult(r){
+  // Esconde FAIL de load, placeholders e linhas sem nenhuma métrica útil
+  const battery=String(r.battery||r.battery_id||"");
+  const status=String(r.status||"").toUpperCase();
+  if(status==="FAIL"){
+    const hasAny=r.baselineTok!=null||r.candidateTok!=null||r.baselineRam!=null||r.candidateRam!=null||r.baselineDisk!=null||r.candidateDisk!=null;
+    if(!hasAny) return false;
+  }
+  const hasTok=r.baselineTok!=null||r.candidateTok!=null;
+  const hasRam=r.baselineRam!=null||r.candidateRam!=null;
+  const hasDisk=r.baselineDisk!=null||r.candidateDisk!=null;
+  const hasQuality=r.qualityCosine!=null||r.qualityNrmse!=null||(r.quality&&(r.quality.full_cosine!=null||r.quality.base_cosine!=null));
+  const hasOp=r.medianMs!=null||r.speedup!=null;
+  // Baterias B0_* só-estrutura sem métrica: ocultar se não tiverem disk/quality
+  if(/^B0_/.test(battery) && !hasDisk && !hasQuality && !hasTok && !hasRam) return false;
+  if(/^P1_.*_(SIM|REF)$/.test(battery) && !hasTok && !hasRam && !hasDisk && !hasQuality && !hasOp) return false;
+  if(!hasTok && !hasRam && !hasDisk && !hasQuality && !hasOp && status!=="PASS") return false;
+  return true;
+}
+function render(){const visible=state.records.filter(hasUsefulResult);const models=[...new Set(visible.map(r=>r.model))].sort(),batteries=[...new Set(visible.map(r=>r.battery))].sort(),mf=$("modelFilter"),bf=$("batteryFilter"),oldM=mf.value,oldB=bf.value;mf.innerHTML='<option value="">Todos os modelos</option>'+models.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");bf.innerHTML='<option value="">Todas as baterias</option>'+batteries.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");if(models.includes(oldM))mf.value=oldM;if(batteries.includes(oldB))bf.value=oldB;const tf=$("technologyFilter"),rows=visible.filter(r=>(!mf.value||r.model===mf.value)&&(!tf.value||r.technology===tf.value)&&(!bf.value||r.battery===bf.value));renderSummary(rows);$("batteries").innerHTML=rows.length?groupRowsByModel(rows).map(renderModelGroup).join(""):'<div class="card empty">Nenhuma bateria corresponde aos filtros.</div>';renderTable(rows);renderAI();renderRanking();renderCompare()}
 
 function normalizeModelInput(value){const raw=String(value||"").trim();try{const url=new URL(raw);if(!["huggingface.co","www.huggingface.co"].includes(url.hostname.toLowerCase()))throw new Error();const parts=url.pathname.split("/").filter(Boolean);if(parts.length<2)throw new Error();return `${parts[0]}/${parts[1]}`}catch{if(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(raw))return raw;return null}}
 const COLAB_MAX_GB = 110;
@@ -434,7 +453,7 @@ function buildSerialColabCode(){
     "subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', '-U', 'transformers', 'accelerate', 'tokenizers', 'sentencepiece>=0.2.0', 'tiktoken>=0.7.0'])",
     "",
     "# Fila serial RIFT / CASCADE / AETHER / SPECTRA / WINNER",
-    "# Cada benchmark roda isolado; falhas interrompem a fila.",
+    "# Cada benchmark roda isolado; falhas não interrompem a fila.",
     "",
     ...colabSecretBootstrapLines(),
     "",
@@ -445,7 +464,7 @@ function buildSerialColabCode(){
     "from urllib.request import Request, urlopen",
     "",
     `TASKS = json.loads(r'''${serialized}''')`,
-    "WORK_DIR = Path('/content/rift_serial_queue')",
+    "WORK_DIR = Path('/content/__do_not_delete_serial__')",
     "WORK_DIR.mkdir(parents=True, exist_ok=True)",
     "CHILD_ENV = os.environ.copy()",
     "",
@@ -482,12 +501,15 @@ function buildSerialColabCode(){
     "    raise RuntimeError('A VRAM não retornou ao nível seguro em 180 segundos')",
     "",
     "def download_launcher(url, path):",
+    "    path = Path(path)",
+    "    path.parent.mkdir(parents=True, exist_ok=True)",
     "    request = Request(url, headers={'User-Agent': 'rift-serial-colab/1.0'})",
     "    with urlopen(request, timeout=60) as response:",
     "        path.write_bytes(response.read())",
     "",
     "failures = []",
     "for index, task in enumerate(TASKS, start=1):",
+    "    WORK_DIR.mkdir(parents=True, exist_ok=True)",
     "    baseline_mb = gpu_memory_used_mb()",
     "    launcher_path = WORK_DIR / f'launcher_{index:03d}.py'",
     "    print('\\n' + '=' * 78)",
@@ -557,7 +579,7 @@ function buildSingleColabCode(model, tech, target, trust){
     "    if p.is_dir():",
     "        shutil.rmtree(p, ignore_errors=True)",
     "        print('[cleanup-final] removido', p)",
-    "for pat in ['/tmp/winner_cpp_*', '/tmp/winner_phase1_*', '/tmp/phase1_load_fail*', '/content/*_launcher.py', '/content/rift_serial_queue']:",
+    "for pat in ['/tmp/winner_cpp_*', '/tmp/winner_phase1_*', '/tmp/phase1_load_fail*', '/content/*_launcher.py']:",
     "    for m in glob.glob(pat):",
     "        p = Path(m)",
     "        shutil.rmtree(p, ignore_errors=True) if p.is_dir() else p.unlink(missing_ok=True)",
