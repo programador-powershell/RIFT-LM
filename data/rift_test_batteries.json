@@ -3620,5 +3620,47 @@
     "baseline_disk_bytes": null,
     "candidate_disk_bytes": null,
     "comparison_role": null
+  },
+  {
+    "schema_version": 1,
+    "timestamp_utc": "2026-08-09T22:48:55Z",
+    "run_id": "20260809T224855Z-501c8733",
+    "technology": "WINNER",
+    "model_id": "google/gemma-4-E4B-it",
+    "battery_id": "P1_WINNER_F0_TERNARY_2BIT",
+    "status": "EXPERIMENTAL_FAIL",
+    "measurement_scope": "Uma operação Linear real; disco F0 em 2 bits; RAM do path de referência usa códigos int8.",
+    "quality": {
+      "full_local_gate_pass": null,
+      "weight": {
+        "cosine": 0.5388599634170532,
+        "nrmse": 0.9096524119377136
+      },
+      "output": {
+        "cosine": 0.6916345357894897,
+        "nrmse": 0.7458054423332214
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.1705445,
+        "candidate_median_ms": 0.1654915,
+        "speedup_x": 1.0305332902294073,
+        "rows_processed": 12,
+        "device": "cuda"
+      },
+      "winner": {
+        "threshold": 0.5,
+        "residual_rank": 0,
+        "cpp_self_test_pass": true
+      }
+    },
+    "notes": "O armazenamento é empacotado; o kernel PyTorch desta bateria pré-decodifica F0 em FP32.",
+    "baseline_ram_bytes": 21192704,
+    "candidate_ram_bytes": 5472256,
+    "baseline_disk_bytes": 20971520,
+    "candidate_disk_bytes": 1318912,
+    "comparison_role": null
   }
 ]
