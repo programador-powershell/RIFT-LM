@@ -2834,5 +2834,41 @@
       }
     },
     "notes": "P-IO e SRFA são simulados. Nenhum ganho nativo de inferência deve ser reivindicado."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:04:48Z",
+    "run_id": "20260809T210443Z-0e28c66a",
+    "spec": "AETHER-LM v1.0 reference",
+    "technology": "AETHER",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_AETHER_PIO_POLICY_SIM",
+    "status": "SIMULATED",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "measurement_scope": "Política de prefetch derivada dos ranks do TADDS; nenhuma leitura NVMe assíncrona foi medida.",
+    "quality": {
+      "full_local_gate_pass": null
+    },
+    "metrics": {
+      "aether": {
+        "predicted_refinement_rows": 3,
+        "stage_activation_rate": 0.2142857313156128,
+        "ring_buffer_budget_bytes": 335544320,
+        "pio_async_native": false
+      }
+    },
+    "notes": "A bateria mede somente decisões da política, não I/O real."
   }
 ]
