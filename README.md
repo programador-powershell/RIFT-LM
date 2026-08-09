@@ -10,6 +10,8 @@ Dashboard estático para executar, publicar e comparar baterias de referência d
 - gera uma célula pronta para testar qualquer model ID ou URL do Hugging Face no Google Colab;
 - seleciona automaticamente uma camada `torch.nn.Linear` compatível entre famílias;
 - compara as baterias principais de RIFT e CASCADE para o mesmo modelo;
+- calcula um ranking auditável de modelos e tecnologias a partir das métricas publicadas;
+- usa o Gemini 2.5 Flash para explicar qual tecnologia é mais adequada para cada modelo;
 - mantém métricas de operação Linear separadas de Tok/s do modelo.
 
 ## Executar localmente
@@ -40,9 +42,12 @@ RIFT_GITHUB_REPOSITORY=programador-powershell/RIFT-LM
 RIFT_GITHUB_BRANCH=main
 RIFT_GITHUB_DATA_PATH=data/rift_test_batteries.json
 RIFT_INGEST_TOKEN=UMA_CHAVE_ALEATORIA_COM_PELO_MENOS_32_CARACTERES
+API_GOOGLE=SUA_CHAVE_DA_GOOGLE_AI_STUDIO
 ```
 
-O PAT deve ficar somente na Vercel e ter `Contents: Read and write` apenas neste repositório. Nunca coloque o PAT no Colab ou em um arquivo versionado.
+O PAT e `API_GOOGLE` devem ficar somente na Vercel. O PAT precisa ter `Contents: Read and write` apenas neste repositório. Nunca coloque esses segredos no Colab, no HTML ou em um arquivo versionado.
+
+A Function `/api/analyze` envia ao Gemini somente identificadores técnicos, o estado da bateria e métricas numéricas já publicadas. Ela valida e sanitiza a entrada, valida a resposta estruturada, limita tamanho e frequência das requisições e mantém um cache curto em memória. Em produção, o dashboard solicita a análise automaticamente; localmente, ele preserva apenas o ranking determinístico para não consumir a API.
 
 ## Secrets do Google Colab
 
@@ -95,6 +100,12 @@ Registros novos declaram:
 
 O dashboard continua compatível com registros RIFT anteriores que usam `rift_*`.
 
+## Ranking e análise de IA
+
+O score composto usa qualidade de saída (40%), quality gate (5%), redução em disco (20%), redução de RAM (15%) e speedup da operação Linear (20%). Métricas ausentes reduzem a cobertura e aplicam uma penalização explícita ao score. O ranking mede somente esta bateria de referência; não representa inteligência geral do modelo.
+
+O Gemini recebe as mesmas métricas e o ranking calculado pelo servidor. Ele pode recomendar `RIFT`, `CASCADE` ou `INCONCLUSIVO`, com resumo, confiança, métricas decisivas e ressalvas. Quando uma das tecnologias não possui bateria principal para o modelo, o servidor força o resultado para `INCONCLUSIVO`, independentemente da resposta da IA.
+
 ## Limites atuais
 
 O teste RIFT usa o codec experimental `Q4_LINEAR_TEST`; ele não é MXFP4. O teste CASCADE usa decomposição low-rank, Gate heurístico e simulação lag-one do prefetch. Nenhum dos scripts contém o kernel low-bit/fused nativo de produção.
@@ -111,6 +122,7 @@ Por isso:
 ```text
 index.html
 api/results.mjs
+api/analyze.mjs
 rift_m0_phase1_test_v035_auto_batteries.py
 cascade_m0_phase1_test_v030_auto_batteries.py
 data/rift_test_batteries.json
