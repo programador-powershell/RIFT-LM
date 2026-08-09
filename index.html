@@ -231,7 +231,7 @@ details{margin-top:18px}.help{color:var(--muted);font-size:13px;line-height:1.6}
 
 <script>
 const state={records:[],analysis:null,analysisError:null,analysisLoading:false,ranking:[],analysisRequest:0,queue:[],modelSearchRequest:0,dataSource:"published",publishedFingerprint:null,publishedLoading:false};
-const /* bloqueio por nome removido — limite por tamanho via /api/models?id= */
+/* bloqueio por nome removido — limite por tamanho via /api/models?id= */
 const $=id=>document.getElementById(id);
 const SAO_PAULO_TZ="America/Sao_Paulo";
 const dateFormatter=new Intl.DateTimeFormat("pt-BR",{timeZone:SAO_PAULO_TZ,day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false,timeZoneName:"shortOffset"});
