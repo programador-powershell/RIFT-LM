@@ -1967,5 +1967,282 @@
       }
     },
     "notes": "A bateria mede somente decisões da política, não I/O real."
+  },
+  {
+    "timestamp_utc": "2026-08-09T17:35:40Z",
+    "run_id": "20260809T173540Z-6863fd1b",
+    "spec": "SPECTRA-LM v0.1 reference",
+    "technology": "SPECTRA",
+    "model_id": "microsoft/Phi-3.5-mini-instruct",
+    "battery_id": "B0_SPECTRA_BINARY_IR_FOUNDATION",
+    "status": "PASS",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "measurement_scope": "SPECTRA Header/IR/Stage Pages/MMAP correctness; desempenho não se aplica.",
+    "quality": {
+      "full_local_gate_pass": true
+    },
+    "metrics": {
+      "bundle": {
+        "file_size": 7471840,
+        "header_checksum": 10850607234209434000,
+        "hqr_packed_bytes": 7077892,
+        "tadds_residual_bytes": 393248,
+        "stages": [
+          {
+            "stage_id": 0,
+            "rank": 0,
+            "offset": 640,
+            "size": 7077892
+          },
+          {
+            "stage_id": 1,
+            "rank": 16,
+            "offset": 7078592,
+            "size": 393248
+          }
+        ]
+      },
+      "negative_tests_passed": 11
+    },
+    "notes": "Container SPCT v0.1 test-local; ABI de produção ainda não congelada."
+  },
+  {
+    "timestamp_utc": "2026-08-09T17:35:40Z",
+    "run_id": "20260809T173540Z-6863fd1b",
+    "spec": "SPECTRA-LM v0.1 reference",
+    "technology": "SPECTRA",
+    "model_id": "microsoft/Phi-3.5-mini-instruct",
+    "battery_id": "P1_SPECTRA_DRIFT_CONTRACT_REF",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "measurement_scope": "Proxy de drift relativo por linha para uma única operação Linear; não é drift acumulado end-to-end.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "output": {
+        "cosine": 0.5710235834121704,
+        "nrmse": 0.028654776513576508
+      }
+    },
+    "metrics": {
+      "spectra": {
+        "single_layer_drift_proxy_mean": 0.7545176148414612,
+        "single_layer_drift_proxy_max": 0.9273169636726379,
+        "drift_budget": 0.08,
+        "drift_budget_pass": false,
+        "drift_compensation_native": false
+      }
+    },
+    "notes": "A compensação de drift e a certificação end-to-end permanecem fora da Fase 1."
+  },
+  {
+    "timestamp_utc": "2026-08-09T17:35:40Z",
+    "run_id": "20260809T173540Z-6863fd1b",
+    "spec": "SPECTRA-LM v0.1 reference",
+    "technology": "SPECTRA",
+    "model_id": "microsoft/Phi-3.5-mini-instruct",
+    "battery_id": "P1_SPECTRA_HQR_PLUS_TADDS_DYNAMIC",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": "primary",
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 113983488,
+    "candidate_ram_bytes": 114769984,
+    "baseline_disk_bytes": 113246208,
+    "candidate_disk_bytes": 7471840,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": -0.6900087142446498,
+      "disk_reduction_pct": 93.40212786639178,
+      "disk_compression_ratio_x": 15.156401636009337,
+      "overall_gain_pct": 46.35605957607356
+    },
+    "measurement_scope": "Single Linear op; bundle SPCT real; Gate/TADDS por entropia; latência do path Python/PyTorch; Tok/s não medido.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "weight": {
+        "cosine": 0.8802056312561035,
+        "nrmse": 0.003088864963501692
+      },
+      "output": {
+        "cosine": 0.5710235834121704,
+        "nrmse": 0.028654776513576508
+      },
+      "output_base": {
+        "cosine": 0.7580454349517822,
+        "nrmse": 0.031074080616235733
+      },
+      "output_rank_max": {
+        "cosine": 0.9933589696884155,
+        "nrmse": 0.003940259106457233
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 1.0277560000417907,
+        "candidate_median_ms": 2.7387769999904776,
+        "speedup_x": 0.3752609285258946,
+        "rows_processed": 15
+      },
+      "spectra": {
+        "maximum_rank": 16,
+        "mean_selected_rank": 1.7333334684371948,
+        "stage_activation_rate": 0.20000001788139343,
+        "rank_histogram": {
+          "0": 12,
+          "2": 1,
+          "8": 1,
+          "16": 1
+        },
+        "entropy_mean": 11.580927848815918,
+        "entropy_thresholds": [
+          11.583884239196777,
+          11.58390998840332,
+          11.584057807922363
+        ],
+        "activation_source": "real_model_activation",
+        "single_layer_drift_proxy_mean": 0.7545176148414612,
+        "single_layer_drift_proxy_max": 0.9273169636726379,
+        "drift_budget": 0.08,
+        "drift_budget_pass": false,
+        "hqr_ans_native": false,
+        "pio_async_native": false,
+        "fused_kernel_native": false,
+        "drift_compensation_native": false,
+        "speculative_path_native": false,
+        "ring_buffer_budget_bytes": 335544320
+      },
+      "bundle": {
+        "file_size": 7471840,
+        "header_checksum": 10850607234209434000,
+        "hqr_packed_bytes": 7077892,
+        "tadds_residual_bytes": 393248,
+        "stages": [
+          {
+            "stage_id": 0,
+            "rank": 0,
+            "offset": 640,
+            "size": 7077892
+          },
+          {
+            "stage_id": 1,
+            "rank": 16,
+            "offset": 7078592,
+            "size": 393248
+          }
+        ]
+      }
+    },
+    "notes": "Prefetch, fused kernel, drift compensation e speculative path são simulados. Nenhum ganho nativo de inferência deve ser reivindicado."
+  },
+  {
+    "timestamp_utc": "2026-08-09T17:35:40Z",
+    "run_id": "20260809T173540Z-6863fd1b",
+    "spec": "SPECTRA-LM v0.1 reference",
+    "technology": "SPECTRA",
+    "model_id": "microsoft/Phi-3.5-mini-instruct",
+    "battery_id": "P1_SPECTRA_HQR_TERNARY_2BIT",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 113983488,
+    "candidate_ram_bytes": 113983488,
+    "baseline_disk_bytes": 113246208,
+    "candidate_disk_bytes": 7077892,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": 0,
+      "disk_reduction_pct": 93.7499964678729,
+      "disk_compression_ratio_x": 15.99999095775974,
+      "overall_gain_pct": 46.87499823393645
+    },
+    "measurement_scope": "Single Linear op; base ternária realmente empacotada em 2 bits; RAM é o working set FP32 do path Python.",
+    "quality": {
+      "full_local_gate_pass": null,
+      "weight": {
+        "cosine": 0.7710639238357544,
+        "nrmse": 0.004118016920983791
+      },
+      "output": {
+        "cosine": 0.7580454349517822,
+        "nrmse": 0.031074080616235733
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 1.0277560000417907,
+        "candidate_median_ms": 1.0232205000306749,
+        "speedup_x": 1.0044325734394295
+      },
+      "spectra": {
+        "ternary_sparsity": 0.526208758354187,
+        "hqr_ans_native": false
+      }
+    },
+    "notes": "HQR ANS 0.85-bit não implementado; o dashboard usa somente bytes físicos medidos."
+  },
+  {
+    "timestamp_utc": "2026-08-09T17:35:40Z",
+    "run_id": "20260809T173540Z-6863fd1b",
+    "spec": "SPECTRA-LM v0.1 reference",
+    "technology": "SPECTRA",
+    "model_id": "microsoft/Phi-3.5-mini-instruct",
+    "battery_id": "P1_SPECTRA_PIO_POLICY_SIM",
+    "status": "SIMULATED",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "measurement_scope": "Política de prefetch derivada dos ranks do TADDS; nenhuma leitura NVMe assíncrona foi medida.",
+    "quality": {
+      "full_local_gate_pass": null
+    },
+    "metrics": {
+      "spectra": {
+        "predicted_refinement_rows": 3,
+        "stage_activation_rate": 0.20000001788139343,
+        "ring_buffer_budget_bytes": 335544320,
+        "pio_async_native": false
+      }
+    },
+    "notes": "A bateria mede somente decisões da política, não I/O real."
   }
 ]
