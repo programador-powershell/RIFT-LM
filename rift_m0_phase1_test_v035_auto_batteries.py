@@ -2528,7 +2528,34 @@ def run_synthetic_self_test(out_dir: Path) -> None:
 # CLI
 # ------------------------------------------------------------------------------
 
-def main():
+def _without_ipykernel_connection_args(argv: Iterable[str]) -> List[str]:
+    """
+    Remove somente o par interno ``-f kernel-*.json`` injetado pelo Jupyter.
+
+    Não usamos parse_known_args porque ele esconderia erros reais de digitação
+    nos argumentos do benchmark.
+    """
+    values = list(argv)
+    filtered: List[str] = []
+    index = 0
+    while index < len(values):
+        value = values[index]
+        if value == "-f" and index + 1 < len(values):
+            connection_file = Path(values[index + 1]).name
+            if connection_file.startswith("kernel-") and connection_file.endswith(".json"):
+                index += 2
+                continue
+        if value.startswith("-f="):
+            connection_file = Path(value[3:]).name
+            if connection_file.startswith("kernel-") and connection_file.endswith(".json"):
+                index += 1
+                continue
+        filtered.append(value)
+        index += 1
+    return filtered
+
+
+def main(argv: Iterable[str] | None = None):
     parser = argparse.ArgumentParser(
         description="RIFT-LM v0.3.5 B0 + Phase 1 reference test"
     )
@@ -2595,7 +2622,8 @@ def main():
         ),
         help="Caminho do histórico dentro do repositório do dashboard",
     )
-    args = parser.parse_args()
+    cli_args = sys.argv[1:] if argv is None else argv
+    args = parser.parse_args(_without_ipykernel_connection_args(cli_args))
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
