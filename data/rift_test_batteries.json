@@ -4015,33 +4015,33 @@
     "comparison_role": null
   },
   {
-    "timestamp_utc": "2026-08-09T23:56:12Z",
+    "timestamp_utc": "2026-08-09T23:56:13Z",
     "run_id": "20260809T235358Z",
     "technology": "CASCADE",
     "model_id": "microsoft/Phi-3.5-mini-instruct",
-    "battery_id": "B0_CASCADE_C0_BUNDLE",
-    "status": "PASS",
+    "battery_id": "P1_CASCADE_C0_F0_ONLY",
+    "status": "EXPERIMENTAL_PASS",
     "comparison_role": null,
     "baseline_ram_bytes": 38043648,
-    "candidate_ram_bytes": 6291520,
+    "candidate_ram_bytes": 6193152,
     "baseline_disk_bytes": 37748736,
-    "candidate_disk_bytes": 6292992,
-    "measurement_scope": "CASCADE-C0 Linear real path=BUNDLE; layer=model.layers.0.self_attn.o_proj.weight; INT4 F0 + low-rank F1; reference Python runtime",
+    "candidate_disk_bytes": 5898240,
+    "measurement_scope": "CASCADE-C0 Linear real path=F0_ONLY; layer=model.layers.0.self_attn.o_proj.weight; INT4 F0 + low-rank F1; reference Python runtime",
     "quality": {
-      "full_local_gate_pass": true,
+      "full_local_gate_pass": false,
       "output": {
-        "cosine": 1,
-        "nrmse": 0
+        "cosine": 0.9993106722831726,
+        "nrmse": 0.03752066718887285
       }
     },
     "metrics": {
       "operation": {
         "metric": "linear_latency",
         "baseline_median_ms": 8.445725999990827,
-        "candidate_median_ms": 8.445725999990827,
-        "speedup_x": 1,
+        "candidate_median_ms": 115.39785499917343,
+        "speedup_x": 0.07318789417750722,
         "rows_processed": 12,
-        "path": "BUNDLE"
+        "path": "F0_ONLY"
       },
       "cascade": {
         "out_features": 3072,
@@ -4054,35 +4054,11 @@
         "disk_reduction_pct": 83.33316379123264,
         "bundle_bytes": 6292992,
         "target_layer": "model.layers.0.self_attn.o_proj.weight",
-        "bundle": {
-          "path": "cascade_c0_test_output/model.cascade",
-          "file_size": 6292992,
-          "checksum": 1742916048,
-          "stages": [
-            {
-              "stage_id": 0,
-              "offset": 960,
-              "size": 5898481,
-              "type": "BASE_STAGE",
-              "codec": "INT4_GROUP"
-            },
-            {
-              "stage_id": 1,
-              "offset": 5899456,
-              "size": 393521,
-              "type": "RESIDUAL_LOWRANK",
-              "codec": "FP32_LOWRANK"
-            }
-          ],
-          "f0_bytes": 5898240,
-          "f1_bytes": 393280,
-          "baseline_bytes": 37748736,
-          "gate_percentile": 70,
-          "model_id": "microsoft/Phi-3.5-mini-instruct",
-          "target_layer": "model.layers.0.self_attn.o_proj.weight"
-        }
+        "F0_calls": 12,
+        "F1_calls": 0,
+        "F1_skip_rate": 1
       }
     },
-    "notes": "Bundle CSCD M0 escrito com Stage Pages F0 INT4 + F1 low-rank."
+    "notes": "Path B: somente F0 INT4. Ganho bruto de quantização."
   }
 ]
