@@ -3830,6 +3830,111 @@
     "run_id": "20260809T231134Z-1df1253d",
     "technology": "WINNER",
     "model_id": "microsoft/Phi-3.5-mini-instruct",
+    "battery_id": "P1_WINNER_F0_PLUS_LS",
+    "status": "EXPERIMENTAL_FAIL",
+    "measurement_scope": "Single Linear op; F0 2-bit sempre residente + residual low-rank GATED (activation L2 percentile, arquitetura CASCADE); RAM=working-set esperado (F0_packed + rate*residual); Tok/s não medido.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "weight": {
+        "cosine": 0.5204987525939941,
+        "nrmse": 0.9130153656005859
+      },
+      "output": {
+        "cosine": 0.8489678502082825,
+        "nrmse": 0.5292278528213501
+      },
+      "output_f0": {
+        "cosine": 0.8214900493621826,
+        "nrmse": 0.5903517603874207
+      },
+      "output_f0_plus_residual_always": {
+        "cosine": 0.8870421648025513,
+        "nrmse": 0.4633258879184723
+      },
+      "cumulative_drift_mean": 0.581842303276062,
+      "cumulative_drift_max": 0.7355623841285706
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.7606284999999999,
+        "candidate_median_ms": 0.8529899999999999,
+        "speedup_x": 0.8917203015275678,
+        "rows_processed": 15,
+        "device": "cuda"
+      },
+      "winner": {
+        "threshold": 0.5,
+        "residual_rank": 16,
+        "stage_activation_rate": 0.3333333432674408,
+        "gate": "ACTIVATION_L2_PERCENTILE_V1",
+        "gate_percentile": 70,
+        "activation_source": "real_model_activation",
+        "ram_model": "cascade_working_set",
+        "f0_resident_bytes": 6303744,
+        "residual_bytes": 720960,
+        "expected_residual_resident_bytes": 240320,
+        "peak_ram_bytes": 7700544,
+        "cpp_self_test_pass": true,
+        "native_profile": {
+          "dim": 128,
+          "layers": 2,
+          "tokens": 4,
+          "profiles": [
+            {
+              "profile": "MINMEM",
+              "rank": 0,
+              "us_gemv": 7.88619,
+              "ms_tok": 0.0320317,
+              "tok_s": 31219,
+              "rss_mb": 0.00878906,
+              "residual_pct": 0
+            },
+            {
+              "profile": "FAST",
+              "rank": 16,
+              "us_gemv": 10.0571,
+              "ms_tok": 0.0367825,
+              "tok_s": 27186.8,
+              "rss_mb": 0.0244141,
+              "residual_pct": 25
+            },
+            {
+              "profile": "BALANCED",
+              "rank": 64,
+              "us_gemv": 12.5377,
+              "ms_tok": 0.053381,
+              "tok_s": 18733.3,
+              "rss_mb": 0.0712891,
+              "residual_pct": 56.25
+            },
+            {
+              "profile": "SAFE",
+              "rank": 128,
+              "us_gemv": 21.6394,
+              "ms_tok": 0.084513,
+              "tok_s": 11832.5,
+              "rss_mb": 0.133789,
+              "residual_pct": 93.75
+            }
+          ]
+        },
+        "native_lowbit_model_kernel": false
+      }
+    },
+    "notes": "RAM no modelo CASCADE: F0 empacotado sempre residente; residual só no working set quando o gate dispara (rate=0.333). C++ self-test separado; kernel nativo ainda não carrega este tensor HF.",
+    "baseline_ram_bytes": 101339136,
+    "candidate_ram_bytes": 7219904,
+    "baseline_disk_bytes": 100663296,
+    "candidate_disk_bytes": 7024704,
+    "comparison_role": "primary"
+  },
+  {
+    "schema_version": 1,
+    "timestamp_utc": "2026-08-09T23:11:34Z",
+    "run_id": "20260809T231134Z-1df1253d",
+    "technology": "WINNER",
+    "model_id": "microsoft/Phi-3.5-mini-instruct",
     "battery_id": "P1_WINNER_F0_TERNARY_2BIT",
     "status": "EXPERIMENTAL_FAIL",
     "measurement_scope": "Single Linear op; disk=F0 2-bit packed; RAM=working-set F0 packed (CASCADE-style, sem descompactar numel int8).",
