@@ -2969,5 +2969,106 @@
       }
     },
     "notes": "HQR ANS 0.85-bit não implementado; o dashboard usa somente bytes físicos medidos."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:05:52Z",
+    "run_id": "20260809T210548Z-c57d1a8f",
+    "spec": "SPECTRA-LM v0.1 reference",
+    "technology": "SPECTRA",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_SPECTRA_HQR_PLUS_TADDS_DYNAMIC",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": "primary",
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 42315776,
+    "candidate_ram_bytes": 42741824,
+    "baseline_disk_bytes": 41943040,
+    "candidate_disk_bytes": 2835168,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": -1.0068301713290095,
+      "disk_reduction_pct": 93.24043273925781,
+      "disk_compression_ratio_x": 14.7938464316753,
+      "overall_gain_pct": 46.1168012839644
+    },
+    "measurement_scope": "Single Linear op; bundle SPCT real; Gate/TADDS por entropia; latência do path Python/PyTorch; Tok/s não medido.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "weight": {
+        "cosine": 0.8970372080802917,
+        "nrmse": 0.009836291894316673
+      },
+      "output": {
+        "cosine": 0.8612435460090637,
+        "nrmse": 0.013102036900818348
+      },
+      "output_base": {
+        "cosine": 0.8419888615608215,
+        "nrmse": 0.01445861253887415
+      },
+      "output_rank_max": {
+        "cosine": 0.9753214120864868,
+        "nrmse": 0.0055007790215313435
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.4090234997420339,
+        "candidate_median_ms": 1.3763909998942836,
+        "speedup_x": 0.2971710072017688,
+        "rows_processed": 14
+      },
+      "spectra": {
+        "maximum_rank": 16,
+        "mean_selected_rank": 1.8571429252624512,
+        "stage_activation_rate": 0.2142857313156128,
+        "rank_histogram": {
+          "0": 11,
+          "2": 1,
+          "8": 1,
+          "16": 1
+        },
+        "entropy_mean": 11.32161808013916,
+        "entropy_thresholds": [
+          11.321684837341309,
+          11.32168960571289,
+          11.321701049804688
+        ],
+        "activation_source": "real_model_activation",
+        "single_layer_drift_proxy_mean": 0.5369561910629272,
+        "single_layer_drift_proxy_max": 0.7566548585891724,
+        "drift_budget": 0.08,
+        "drift_budget_pass": false,
+        "hqr_ans_native": false,
+        "pio_async_native": false,
+        "fused_kernel_native": false,
+        "drift_compensation_native": false,
+        "speculative_path_native": false,
+        "ring_buffer_budget_bytes": 335544320
+      },
+      "bundle": {
+        "file_size": 2835168,
+        "header_checksum": 16954238260725289000,
+        "hqr_packed_bytes": 2621444,
+        "tadds_residual_bytes": 213024,
+        "stages": [
+          {
+            "stage_id": 0,
+            "rank": 0,
+            "offset": 640,
+            "size": 2621444
+          },
+          {
+            "stage_id": 1,
+            "rank": 16,
+            "offset": 2622144,
+            "size": 213024
+          }
+        ]
+      }
+    },
+    "notes": "Prefetch, fused kernel, drift compensation e speculative path são simulados. Nenhum ganho nativo de inferência deve ser reivindicado."
   }
 ]
