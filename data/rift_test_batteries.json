@@ -2244,5 +2244,1111 @@
       }
     },
     "notes": "A bateria mede somente decisões da política, não I/O real."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:02:31Z",
+    "run_id": "20260809T210231Z-6741884f",
+    "spec": "RIFT-LM v0.3.5",
+    "technology": "RIFT",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "B0_BINARY_IR_FOUNDATION",
+    "status": "PASS",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "rift_tok_s": null,
+    "baseline_ram_bytes": null,
+    "rift_ram_bytes": null,
+    "baseline_disk_bytes": 41943040,
+    "rift_disk_bytes": 41943296,
+    "candidate_tok_s": null,
+    "candidate_ram_bytes": null,
+    "candidate_disk_bytes": 41943296,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": -0.0006103515624911182,
+      "disk_compression_ratio_x": 0.9999938965216276,
+      "overall_gain_pct": -0.0006103515624911182
+    },
+    "measurement_scope": "B0 binary/container validation. Tok/s e RAM não se aplicam; disk compara tensor FP32 raw com Container M0 raw one-tensor.",
+    "quality": {
+      "full_local_gate_pass": true
+    },
+    "metrics": {
+      "container": {
+        "file_size": 41943296,
+        "payload_bytes": 41943040,
+        "container_overhead_bytes": 256,
+        "payload_offset": 256,
+        "shape_blob_offset": 160,
+        "page_entry_size_test_local": 44,
+        "tensor_id": 1,
+        "shape": [
+          4096,
+          2560
+        ],
+        "codec_id_test_local": 0,
+        "mapped_file_bytes": 41943296
+      },
+      "golden_checksum": "0x8db3a70fc08a38f3"
+    },
+    "notes": "B0 mede correção/overhead do container, não compressão. Ganho de disco pode ser negativo por design."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:02:37Z",
+    "run_id": "20260809T210231Z-6741884f",
+    "spec": "RIFT-LM v0.3.5",
+    "technology": "RIFT",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_Q4_LINEAR_BASE_2BIT",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "rift_tok_s": null,
+    "baseline_ram_bytes": 42475520,
+    "rift_ram_bytes": 45096980,
+    "baseline_disk_bytes": 41943040,
+    "rift_disk_bytes": 2621460,
+    "candidate_tok_s": null,
+    "candidate_ram_bytes": 45096980,
+    "candidate_disk_bytes": 2621460,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": -6.171696073408861,
+      "disk_reduction_pct": 93.74995231628418,
+      "disk_compression_ratio_x": 15.999877930618815,
+      "overall_gain_pct": 43.789128121437656
+    },
+    "measurement_scope": "Single Linear op. RAM=estimated current reference working set; disk=real bytes on disk; Tok/s=model-level NOT_MEASURED.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "weight": {
+        "cosine": 0.03572960035540833,
+        "rmse": 0.04753123223781586,
+        "nrmse": 0.046178350864823
+      },
+      "output": {
+        "cosine": 0.4871631161369067,
+        "rmse": 0.06766480952501297,
+        "nrmse": 0.02586933483763233
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.4349275,
+        "rift_median_ms": 69.1308645,
+        "speedup_x": 0.006291364980688185,
+        "speed_gain_pct": -99.37086350193118,
+        "rows_processed": 20,
+        "baseline_rows_s": 45984.67560685401,
+        "rift_rows_s": 289.3063777612675,
+        "IMPORTANT": "rows/s de uma única Linear NÃO é model Tok/s"
+      },
+      "storage": {
+        "baseline_bytes": 41943040,
+        "candidate_bytes": 2621460,
+        "compression_ratio_x": 15.999877930618815,
+        "disk_reduction_pct": 93.74995231628418
+      },
+      "ram": {
+        "baseline_working_set_bytes": 42475520,
+        "rift_working_set_bytes": 45096980,
+        "includes_reconstructed_fp32_weight": true
+      }
+    },
+    "notes": "BASE 2-bit packed. Q4_LINEAR_TEST não é MXFP4. Speedup nativo não pode ser reivindicado."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:02:39Z",
+    "run_id": "20260809T210231Z-6741884f",
+    "spec": "RIFT-LM v0.3.5",
+    "technology": "RIFT",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_Q4_LINEAR_BASE_PLUS_REF_4BIT",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": "primary",
+    "baseline_tok_s": null,
+    "rift_tok_s": null,
+    "baseline_ram_bytes": 42475520,
+    "rift_ram_bytes": 47718420,
+    "baseline_disk_bytes": 41943040,
+    "rift_disk_bytes": 5242900,
+    "candidate_tok_s": null,
+    "candidate_ram_bytes": 47718420,
+    "candidate_disk_bytes": 5242900,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": -12.343345060872712,
+      "disk_reduction_pct": 87.49995231628418,
+      "disk_compression_ratio_x": 7.99996948253829,
+      "overall_gain_pct": 37.578303627705736
+    },
+    "measurement_scope": "Single Linear op. RAM=estimated current reference working set; disk=real bytes on disk; Tok/s=model-level NOT_MEASURED.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "weight": {
+        "cosine": 0.7936241445985583,
+        "rmse": 0.021249203011393547,
+        "nrmse": 0.020644386986401322
+      },
+      "output": {
+        "cosine": 0.9187113138115022,
+        "rmse": 0.03212835267186165,
+        "nrmse": 0.012283181152570738
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.4349275,
+        "rift_median_ms": 79.69815399999999,
+        "speedup_x": 0.005457184114954533,
+        "speed_gain_pct": -99.45428158850454,
+        "rows_processed": 20,
+        "baseline_rows_s": 45984.67560685401,
+        "rift_rows_s": 250.9468412530609,
+        "IMPORTANT": "rows/s de uma única Linear NÃO é model Tok/s"
+      },
+      "storage": {
+        "baseline_bytes": 41943040,
+        "candidate_bytes": 5242900,
+        "compression_ratio_x": 7.99996948253829,
+        "disk_reduction_pct": 87.49995231628418
+      },
+      "ram": {
+        "baseline_working_set_bytes": 42475520,
+        "rift_working_set_bytes": 47718420,
+        "includes_reconstructed_fp32_weight": true
+      }
+    },
+    "notes": "BASE+REF 4-bit packed. Q4_LINEAR_TEST não é MXFP4. O path ainda materializa FP32 antes da GEMM."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:03:38Z",
+    "run_id": "20260809T210338Z-14e1d30e",
+    "spec": "CASCADE v0.3",
+    "technology": "CASCADE",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "B0_CASCADE_BINARY_IR_FOUNDATION",
+    "status": "PASS",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "measurement_scope": "CASCADE Header/IR/Stage Pages/MMAP correctness; Tok/s, RAM e compressão não se aplicam.",
+    "quality": {
+      "full_local_gate_pass": true
+    },
+    "metrics": {
+      "bundle": {
+        "file_size": 852800,
+        "header_checksum": 5658117962710114000,
+        "ir_offset": 128,
+        "stage_table_offset": 384,
+        "gate_table_offset": 464,
+        "payload_offset": 576,
+        "stages": [
+          {
+            "stage_id": 0,
+            "offset": 576,
+            "size": 426060
+          },
+          {
+            "stage_id": 1,
+            "offset": 426688,
+            "size": 426060
+          }
+        ]
+      },
+      "negative_tests_passed": 11
+    },
+    "notes": "CSCD v0.3 test-local container; ABI de produção ainda não congelada."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:03:40Z",
+    "run_id": "20260809T210338Z-14e1d30e",
+    "spec": "CASCADE v0.3",
+    "technology": "CASCADE",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_CASCADE_BASE_STAGE_F0",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 42315776,
+    "candidate_ram_bytes": 798796,
+    "baseline_disk_bytes": 41943040,
+    "candidate_disk_bytes": 426060,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": 98.11229740889071,
+      "disk_reduction_pct": 98.98419380187988,
+      "disk_compression_ratio_x": 98.44397502699151,
+      "overall_gain_pct": 98.54824560538529
+    },
+    "measurement_scope": "Single Linear op; disk=FP32 raw vs F0 FP16 low-rank payload; RAM=working-set estimate; model Tok/s not measured.",
+    "quality": {
+      "full_local_gate_pass": null,
+      "output": {
+        "cosine": 0.9068016409873962,
+        "nrmse": 0.010501112788915634
+      }
+    },
+    "metrics": {
+      "operation": {
+        "baseline_median_ms": 0.40865749997465173,
+        "candidate_median_ms": 0.11179100010849652,
+        "speedup_x": 3.655549190704416
+      }
+    },
+    "notes": "F0 sempre residente; resultado aproximado isolado."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:03:41Z",
+    "run_id": "20260809T210338Z-14e1d30e",
+    "spec": "CASCADE v0.3",
+    "technology": "CASCADE",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_CASCADE_GATED_F0_PLUS_F1",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": "primary",
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 42315776,
+    "candidate_ram_bytes": 1224856,
+    "baseline_disk_bytes": 41943040,
+    "candidate_disk_bytes": 852800,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": 97.10543887934372,
+      "disk_reduction_pct": 97.96676635742188,
+      "disk_compression_ratio_x": 49.182739212007505,
+      "overall_gain_pct": 97.5361026183828
+    },
+    "measurement_scope": "Single Linear op; disk=arquivo CSCD real; RAM=working-set estimate; latency=Python/PyTorch reference path; model Tok/s not measured.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "output": {
+        "cosine": 0.9099383354187012,
+        "nrmse": 0.010331378318369389
+      },
+      "output_f0": {
+        "cosine": 0.9068016409873962,
+        "nrmse": 0.010501112788915634
+      },
+      "output_f0_plus_f1_always": {
+        "cosine": 0.9119682908058167,
+        "nrmse": 0.01021970808506012
+      },
+      "cumulative_drift_mean": 0.43914395570755005,
+      "cumulative_drift_max": 0.5663007497787476
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.40865749997465173,
+        "candidate_median_ms": 0.2529984999455337,
+        "speedup_x": 1.615256612440899,
+        "rows_processed": 14
+      },
+      "cascade": {
+        "base_rank": 32,
+        "refinement_rank": 32,
+        "stage_activation_rate": 0.5,
+        "gate": "ACTIVATION_L2_PERCENTILE_V1",
+        "gate_percentile": 50,
+        "activation_source": "real_model_activation",
+        "fused_semantics_reference": true,
+        "fused_kernel_native": false,
+        "logical_bytes_addressed_per_vector": {
+          "baseline_dense_weight": 41943040,
+          "cascade_expected_stage_payload": 639090,
+          "IMPORTANT": "logical payload, not measured memory-bus traffic"
+        }
+      },
+      "bundle": {
+        "file_size": 852800,
+        "header_checksum": 5658117962710114000,
+        "ir_offset": 128,
+        "stage_table_offset": 384,
+        "gate_table_offset": 464,
+        "payload_offset": 576,
+        "stages": [
+          {
+            "stage_id": 0,
+            "offset": 576,
+            "size": 426060
+          },
+          {
+            "stage_id": 1,
+            "offset": 426688,
+            "size": 426060
+          }
+        ]
+      }
+    },
+    "notes": "Gate heurístico por ativação. Caminho de referência não é kernel fused; nenhum speedup nativo é reivindicado."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:03:43Z",
+    "run_id": "20260809T210338Z-14e1d30e",
+    "spec": "CASCADE v0.3",
+    "technology": "CASCADE",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_CASCADE_PREDICTIVE_PREFETCH_SIM",
+    "status": "SIMULATED",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "measurement_scope": "Lag-one simulation over gate decisions; no real asynchronous I/O latency measured.",
+    "quality": {
+      "full_local_gate_pass": null
+    },
+    "metrics": {
+      "prefetch": {
+        "precision": 0.6666666666666666,
+        "recall": 0.5714285714285714,
+        "required_pages": 7,
+        "predicted_pages": 6,
+        "true_positive_pages": 4,
+        "prefetched_bytes": 2556360,
+        "wasted_prefetch_bytes": 852120,
+        "missed_prefetch_bytes": 1278180,
+        "IMPORTANT": "simulated page requests, not measured asynchronous I/O"
+      }
+    },
+    "notes": "Erro de prefetch afeta apenas custo estimado; esta bateria não implementa I/O assíncrono."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:04:43Z",
+    "run_id": "20260809T210443Z-0e28c66a",
+    "spec": "AETHER-LM v1.0 reference",
+    "technology": "AETHER",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "B0_AETHER_BINARY_IR_FOUNDATION",
+    "status": "PASS",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "measurement_scope": "AETHER Header/IR/Stage Pages/MMAP correctness; desempenho não se aplica.",
+    "quality": {
+      "full_local_gate_pass": true
+    },
+    "metrics": {
+      "bundle": {
+        "file_size": 2835168,
+        "header_checksum": 15670846866147105000,
+        "hqr_packed_bytes": 2621444,
+        "tadds_residual_bytes": 213024,
+        "stages": [
+          {
+            "stage_id": 0,
+            "rank": 0,
+            "offset": 640,
+            "size": 2621444
+          },
+          {
+            "stage_id": 1,
+            "rank": 16,
+            "offset": 2622144,
+            "size": 213024
+          }
+        ]
+      },
+      "negative_tests_passed": 11
+    },
+    "notes": "Container AETH v1.0 test-local; ABI de produção ainda não congelada."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:04:44Z",
+    "run_id": "20260809T210443Z-0e28c66a",
+    "spec": "AETHER-LM v1.0 reference",
+    "technology": "AETHER",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_AETHER_HQR_TERNARY_2BIT",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 42315776,
+    "candidate_ram_bytes": 42315776,
+    "baseline_disk_bytes": 41943040,
+    "candidate_disk_bytes": 2621444,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": 0,
+      "disk_reduction_pct": 93.74999046325684,
+      "disk_compression_ratio_x": 15.999975585974752,
+      "overall_gain_pct": 46.87499523162842
+    },
+    "measurement_scope": "Single Linear op; base ternária realmente empacotada em 2 bits; RAM é o working set FP32 do path Python.",
+    "quality": {
+      "full_local_gate_pass": null,
+      "weight": {
+        "cosine": 0.8860535621643066,
+        "nrmse": 0.010312497615814209
+      },
+      "output": {
+        "cosine": 0.8419888615608215,
+        "nrmse": 0.01445861253887415
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.42364499995528604,
+        "candidate_median_ms": 0.42314400002396724,
+        "speedup_x": 1.0011839939389202
+      },
+      "aether": {
+        "ternary_sparsity": 0.43617841601371765,
+        "hqr_ans_native": false
+      }
+    },
+    "notes": "HQR ANS 0.85-bit não implementado; o dashboard usa somente bytes físicos medidos."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:04:46Z",
+    "run_id": "20260809T210443Z-0e28c66a",
+    "spec": "AETHER-LM v1.0 reference",
+    "technology": "AETHER",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_AETHER_HQR_PLUS_TADDS_DYNAMIC",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": "primary",
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 42315776,
+    "candidate_ram_bytes": 42741824,
+    "baseline_disk_bytes": 41943040,
+    "candidate_disk_bytes": 2835168,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": -1.0068301713290095,
+      "disk_reduction_pct": 93.24043273925781,
+      "disk_compression_ratio_x": 14.7938464316753,
+      "overall_gain_pct": 46.1168012839644
+    },
+    "measurement_scope": "Single Linear op; bundle AETH real; TADDS por entropia; latência do path Python/PyTorch; Tok/s não medido.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "weight": {
+        "cosine": 0.8970403075218201,
+        "nrmse": 0.009836087003350258
+      },
+      "output": {
+        "cosine": 0.8612141609191895,
+        "nrmse": 0.013113552704453468
+      },
+      "output_base": {
+        "cosine": 0.8419888615608215,
+        "nrmse": 0.01445861253887415
+      },
+      "output_rank_max": {
+        "cosine": 0.9750725030899048,
+        "nrmse": 0.00552896736189723
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.42364499995528604,
+        "candidate_median_ms": 1.6951325001173245,
+        "speedup_x": 0.24991851665044737,
+        "rows_processed": 14
+      },
+      "aether": {
+        "maximum_rank": 16,
+        "mean_selected_rank": 1.8571429252624512,
+        "stage_activation_rate": 0.2142857313156128,
+        "rank_histogram": {
+          "0": 11,
+          "2": 1,
+          "8": 1,
+          "16": 1
+        },
+        "entropy_mean": 11.32161808013916,
+        "entropy_thresholds": [
+          11.321684837341309,
+          11.32168960571289,
+          11.321701049804688
+        ],
+        "activation_source": "real_model_activation",
+        "hqr_ans_native": false,
+        "pio_async_native": false,
+        "srfa_fused_native": false,
+        "ring_buffer_budget_bytes": 335544320
+      },
+      "bundle": {
+        "file_size": 2835168,
+        "header_checksum": 15670846866147105000,
+        "hqr_packed_bytes": 2621444,
+        "tadds_residual_bytes": 213024,
+        "stages": [
+          {
+            "stage_id": 0,
+            "rank": 0,
+            "offset": 640,
+            "size": 2621444
+          },
+          {
+            "stage_id": 1,
+            "rank": 16,
+            "offset": 2622144,
+            "size": 213024
+          }
+        ]
+      }
+    },
+    "notes": "P-IO e SRFA são simulados. Nenhum ganho nativo de inferência deve ser reivindicado."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:04:48Z",
+    "run_id": "20260809T210443Z-0e28c66a",
+    "spec": "AETHER-LM v1.0 reference",
+    "technology": "AETHER",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_AETHER_PIO_POLICY_SIM",
+    "status": "SIMULATED",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "measurement_scope": "Política de prefetch derivada dos ranks do TADDS; nenhuma leitura NVMe assíncrona foi medida.",
+    "quality": {
+      "full_local_gate_pass": null
+    },
+    "metrics": {
+      "aether": {
+        "predicted_refinement_rows": 3,
+        "stage_activation_rate": 0.2142857313156128,
+        "ring_buffer_budget_bytes": 335544320,
+        "pio_async_native": false
+      }
+    },
+    "notes": "A bateria mede somente decisões da política, não I/O real."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:05:48Z",
+    "run_id": "20260809T210548Z-c57d1a8f",
+    "spec": "SPECTRA-LM v0.1 reference",
+    "technology": "SPECTRA",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "B0_SPECTRA_BINARY_IR_FOUNDATION",
+    "status": "PASS",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "measurement_scope": "SPECTRA Header/IR/Stage Pages/MMAP correctness; desempenho não se aplica.",
+    "quality": {
+      "full_local_gate_pass": true
+    },
+    "metrics": {
+      "bundle": {
+        "file_size": 2835168,
+        "header_checksum": 16954238260725289000,
+        "hqr_packed_bytes": 2621444,
+        "tadds_residual_bytes": 213024,
+        "stages": [
+          {
+            "stage_id": 0,
+            "rank": 0,
+            "offset": 640,
+            "size": 2621444
+          },
+          {
+            "stage_id": 1,
+            "rank": 16,
+            "offset": 2622144,
+            "size": 213024
+          }
+        ]
+      },
+      "negative_tests_passed": 11
+    },
+    "notes": "Container SPCT v0.1 test-local; ABI de produção ainda não congelada."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:05:50Z",
+    "run_id": "20260809T210548Z-c57d1a8f",
+    "spec": "SPECTRA-LM v0.1 reference",
+    "technology": "SPECTRA",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_SPECTRA_HQR_TERNARY_2BIT",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 42315776,
+    "candidate_ram_bytes": 42315776,
+    "baseline_disk_bytes": 41943040,
+    "candidate_disk_bytes": 2621444,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": 0,
+      "disk_reduction_pct": 93.74999046325684,
+      "disk_compression_ratio_x": 15.999975585974752,
+      "overall_gain_pct": 46.87499523162842
+    },
+    "measurement_scope": "Single Linear op; base ternária realmente empacotada em 2 bits; RAM é o working set FP32 do path Python.",
+    "quality": {
+      "full_local_gate_pass": null,
+      "weight": {
+        "cosine": 0.8860535621643066,
+        "nrmse": 0.010312497615814209
+      },
+      "output": {
+        "cosine": 0.8419888615608215,
+        "nrmse": 0.01445861253887415
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.4090234997420339,
+        "candidate_median_ms": 0.40755049985818914,
+        "speedup_x": 1.0036142757384847
+      },
+      "spectra": {
+        "ternary_sparsity": 0.43617841601371765,
+        "hqr_ans_native": false
+      }
+    },
+    "notes": "HQR ANS 0.85-bit não implementado; o dashboard usa somente bytes físicos medidos."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:05:52Z",
+    "run_id": "20260809T210548Z-c57d1a8f",
+    "spec": "SPECTRA-LM v0.1 reference",
+    "technology": "SPECTRA",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_SPECTRA_HQR_PLUS_TADDS_DYNAMIC",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": "primary",
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 42315776,
+    "candidate_ram_bytes": 42741824,
+    "baseline_disk_bytes": 41943040,
+    "candidate_disk_bytes": 2835168,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": -1.0068301713290095,
+      "disk_reduction_pct": 93.24043273925781,
+      "disk_compression_ratio_x": 14.7938464316753,
+      "overall_gain_pct": 46.1168012839644
+    },
+    "measurement_scope": "Single Linear op; bundle SPCT real; Gate/TADDS por entropia; latência do path Python/PyTorch; Tok/s não medido.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "weight": {
+        "cosine": 0.8970372080802917,
+        "nrmse": 0.009836291894316673
+      },
+      "output": {
+        "cosine": 0.8612435460090637,
+        "nrmse": 0.013102036900818348
+      },
+      "output_base": {
+        "cosine": 0.8419888615608215,
+        "nrmse": 0.01445861253887415
+      },
+      "output_rank_max": {
+        "cosine": 0.9753214120864868,
+        "nrmse": 0.0055007790215313435
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.4090234997420339,
+        "candidate_median_ms": 1.3763909998942836,
+        "speedup_x": 0.2971710072017688,
+        "rows_processed": 14
+      },
+      "spectra": {
+        "maximum_rank": 16,
+        "mean_selected_rank": 1.8571429252624512,
+        "stage_activation_rate": 0.2142857313156128,
+        "rank_histogram": {
+          "0": 11,
+          "2": 1,
+          "8": 1,
+          "16": 1
+        },
+        "entropy_mean": 11.32161808013916,
+        "entropy_thresholds": [
+          11.321684837341309,
+          11.32168960571289,
+          11.321701049804688
+        ],
+        "activation_source": "real_model_activation",
+        "single_layer_drift_proxy_mean": 0.5369561910629272,
+        "single_layer_drift_proxy_max": 0.7566548585891724,
+        "drift_budget": 0.08,
+        "drift_budget_pass": false,
+        "hqr_ans_native": false,
+        "pio_async_native": false,
+        "fused_kernel_native": false,
+        "drift_compensation_native": false,
+        "speculative_path_native": false,
+        "ring_buffer_budget_bytes": 335544320
+      },
+      "bundle": {
+        "file_size": 2835168,
+        "header_checksum": 16954238260725289000,
+        "hqr_packed_bytes": 2621444,
+        "tadds_residual_bytes": 213024,
+        "stages": [
+          {
+            "stage_id": 0,
+            "rank": 0,
+            "offset": 640,
+            "size": 2621444
+          },
+          {
+            "stage_id": 1,
+            "rank": 16,
+            "offset": 2622144,
+            "size": 213024
+          }
+        ]
+      }
+    },
+    "notes": "Prefetch, fused kernel, drift compensation e speculative path são simulados. Nenhum ganho nativo de inferência deve ser reivindicado."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:05:54Z",
+    "run_id": "20260809T210548Z-c57d1a8f",
+    "spec": "SPECTRA-LM v0.1 reference",
+    "technology": "SPECTRA",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_SPECTRA_DRIFT_CONTRACT_REF",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "measurement_scope": "Proxy de drift relativo por linha para uma única operação Linear; não é drift acumulado end-to-end.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "output": {
+        "cosine": 0.8612435460090637,
+        "nrmse": 0.013102036900818348
+      }
+    },
+    "metrics": {
+      "spectra": {
+        "single_layer_drift_proxy_mean": 0.5369561910629272,
+        "single_layer_drift_proxy_max": 0.7566548585891724,
+        "drift_budget": 0.08,
+        "drift_budget_pass": false,
+        "drift_compensation_native": false
+      }
+    },
+    "notes": "A compensação de drift e a certificação end-to-end permanecem fora da Fase 1."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:05:55Z",
+    "run_id": "20260809T210548Z-c57d1a8f",
+    "spec": "SPECTRA-LM v0.1 reference",
+    "technology": "SPECTRA",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_SPECTRA_PIO_POLICY_SIM",
+    "status": "SIMULATED",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "measurement_scope": "Política de prefetch derivada dos ranks do TADDS; nenhuma leitura NVMe assíncrona foi medida.",
+    "quality": {
+      "full_local_gate_pass": null
+    },
+    "metrics": {
+      "spectra": {
+        "predicted_refinement_rows": 3,
+        "stage_activation_rate": 0.2142857313156128,
+        "ring_buffer_budget_bytes": 335544320,
+        "pio_async_native": false
+      }
+    },
+    "notes": "A bateria mede somente decisões da política, não I/O real."
+  },
+  {
+    "schema_version": 1,
+    "timestamp_utc": "2026-08-09T21:07:13Z",
+    "run_id": "20260809T210713Z-483e8385",
+    "technology": "WINNER",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "B0_WINNER_CPP_BUILD_SELF_TEST",
+    "status": "PASS",
+    "measurement_scope": "Compilação nativa C++17 e --self-test; perfil nativo sintético separado da bateria do modelo.",
+    "quality": {
+      "full_local_gate_pass": true
+    },
+    "metrics": {
+      "winner": {
+        "source": "https://github.com/programador-powershell/RIFT-LM/archive/42ed734730e88a9f0a42bbe11e45e7efd7b3ba99.tar.gz",
+        "build_seconds": 17.81311618000018,
+        "self_test_pass": true,
+        "native_profile": {
+          "dim": 128,
+          "layers": 2,
+          "tokens": 4,
+          "profiles": [
+            {
+              "profile": "MINMEM",
+              "rank": 0,
+              "us_gemv": 2.53366,
+              "ms_tok": 0.0106062,
+              "tok_s": 94284,
+              "rss_mb": 0.0322266,
+              "residual_pct": 0
+            },
+            {
+              "profile": "FAST",
+              "rank": 16,
+              "us_gemv": 6.69531,
+              "ms_tok": 0.0145077,
+              "tok_s": 68928.7,
+              "rss_mb": 0.0478516,
+              "residual_pct": 25
+            },
+            {
+              "profile": "BALANCED",
+              "rank": 64,
+              "us_gemv": 17.5353,
+              "ms_tok": 0.044539,
+              "tok_s": 22452.2,
+              "rss_mb": 0.0947266,
+              "residual_pct": 56.25
+            },
+            {
+              "profile": "SAFE",
+              "rank": 128,
+              "us_gemv": 34.5407,
+              "ms_tok": 0.131478,
+              "tok_s": 7605.81,
+              "rss_mb": 0.157227,
+              "residual_pct": 93.75
+            }
+          ]
+        }
+      }
+    },
+    "notes": "Valida limites Q4, residual, árvore especulativa e page table; não mede o LLM end-to-end.",
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "comparison_role": null
+  },
+  {
+    "schema_version": 1,
+    "timestamp_utc": "2026-08-09T21:07:13Z",
+    "run_id": "20260809T210713Z-483e8385",
+    "technology": "WINNER",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_WINNER_F0_PLUS_LS",
+    "status": "EXPERIMENTAL_FAIL",
+    "measurement_scope": "Uma operação Linear real; F0 + residual low-rank; latência PyTorch e self-test C++ reportados separadamente; Tok/s não medido.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "weight": {
+        "cosine": 0.583655595779419,
+        "nrmse": 0.876969575881958
+      },
+      "output": {
+        "cosine": 0.9035516381263733,
+        "nrmse": 0.43797749280929565
+      },
+      "output_base": {
+        "cosine": 0.7746873497962952,
+        "nrmse": 0.6345943212509155
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.40637599999999996,
+        "candidate_median_ms": 0.5119184999999999,
+        "speedup_x": 0.7938294865295941,
+        "rows_processed": 14,
+        "device": "cuda"
+      },
+      "winner": {
+        "threshold": 0.5,
+        "residual_rank": 16,
+        "stage_activation_rate": 1,
+        "activation_source": "real_model_activation",
+        "cpp_self_test_pass": true,
+        "native_profile": {
+          "dim": 128,
+          "layers": 2,
+          "tokens": 4,
+          "profiles": [
+            {
+              "profile": "MINMEM",
+              "rank": 0,
+              "us_gemv": 2.53366,
+              "ms_tok": 0.0106062,
+              "tok_s": 94284,
+              "rss_mb": 0.0322266,
+              "residual_pct": 0
+            },
+            {
+              "profile": "FAST",
+              "rank": 16,
+              "us_gemv": 6.69531,
+              "ms_tok": 0.0145077,
+              "tok_s": 68928.7,
+              "rss_mb": 0.0478516,
+              "residual_pct": 25
+            },
+            {
+              "profile": "BALANCED",
+              "rank": 64,
+              "us_gemv": 17.5353,
+              "ms_tok": 0.044539,
+              "tok_s": 22452.2,
+              "rss_mb": 0.0947266,
+              "residual_pct": 56.25
+            },
+            {
+              "profile": "SAFE",
+              "rank": 128,
+              "us_gemv": 34.5407,
+              "ms_tok": 0.131478,
+              "tok_s": 7605.81,
+              "rss_mb": 0.157227,
+              "residual_pct": 93.75
+            }
+          ]
+        },
+        "native_lowbit_model_kernel": false
+      }
+    },
+    "notes": "O C++ validado ainda não carrega diretamente este tensor do Hugging Face; nenhum ganho end-to-end ou kernel low-bit nativo é reivindicado.",
+    "baseline_ram_bytes": 42315776,
+    "candidate_ram_bytes": 11300928,
+    "baseline_disk_bytes": 41943040,
+    "candidate_disk_bytes": 3063872,
+    "comparison_role": "primary"
+  },
+  {
+    "schema_version": 1,
+    "timestamp_utc": "2026-08-09T21:07:13Z",
+    "run_id": "20260809T210713Z-483e8385",
+    "technology": "WINNER",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_WINNER_F0_TERNARY_2BIT",
+    "status": "EXPERIMENTAL_FAIL",
+    "measurement_scope": "Uma operação Linear real; disco F0 em 2 bits; RAM do path de referência usa códigos int8.",
+    "quality": {
+      "full_local_gate_pass": null,
+      "weight": {
+        "cosine": 0.5392135977745056,
+        "nrmse": 0.9086830615997314
+      },
+      "output": {
+        "cosine": 0.7746873497962952,
+        "nrmse": 0.6345943212509155
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.40637599999999996,
+        "candidate_median_ms": 0.40793749999999995,
+        "speedup_x": 0.9961722077524131,
+        "rows_processed": 14,
+        "device": "cuda"
+      },
+      "winner": {
+        "threshold": 0.5,
+        "residual_rank": 0,
+        "cpp_self_test_pass": true
+      }
+    },
+    "notes": "O armazenamento é empacotado; o kernel PyTorch desta bateria pré-decodifica F0 em FP32.",
+    "baseline_ram_bytes": 42315776,
+    "candidate_ram_bytes": 10874880,
+    "baseline_disk_bytes": 41943040,
+    "candidate_disk_bytes": 2637824,
+    "comparison_role": null
   }
 ]
