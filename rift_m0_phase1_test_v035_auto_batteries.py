@@ -1967,7 +1967,7 @@ def run_phase1(
     # não confundir com dtype original do checkpoint.
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
-        torch_dtype=torch.float32,
+        dtype=torch.float32,
     ).to(device)
     model.eval()
 
