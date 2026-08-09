@@ -18,6 +18,10 @@
     {
       "source": "/spectra/:model*",
       "destination": "/api/test?technology=spectra&model=:model*"
+    },
+    {
+      "source": "/winner/:model*",
+      "destination": "/api/test?technology=winner&model=:model*"
     }
   ],
   "headers": [
@@ -26,7 +30,7 @@
       "headers": [
         {
           "key": "Cache-Control",
-          "value": "public, max-age=0, s-maxage=60, stale-while-revalidate=300"
+          "value": "public, max-age=0, s-maxage=10, stale-while-revalidate=30"
         },
         {
           "key": "X-Content-Type-Options",

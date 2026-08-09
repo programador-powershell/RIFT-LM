@@ -23,6 +23,11 @@ const TECHNOLOGIES = {
     script: "SPECTRA_Colab_Test_M0.py",
     arguments: ["--mode", "phase1"],
   },
+  winner: {
+    label: "WINNER",
+    script: "winner_m0_phase1_test_v080_auto_batteries.py",
+    arguments: ["--mode", "phase1"],
+  },
 };
 
 const MODEL_ALIASES = {
@@ -56,7 +61,7 @@ class ApiError extends Error {
 function normalizeTechnology(value) {
   const key = String(value || "").trim().toLowerCase();
   if (!Object.hasOwn(TECHNOLOGIES, key)) {
-    throw new ApiError("Tecnologia inválida; use rift, cascade, aether ou spectra");
+    throw new ApiError("Tecnologia inválida; use rift, cascade, aether, spectra ou winner");
   }
   return key;
 }
@@ -163,6 +168,7 @@ MODEL_ID = ${JSON.stringify(model.modelId)}
 ARGS = ${JSON.stringify(argumentsList)}
 WARNINGS = ${JSON.stringify(warnings)}
 COMPATIBILITY = json.loads(r'''${JSON.stringify(compatibility)}''')
+PUBLISH_MODE = ${JSON.stringify(publish)}
 
 def format_bytes(value):
     units = ("B", "KB", "MB", "GB", "TB", "PB")
@@ -204,11 +210,25 @@ def enforce_compatibility():
     print("[LAUNCHER] Nenhum peso foi baixado e nenhum resultado foi publicado.")
     raise SystemExit(2)
 
+def enforce_publish_settings():
+    if PUBLISH_MODE == "off":
+        return
+    token = os.environ.get("RIFT_INGEST_TOKEN", "").strip()
+    if not token:
+        print("[LAUNCHER] ERRO: RIFT_INGEST_TOKEN não chegou ao subprocesso.")
+        print("[LAUNCHER] Copie a célula completa gerada pelo dashboard; ela lê o Secret no kernel do Colab e o transfere com segurança.")
+        raise SystemExit(2)
+    if len(token) < 32:
+        print("[LAUNCHER] ERRO: RIFT_INGEST_TOKEN precisa ter pelo menos 32 caracteres.")
+        raise SystemExit(2)
+
 os.environ.setdefault("RIFT_RESULTS_ENDPOINT", ${JSON.stringify(RESULTS_ENDPOINT)})
+os.environ.setdefault("RIFT_SOURCE_REF", ${JSON.stringify(ref)})
 print("[LAUNCHER] Tecnologia: ${definition.label} | Modelo:", MODEL_ID)
 for warning in WARNINGS:
     print("[LAUNCHER] AVISO:", warning)
 enforce_compatibility()
+enforce_publish_settings()
 print("[LAUNCHER] Baixando bateria versionada:", SCRIPT_URL)
 request = Request(SCRIPT_URL, headers={"User-Agent": "rift-test-launcher/1.0"})
 source = urlopen(request, timeout=60).read()

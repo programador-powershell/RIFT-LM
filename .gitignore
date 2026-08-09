@@ -5,6 +5,9 @@ __pycache__/
 .venv/
 venv/
 .env
+.winner_review/
+winner_cpp/build*/
+winner_cpp/*.json
 .env.*
 !.env.example
 .vercel/
