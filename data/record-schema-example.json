@@ -1,9 +1,9 @@
 {
-  "description": "Formato preferencial para uma bateria comparável RIFT ou CASCADE. Valores abaixo são apenas estrutura de exemplo.",
+  "description": "Formato preferencial para uma bateria comparável RIFT, CASCADE ou AETHER. Valores abaixo são apenas estrutura de exemplo.",
   "timestamp_utc": "2026-08-09T10:00:00Z",
   "run_id": "20260809T100000Z-exemplo",
-  "spec": "RIFT-LM v0.3.5|CASCADE v0.3",
-  "technology": "RIFT|CASCADE",
+  "spec": "RIFT-LM v0.3.5|CASCADE v0.3|AETHER-LM v1.0 reference",
+  "technology": "RIFT|CASCADE|AETHER",
   "model_id": "NOME_DO_MODELO",
   "battery_id": "PHASE_1_K1",
   "comparison_role": "primary|null",

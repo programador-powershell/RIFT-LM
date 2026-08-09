@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { _test as api } from "../api/results.mjs";
 import { _test as analysisApi } from "../api/analyze.mjs";
+import testLauncher, { _test as launcherApi } from "../api/test.mjs";
 
 const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const match = html.match(/<script>([\s\S]*?)<\/script>/);
@@ -10,17 +11,18 @@ const match = html.match(/<script>([\s\S]*?)<\/script>/);
 assert.ok(match, "index.html precisa conter o script principal");
 new vm.Script(match[1], { filename: "index-inline.js" });
 assert.match(html, /America\/Sao_Paulo/);
-assert.match(html, /Comparador RIFT × CASCADE/);
+assert.match(html, /Comparador RIFT × CASCADE × AETHER/);
 assert.match(html, /Gemini 2\.5 Flash/);
 assert.match(html, /Ranking das baterias/);
-assert.match(html, /cascade_m0_phase1_test_v030_auto_batteries\.py/);
+assert.match(html, /curl -fsSL/);
 assert.doesNotMatch(html, /RIFT_GITHUB_TOKEN\s*=/);
 assert.doesNotMatch(html, /API_GOOGLE\s*=/);
 
 const rift = { run_id: "run-rift", battery_id: "P1", technology: "RIFT" };
 const cascade = { run_id: "run-cascade", battery_id: "P1", technology: "CASCADE" };
-assert.equal(api.validateHistory([rift, cascade], "test").length, 2);
-assert.equal(api.mergeHistories([rift], [cascade]).length, 2);
+const aether = { run_id: "run-aether", battery_id: "P1", technology: "AETHER" };
+assert.equal(api.validateHistory([rift, cascade, aether], "test").length, 3);
+assert.equal(api.mergeHistories([rift], [cascade, aether]).length, 3);
 
 const models = analysisApi.validatePayload({
   models: [{
@@ -46,12 +48,22 @@ const models = analysisApi.validatePayload({
         ram_reduction_pct: 73.8,
         operation_speedup_x: 0.389,
       },
+      AETHER: {
+        battery_id: "P1_AETHER",
+        status: "EXPERIMENTAL_FAIL",
+        output_cosine: 0.987,
+        output_nrmse: 0.0045,
+        quality_gate_pass: false,
+        disk_reduction_pct: 92.5,
+        ram_reduction_pct: 60,
+        operation_speedup_x: 0.583,
+      },
     },
   }],
 });
 
 const ranking = analysisApi.buildRanking(models);
-assert.equal(ranking.length, 2);
+assert.equal(ranking.length, 3);
 assert.equal(ranking[0].position, 1);
 assert.ok(ranking.every((entry) => entry.score >= 0 && entry.score <= 100));
 assert.ok(ranking.every((entry) => entry.coverage_pct === 100));
@@ -85,6 +97,24 @@ const forcedInconclusive = analysisApi.validateGeminiAnalysis({
 }, singleTechnology);
 assert.equal(forcedInconclusive.analyses[0].recommendation, "INCONCLUSIVO");
 
+const unavailableTechnology = analysisApi.validateGeminiAnalysis({
+  global_summary: "Resposta inconsistente.",
+  analyses: [{
+    model_id: "Qwen/Qwen2.5-0.5B",
+    recommendation: "AETHER",
+    confidence: 90,
+    summary: "AETHER não foi medido.",
+    decisive_metrics: [],
+    caveats: [],
+  }],
+}, analysisApi.validatePayload({
+  models: [{
+    model_id: "Qwen/Qwen2.5-0.5B",
+    technologies: { RIFT: { output_cosine: 0.98 }, CASCADE: { output_cosine: 0.97 } },
+  }],
+}));
+assert.equal(unavailableTechnology.analyses[0].recommendation, "INCONCLUSIVO");
+
 analysisApi.enforceSameOrigin(new Request("https://dashboard.example/api/analyze", {
   headers: { Origin: "https://dashboard.example" },
 }));
@@ -94,5 +124,39 @@ assert.throws(() => analysisApi.enforceSameOrigin(new Request("https://dashboard
 
 const geminiBody = analysisApi.buildGeminiBody("benchmark");
 assert.equal(geminiBody.generationConfig.responseFormat.text.mimeType, "application/json");
+
+const kimi = launcherApi.normalizeModel("Kimi-K3");
+assert.equal(kimi.modelId, "moonshotai/Kimi-K3");
+assert.equal(kimi.trustRemoteCode, true);
+const launcherResponse = await testLauncher.fetch(new Request(
+  "https://rift-lm.vercel.app/api/test?technology=aether&model=Kimi-K3",
+));
+assert.equal(launcherResponse.status, 200);
+assert.match(launcherResponse.headers.get("content-type"), /text\/x-python/);
+const launcher = await launcherResponse.text();
+assert.match(launcher, /aether_m0_phase1_test_v100_auto_batteries\.py/);
+assert.match(launcher, /moonshotai\/Kimi-K3/);
+assert.match(launcher, /--trust-remote-code/);
+assert.match(launcher, /https:\/\/rift-lm\.vercel\.app\/api\/results/);
+const untrustedOriginLauncher = launcherApi.buildLauncher({
+  technology: "aether",
+  model: launcherApi.normalizeModel("Kimi-K3"),
+  origin: "https://proxy.example",
+});
+assert.match(untrustedOriginLauncher, /https:\/\/rift-lm\.vercel\.app\/api\/results/);
+assert.doesNotMatch(untrustedOriginLauncher, /proxy\.example\/api\/results/);
+const invalidLauncher = await testLauncher.fetch(new Request(
+  "https://rift-lm.vercel.app/api/test?technology=unknown&model=Kimi-K3",
+));
+assert.equal(invalidLauncher.status, 400);
+
+const vercelConfig = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
+assert.ok(vercelConfig.rewrites.some((rewrite) => rewrite.source === "/aether/:model*"));
+const aetherScript = await readFile(
+  new URL("../aether_m0_phase1_test_v100_auto_batteries.py", import.meta.url),
+  "utf8",
+);
+assert.match(aetherScript, /technology": "AETHER"/);
+assert.match(aetherScript, /P1_AETHER_HQR_PLUS_TADDS_DYNAMIC/);
 
 console.log("dashboard smoke test: PASS");

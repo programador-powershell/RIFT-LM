@@ -1,0 +1,206 @@
+const REPOSITORY = "programador-powershell/RIFT-LM";
+const DEFAULT_REF = "main";
+const RESULTS_ENDPOINT = "https://rift-lm.vercel.app/api/results";
+
+const TECHNOLOGIES = {
+  rift: {
+    label: "RIFT",
+    script: "rift_m0_phase1_test_v035_auto_batteries.py",
+    arguments: ["--mode", "phase1"],
+  },
+  cascade: {
+    label: "CASCADE",
+    script: "cascade_m0_phase1_test_v030_auto_batteries.py",
+    arguments: [],
+  },
+  aether: {
+    label: "AETHER",
+    script: "aether_m0_phase1_test_v100_auto_batteries.py",
+    arguments: ["--mode", "phase1"],
+  },
+};
+
+const MODEL_ALIASES = {
+  "kimi-k3": {
+    modelId: "moonshotai/Kimi-K3",
+    trustRemoteCode: true,
+    warning: "Kimi-K3 é um modelo de escala extrema; um Colab comum provavelmente não possui memória suficiente.",
+  },
+};
+
+class ApiError extends Error {
+  constructor(message, status = 400) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+function normalizeTechnology(value) {
+  const key = String(value || "").trim().toLowerCase();
+  if (!Object.hasOwn(TECHNOLOGIES, key)) {
+    throw new ApiError("Tecnologia inválida; use rift, cascade ou aether");
+  }
+  return key;
+}
+
+function normalizeModel(value) {
+  const raw = String(value || "").trim().replace(/^\/+|\/+$/g, "");
+  const alias = MODEL_ALIASES[raw.toLowerCase()];
+  if (alias) return { ...alias, alias: raw };
+  let modelId = raw;
+  try {
+    const url = new URL(raw);
+    if (!["huggingface.co", "www.huggingface.co"].includes(url.hostname.toLowerCase())) {
+      throw new ApiError("A URL do modelo precisa ser do huggingface.co");
+    }
+    const parts = url.pathname.split("/").filter(Boolean);
+    modelId = parts.slice(0, 2).join("/");
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+  }
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(modelId)) {
+    throw new ApiError(
+      "Modelo inválido; use org/modelo, uma URL do Hugging Face ou o alias Kimi-K3",
+    );
+  }
+  return { modelId, trustRemoteCode: false, warning: null, alias: null };
+}
+
+function normalizeTargetLayer(value) {
+  const target = String(value || "auto").trim() || "auto";
+  if (!/^(auto|[A-Za-z0-9_.-]+)$/.test(target)) {
+    throw new ApiError("target_layer inválido");
+  }
+  return target;
+}
+
+function normalizeDevice(value) {
+  const device = String(value || "cuda").trim().toLowerCase();
+  if (!["cpu", "cuda"].includes(device)) throw new ApiError("device precisa ser cpu ou cuda");
+  return device;
+}
+
+function normalizePublish(value) {
+  const mode = String(value || "required").trim().toLowerCase();
+  if (!["auto", "required", "off"].includes(mode)) {
+    throw new ApiError("publish precisa ser auto, required ou off");
+  }
+  return mode;
+}
+
+function deploymentRef() {
+  const sha = String(process.env.VERCEL_GIT_COMMIT_SHA || "").trim();
+  return /^[a-f0-9]{40}$/i.test(sha) ? sha : DEFAULT_REF;
+}
+
+function buildLauncher({
+  technology,
+  model,
+  origin,
+  targetLayer = "auto",
+  device = "cuda",
+  publish = "required",
+  trustRemoteCode = false,
+  ref = deploymentRef(),
+}) {
+  const definition = TECHNOLOGIES[technology];
+  const scriptUrl = `https://raw.githubusercontent.com/${REPOSITORY}/${ref}/${definition.script}`;
+  const argumentsList = [
+    ...definition.arguments,
+    "--model", model.modelId,
+    "--target-layer", targetLayer,
+    "--device", device,
+    "--publish", publish,
+  ];
+  if (trustRemoteCode || model.trustRemoteCode) argumentsList.push("--trust-remote-code");
+  const warnings = [
+    model.warning,
+    model.trustRemoteCode || trustRemoteCode
+      ? "trust_remote_code está habilitado: o repositório do modelo poderá executar código no Colab."
+      : null,
+  ].filter(Boolean);
+  return `#!/usr/bin/env python3
+# Launcher gerado por ${origin} para ${definition.label}.
+# O benchmark usa GPU do Colab; a Vercel apenas entrega este inicializador.
+import os
+import sys
+from urllib.request import Request, urlopen
+
+SCRIPT_URL = ${JSON.stringify(scriptUrl)}
+MODEL_ID = ${JSON.stringify(model.modelId)}
+ARGS = ${JSON.stringify(argumentsList)}
+WARNINGS = ${JSON.stringify(warnings)}
+
+os.environ.setdefault("RIFT_RESULTS_ENDPOINT", ${JSON.stringify(RESULTS_ENDPOINT)})
+print("[LAUNCHER] Tecnologia: ${definition.label} | Modelo:", MODEL_ID)
+for warning in WARNINGS:
+    print("[LAUNCHER] AVISO:", warning)
+print("[LAUNCHER] Baixando bateria versionada:", SCRIPT_URL)
+request = Request(SCRIPT_URL, headers={"User-Agent": "rift-test-launcher/1.0"})
+source = urlopen(request, timeout=60).read()
+sys.argv = [SCRIPT_URL, *ARGS]
+exec(compile(source, SCRIPT_URL, "exec"), {"__name__": "__main__", "__file__": SCRIPT_URL})
+`;
+}
+
+function requestParameters(request) {
+  const url = new URL(request.url);
+  const technology = normalizeTechnology(url.searchParams.get("technology"));
+  const model = normalizeModel(url.searchParams.get("model"));
+  const targetLayer = normalizeTargetLayer(url.searchParams.get("target_layer"));
+  const device = normalizeDevice(url.searchParams.get("device"));
+  const publish = normalizePublish(url.searchParams.get("publish"));
+  const trustRemoteCode = ["1", "true", "yes"].includes(
+    String(url.searchParams.get("trust_remote_code") || "").toLowerCase(),
+  );
+  return { technology, model, targetLayer, device, publish, trustRemoteCode, origin: url.origin };
+}
+
+function errorResponse(error) {
+  const status = error instanceof ApiError ? error.status : 500;
+  return Response.json(
+    { ok: false, error: error instanceof ApiError ? error.message : "Erro interno" },
+    {
+      status,
+      headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
+    },
+  );
+}
+
+export default {
+  async fetch(request) {
+    if (!["GET", "HEAD"].includes(request.method)) {
+      return new Response("Método não permitido", {
+        status: 405,
+        headers: { Allow: "GET, HEAD", "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
+    try {
+      const parameters = requestParameters(request);
+      const body = buildLauncher(parameters);
+      const filename = `${parameters.technology}-${parameters.model.modelId.replace("/", "-")}.py`;
+      return new Response(request.method === "HEAD" ? null : body, {
+        status: 200,
+        headers: {
+          "Cache-Control": "public, max-age=0, s-maxage=300",
+          "Content-Disposition": `inline; filename="${filename}"`,
+          "Content-Type": "text/x-python; charset=utf-8",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    } catch (error) {
+      return errorResponse(error);
+    }
+  },
+};
+
+export const _test = {
+  buildLauncher,
+  normalizeDevice,
+  normalizeModel,
+  normalizePublish,
+  normalizeTargetLayer,
+  normalizeTechnology,
+  requestParameters,
+};

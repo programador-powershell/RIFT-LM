@@ -1,6 +1,6 @@
-# RIFT-LM & CASCADE Test Observatory
+# RIFT-LM, CASCADE & AETHER Test Observatory
 
-Dashboard estático para executar, publicar e comparar baterias de referência das tecnologias RIFT-LM v0.3.5 e CASCADE v0.3.
+Dashboard estático para executar, publicar e comparar baterias de referência das tecnologias RIFT-LM v0.3.5, CASCADE v0.3 e AETHER-LM v1.0.
 
 ## O que o dashboard faz
 
@@ -9,10 +9,11 @@ Dashboard estático para executar, publicar e comparar baterias de referência d
 - aceita históricos JSON e CSV locais;
 - gera uma célula pronta para testar qualquer model ID ou URL do Hugging Face no Google Colab;
 - seleciona automaticamente uma camada `torch.nn.Linear` compatível entre famílias;
-- compara as baterias principais de RIFT e CASCADE para o mesmo modelo;
+- compara as baterias principais de RIFT, CASCADE e AETHER para o mesmo modelo;
 - calcula um ranking auditável de modelos e tecnologias a partir das métricas publicadas;
 - usa o Gemini 2.5 Flash para explicar qual tecnologia é mais adequada para cada modelo;
-- mantém métricas de operação Linear separadas de Tok/s do modelo.
+- mantém métricas de operação Linear separadas de Tok/s do modelo;
+- entrega launchers Python por URLs curtas, sem duplicar os scripts dentro do notebook.
 
 ## Executar localmente
 
@@ -57,6 +58,26 @@ Cadastre e autorize:
 - `RIFT_INGEST_TOKEN`: o mesmo segredo de ingestão configurado na Vercel;
 - `HF_TOKEN`: opcional para limites maiores ou modelos gated.
 
+Os launchers por URL configuram `RIFT_RESULTS_ENDPOINT` automaticamente. Mesmo assim, `RIFT_INGEST_TOKEN` continua obrigatório no Colab e nunca é incluído na resposta pública da API.
+
+## Executar por URL no Colab
+
+As rotas amigáveis retornam um pequeno programa Python que baixa a bateria do mesmo commit implantado e a executa na GPU do Colab:
+
+```python
+!curl -fsSL "https://rift-lm.vercel.app/rift/Qwen/Qwen2.5-0.5B" -o /content/rift_launcher.py && python /content/rift_launcher.py
+!curl -fsSL "https://rift-lm.vercel.app/cascade/Qwen/Qwen2.5-0.5B" -o /content/cascade_launcher.py && python /content/cascade_launcher.py
+!curl -fsSL "https://rift-lm.vercel.app/aether/Qwen/Qwen2.5-0.5B" -o /content/aether_launcher.py && python /content/aether_launcher.py
+```
+
+O alias pedido para Kimi também é aceito:
+
+```python
+!curl -fsSL "https://rift-lm.vercel.app/aether/Kimi-K3" -o /content/aether_launcher.py && python /content/aether_launcher.py
+```
+
+`Kimi-K3` resolve para `moonshotai/Kimi-K3` e habilita `trust_remote_code`, como exigido pelo repositório do modelo. Ele é um modelo de escala extrema e não deve caber na memória de um Colab comum; a rota simplifica o lançamento, mas não remove os requisitos de hardware.
+
 ## Testar um modelo
 
 O campo do dashboard aceita tanto `org/modelo` quanto uma URL, por exemplo:
@@ -87,13 +108,24 @@ python cascade_m0_phase1_test_v030_auto_batteries.py \
   --publish required
 ```
 
+### AETHER
+
+```bash
+python aether_m0_phase1_test_v100_auto_batteries.py \
+  --mode phase1 \
+  --model microsoft/Phi-3.5-mini-instruct \
+  --target-layer auto \
+  --device cuda \
+  --publish required
+```
+
 Use `--trust-remote-code` somente quando o modelo realmente exigir e você confiar no código do repositório.
 
 ## Contrato das métricas
 
 Registros novos declaram:
 
-- `technology`: `RIFT` ou `CASCADE`;
+- `technology`: `RIFT`, `CASCADE` ou `AETHER`;
 - `candidate_tok_s`, `candidate_ram_bytes` e `candidate_disk_bytes`;
 - `comparison_role: primary` na bateria indicada ao comparador;
 - `quality`, `metrics`, `measurement_scope` e `notes`.
@@ -104,16 +136,17 @@ O dashboard continua compatível com registros RIFT anteriores que usam `rift_*`
 
 O score composto usa qualidade de saída (40%), quality gate (5%), redução em disco (20%), redução de RAM (15%) e speedup da operação Linear (20%). Métricas ausentes reduzem a cobertura e aplicam uma penalização explícita ao score. O ranking mede somente esta bateria de referência; não representa inteligência geral do modelo.
 
-O Gemini recebe as mesmas métricas e o ranking calculado pelo servidor. Ele pode recomendar `RIFT`, `CASCADE` ou `INCONCLUSIVO`, com resumo, confiança, métricas decisivas e ressalvas. Quando uma das tecnologias não possui bateria principal para o modelo, o servidor força o resultado para `INCONCLUSIVO`, independentemente da resposta da IA.
+O Gemini recebe as mesmas métricas e o ranking calculado pelo servidor. Ele pode recomendar `RIFT`, `CASCADE`, `AETHER` ou `INCONCLUSIVO`, com resumo, confiança, métricas decisivas e ressalvas. Com menos de duas tecnologias medidas, ou quando a resposta recomenda uma tecnologia ausente, o servidor força `INCONCLUSIVO`.
 
 ## Limites atuais
 
-O teste RIFT usa o codec experimental `Q4_LINEAR_TEST`; ele não é MXFP4. O teste CASCADE usa decomposição low-rank, Gate heurístico e simulação lag-one do prefetch. Nenhum dos scripts contém o kernel low-bit/fused nativo de produção.
+O teste RIFT usa o codec experimental `Q4_LINEAR_TEST`; ele não é MXFP4. O teste CASCADE usa decomposição low-rank, Gate heurístico e simulação lag-one do prefetch. O AETHER usa base ternária realmente empacotada em 2 bits e TADDS low-rank por entropia, mas não implementa HQR-ANS 0,85 bit, P-IO assíncrono nem o kernel SRFA. Nenhum dos scripts contém o kernel low-bit/fused nativo de produção.
 
 Por isso:
 
 - latência de uma única operação Linear não deve ser chamada de Tok/s;
 - o prefetch CASCADE não representa I/O assíncrono real;
+- P-IO e SRFA do AETHER permanecem simulações do caminho Python;
 - speedups nativos de inferência não devem ser reivindicados a partir dessas baterias de referência;
 - comparações de latência exigem o mesmo hardware, camada e forma de ativação.
 
@@ -123,8 +156,10 @@ Por isso:
 index.html
 api/results.mjs
 api/analyze.mjs
+api/test.mjs
 rift_m0_phase1_test_v035_auto_batteries.py
 cascade_m0_phase1_test_v030_auto_batteries.py
+aether_m0_phase1_test_v100_auto_batteries.py
 data/rift_test_batteries.json
 data/record-schema-example.json
 ```

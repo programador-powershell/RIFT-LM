@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import testLauncher from "../api/test.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const port = Number(process.env.PORT || 3000);
@@ -17,7 +18,21 @@ const mime = {
 
 createServer(async (request, response) => {
   try {
-    const pathname = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
+    const requestUrl = new URL(request.url, `http://127.0.0.1:${port}`);
+    const pathname = decodeURIComponent(requestUrl.pathname);
+    const friendly = pathname.match(/^\/(rift|cascade|aether)\/(.+)$/i);
+    if (pathname === "/api/test" || friendly) {
+      if (friendly) {
+        requestUrl.pathname = "/api/test";
+        requestUrl.searchParams.set("technology", friendly[1].toLowerCase());
+        requestUrl.searchParams.set("model", friendly[2]);
+      }
+      const result = await testLauncher.fetch(new Request(requestUrl, { method: request.method }));
+      const body = Buffer.from(await result.arrayBuffer());
+      response.writeHead(result.status, Object.fromEntries(result.headers.entries()));
+      response.end(body);
+      return;
+    }
     const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
     const target = resolve(root, relative);
     if (target !== root && !target.startsWith(`${root}${sep}`)) {
