@@ -1,6 +1,10 @@
 const REPOSITORY = "programador-powershell/RIFT-LM";
 const DEFAULT_REF = "main";
 const RESULTS_ENDPOINT = "https://rift-lm.vercel.app/api/results";
+const TOKENIZER_DEPENDENCIES = {
+  sentencepiece: "sentencepiece>=0.2.0",
+  tiktoken: "tiktoken>=0.7.0",
+};
 
 const TECHNOLOGIES = {
   rift: {
@@ -85,10 +89,30 @@ function normalizeModel(value) {
     (entry) => entry.modelId.toLowerCase() === modelId.toLowerCase(),
   );
   if (knownModel) return { ...knownModel, alias: null };
+  if (modelId.toLowerCase().includes("kimi-k3")) {
+    return { ...MODEL_ALIASES["kimi-k3"], modelId, alias: null };
+  }
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(modelId)) {
     throw new ApiError(
       "Modelo inválido; use org/modelo, uma URL do Hugging Face ou o alias Kimi-K3",
     );
+  }
+  if (modelId.toLowerCase().includes("gguf")) {
+    return {
+      modelId,
+      trustRemoteCode: false,
+      warning: null,
+      compatibility: {
+        colabSupported: false,
+        reason: (
+          "As baterias Python analisam camadas do checkpoint Transformers original. "
+          + "Um repositório GGUF é destinado a runtimes como llama.cpp e não pode ser "
+          + "carregado por esta bateria como se fosse um checkpoint Safetensors. "
+          + "Selecione o model ID original sem o sufixo -GGUF."
+        ),
+      },
+      alias: null,
+    };
   }
   return {
     modelId,
@@ -169,6 +193,7 @@ ARGS = ${JSON.stringify(argumentsList)}
 WARNINGS = ${JSON.stringify(warnings)}
 COMPATIBILITY = json.loads(r'''${JSON.stringify(compatibility)}''')
 PUBLISH_MODE = ${JSON.stringify(publish)}
+TOKENIZER_DEPENDENCIES = json.loads(r'''${JSON.stringify(TOKENIZER_DEPENDENCIES)}''')
 
 def format_bytes(value):
     units = ("B", "KB", "MB", "GB", "TB", "PB")
@@ -222,6 +247,21 @@ def enforce_publish_settings():
         print("[LAUNCHER] ERRO: RIFT_INGEST_TOKEN precisa ter pelo menos 32 caracteres.")
         raise SystemExit(2)
 
+def ensure_tokenizer_dependencies():
+    missing = []
+    for module, package in TOKENIZER_DEPENDENCIES.items():
+        try:
+            __import__(module)
+        except ImportError:
+            missing.append(package)
+    if not missing:
+        print("[LAUNCHER] Tokenizadores opcionais prontos: sentencepiece + tiktoken")
+        return
+    print("[LAUNCHER] Instalando dependências de tokenizer:", ", ".join(missing))
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", *missing])
+    for module in TOKENIZER_DEPENDENCIES:
+        __import__(module)
+
 os.environ.setdefault("RIFT_RESULTS_ENDPOINT", ${JSON.stringify(RESULTS_ENDPOINT)})
 os.environ.setdefault("RIFT_SOURCE_REF", ${JSON.stringify(ref)})
 print("[LAUNCHER] Tecnologia: ${definition.label} | Modelo:", MODEL_ID)
@@ -229,6 +269,7 @@ for warning in WARNINGS:
     print("[LAUNCHER] AVISO:", warning)
 enforce_compatibility()
 enforce_publish_settings()
+ensure_tokenizer_dependencies()
 print("[LAUNCHER] Baixando bateria versionada:", SCRIPT_URL)
 request = Request(SCRIPT_URL, headers={"User-Agent": "rift-test-launcher/1.0"})
 source = urlopen(request, timeout=60).read()

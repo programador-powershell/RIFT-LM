@@ -85,6 +85,17 @@ os.environ["RIFT_INGEST_TOKEN"] = userdata.get("RIFT_INGEST_TOKEN").strip()
 !curl -fsSL "https://rift-lm.vercel.app/winner/Qwen/Qwen2.5-0.5B" -o /content/winner_launcher.py && python /content/winner_launcher.py
 ```
 
+Antes de carregar o tokenizer, o launcher verifica e instala somente quando
+necessário `sentencepiece` (família Llama/Gemma) e `tiktoken` (família Qwen e
+modelos compatíveis). Os cinco scripts também fazem essa verificação quando
+executados diretamente, sem passar pela rota da API.
+
+As baterias Python esperam o checkpoint Transformers original. Repositórios
+com `GGUF` no model ID são bloqueados antes de qualquer download, porque GGUF é
+um formato de inferência para engines como `llama.cpp`, não um substituto direto
+do checkpoint Safetensors usado para analisar e reconstruir camadas. Para a
+bateria, selecione o model ID original sem `-GGUF`.
+
 ### Limite explícito para Kimi-K3
 
 `Kimi-K3` resolve para `moonshotai/Kimi-K3`, mas não é colocado na fila do Colab. O modelo possui 2,8 trilhões de parâmetros; mesmo no limite teórico de 4 bits, somente os pesos exigiriam pelo menos 1,4 TB. Além disso, o código remoto da revisão atual declara `transformers==4.56.2`, enquanto versões mais novas podem falhar ao importar `OutputRecorder` e `check_model_inputs`.

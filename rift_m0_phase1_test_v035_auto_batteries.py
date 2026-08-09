@@ -99,6 +99,12 @@ def ensure_phase1_dependencies():
     if torch is not None:
         return
 
+    # Transformers delega alguns tokenizadores a bibliotecas opcionais. O
+    # Colab nem sempre inclui ambas, mesmo quando torch/transformers já estão
+    # disponíveis (Llama/SentencePiece e Qwen/tiktoken).
+    ensure_import("sentencepiece")
+    ensure_import("tiktoken")
+
     try:
         import torch as _torch
         import torch.nn.functional as _F
@@ -107,7 +113,7 @@ def ensure_phase1_dependencies():
     except ImportError as exc:
         raise SystemExit(
             "PyTorch/Transformers são necessários para --mode phase1.\n"
-            "Instale com: pip install torch transformers\n"
+            "Instale com: pip install torch transformers sentencepiece tiktoken\n"
             f"Erro original: {exc}"
         )
 

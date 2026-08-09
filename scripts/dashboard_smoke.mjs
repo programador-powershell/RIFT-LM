@@ -186,6 +186,12 @@ assert.equal(kimi.compatibility.transformersVersion, "4.56.2");
 assert.equal(kimi.compatibility.minimumPackedWeightBytes, 1_400_000_000_000);
 const canonicalKimi = launcherApi.normalizeModel("moonshotai/Kimi-K3");
 assert.equal(canonicalKimi.compatibility.colabSupported, false);
+const kimiGguf = launcherApi.normalizeModel("community/Kimi-K3-GGUF");
+assert.equal(kimiGguf.modelId, "community/Kimi-K3-GGUF");
+assert.equal(kimiGguf.compatibility.colabSupported, false);
+const qwenGguf = launcherApi.normalizeModel("Qwen/Qwen3-8B-GGUF");
+assert.equal(qwenGguf.compatibility.colabSupported, false);
+assert.match(qwenGguf.compatibility.reason, /checkpoint Transformers original/);
 const launcherResponse = await testLauncher.fetch(new Request(
   "https://rift-lm.vercel.app/api/test?technology=aether&model=Kimi-K3",
 ));
@@ -199,10 +205,12 @@ assert.match(launcher, /https:\/\/rift-lm\.vercel\.app\/api\/results/);
 assert.match(launcher, /BLOQUEADO: este modelo não é compatível/);
 assert.match(launcher, /transformers==" \+ required_transformers/);
 assert.match(launcher, /minimumPackedWeightBytes/);
+assert.match(launcher, /sentencepiece>=0\.2\.0/);
+assert.match(launcher, /tiktoken>=0\.7\.0/);
 assert.match(launcher, /RIFT_INGEST_TOKEN não chegou ao subprocesso/);
 assert.match(
   launcher,
-  /enforce_compatibility\(\)\nenforce_publish_settings\(\)\nprint\("\[LAUNCHER\] Baixando bateria versionada:/,
+  /enforce_compatibility\(\)\nenforce_publish_settings\(\)\nensure_tokenizer_dependencies\(\)\nprint\("\[LAUNCHER\] Baixando bateria versionada:/,
 );
 assert.ok(
   launcher.indexOf("enforce_compatibility()") < launcher.indexOf("urlopen(request"),
@@ -246,8 +254,12 @@ const aetherScript = await readFile(
 assert.match(aetherScript, /technology": "AETHER"/);
 assert.match(aetherScript, /P1_AETHER_HQR_PLUS_TADDS_DYNAMIC/);
 assert.match(aetherScript, /message = "Configure " \+ " e "\.join\(missing\)/);
+assert.match(aetherScript, /ensure_import\("sentencepiece"\)/);
+assert.match(aetherScript, /ensure_import\("tiktoken"\)/);
 const spectraScript = await readFile(new URL("../SPECTRA_Colab_Test_M0.py", import.meta.url), "utf8");
 assert.match(spectraScript, /technology": "SPECTRA"/);
+assert.match(spectraScript, /ensure_import\("sentencepiece"\)/);
+assert.match(spectraScript, /ensure_import\("tiktoken"\)/);
 assert.match(spectraScript, /P1_SPECTRA_HQR_PLUS_TADDS_DYNAMIC/);
 assert.match(spectraScript, /P1_SPECTRA_DRIFT_CONTRACT_REF/);
 assert.match(spectraScript, /message = "Configure " \+ " e "\.join\(missing\)/);
