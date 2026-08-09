@@ -89,7 +89,7 @@ details{margin-top:18px}.help{color:var(--muted);font-size:13px;line-height:1.6}
           <option value="HuggingFaceTB/SmolLM2-1.7B-Instruct">SmolLM2 1.7B — Hugging Face</option>
           <option value="microsoft/Phi-3.5-mini-instruct">Phi 3.5 Mini — Microsoft</option>
           <option value="google/gemma-2-2b-it">Gemma 2 2B — Google (pode exigir acesso)</option>
-          <option value="moonshotai/Kimi-K3">Kimi K3 — Moonshot (escala extrema)</option>
+          <option value="moonshotai/Kimi-K3">Kimi K3 — incompatível com Colab comum</option>
           <option value="custom">Outro modelo / URL…</option>
         </select>
       </div>
@@ -248,6 +248,7 @@ details{margin-top:18px}.help{color:var(--muted);font-size:13px;line-height:1.6}
 
 <script>
 const state={records:[],analysis:null,analysisError:null,analysisLoading:false,ranking:[],analysisRequest:0,queue:[],modelSearchRequest:0};
+const COLAB_BLOCKED_MODELS=new Map([["moonshotai/kimi-k3","Kimi-K3 possui 2,8 trilhões de parâmetros e esta bateria carrega o modelo completo em um único dispositivo. Mesmo a 4 bits, o limite teórico dos pesos é 1,4 TB. Use infraestrutura distribuída compatível ou escolha outro checkpoint para o Colab."]]);
 const $=id=>document.getElementById(id);
 const SAO_PAULO_TZ="America/Sao_Paulo";
 const dateFormatter=new Intl.DateTimeFormat("pt-BR",{timeZone:SAO_PAULO_TZ,day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false,timeZoneName:"shortOffset"});
@@ -341,6 +342,7 @@ function renderTable(rows){const body=$("historyBody");if(!rows.length){body.inn
 function render(){const models=[...new Set(state.records.map(r=>r.model))].sort(),batteries=[...new Set(state.records.map(r=>r.battery))].sort(),mf=$("modelFilter"),bf=$("batteryFilter"),oldM=mf.value,oldB=bf.value;mf.innerHTML='<option value="">Todos os modelos</option>'+models.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");bf.innerHTML='<option value="">Todas as baterias</option>'+batteries.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");if(models.includes(oldM))mf.value=oldM;if(batteries.includes(oldB))bf.value=oldB;const tf=$("technologyFilter"),rows=state.records.filter(r=>(!mf.value||r.model===mf.value)&&(!tf.value||r.technology===tf.value)&&(!bf.value||r.battery===bf.value));renderSummary(rows);$("batteries").innerHTML=rows.length?rows.slice().reverse().map(renderBattery).join(""):'<div class="card empty">Nenhuma bateria corresponde aos filtros.</div>';renderTable(rows);renderAI();renderRanking();renderCompare()}
 
 function normalizeModelInput(value){const raw=String(value||"").trim();try{const url=new URL(raw);if(!["huggingface.co","www.huggingface.co"].includes(url.hostname.toLowerCase()))throw new Error();const parts=url.pathname.split("/").filter(Boolean);if(parts.length<2)throw new Error();return `${parts[0]}/${parts[1]}`}catch{if(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(raw))return raw;return null}}
+function colabBlockReason(model){return COLAB_BLOCKED_MODELS.get(String(model||"").toLowerCase())||null}
 function launcherUrl(technology,model,target,trust){const path=model.split("/").map(encodeURIComponent).join("/"),params=new URLSearchParams();if(target!=="auto")params.set("target_layer",target);if(trust)params.set("trust_remote_code","1");return `${launcherOrigin}/${technology}/${path}${params.size?`?${params}`:""}`}
 function queueTechnologies(value){return value==="all"?["rift","cascade","aether","spectra"]:[value]}
 function compactNumber(value){return new Intl.NumberFormat("pt-BR",{notation:"compact",maximumFractionDigits:1}).format(Number(value)||0)}
@@ -354,6 +356,7 @@ function hideModelSearchResults(){const root=$("modelSearchResults");root.hidden
 function addQueueModel(value){
   const model=normalizeModelInput(value),technology=$("batchTechnologyInput").value,target=$("batchTargetLayerInput").value.trim()||"auto",status=$("batchSearchStatus");
   if(!model){status.textContent="Selecione um resultado ou informe um model ID completo no formato org/modelo.";status.className="note bad";return}
+  const blockedReason=colabBlockReason(model);if(blockedReason){status.textContent=blockedReason;status.className="note bad";hideModelSearchResults();return}
   if(!/^(auto|[A-Za-z0-9_.-]+)$/.test(target)){status.textContent="Camada inválida; use auto ou um nome de tensor válido.";status.className="note bad";return}
   const trust=$("batchTrustRemoteInput").checked||model==="moonshotai/Kimi-K3",key=[model,technology,target,trust].join("|");
   if(state.queue.some(item=>item.key===key)){status.textContent="Este modelo já está na fila com a mesma configuração.";status.className="note warn";return}
@@ -446,10 +449,20 @@ var batchSearchTimer=null;
 async function searchBatchModels(){
   const input=$("batchModelSearch"),query=input.value.trim(),status=$("batchSearchStatus"),requestId=++state.modelSearchRequest;
   if(query.length<2){hideModelSearchResults();status.textContent="Digite pelo menos 2 caracteres para listar modelos públicos de geração de texto.";status.className="note";return}
+  const blockedReason=colabBlockReason(normalizeModelInput(query));if(blockedReason){hideModelSearchResults();status.textContent=blockedReason;status.className="note bad";return}
   status.textContent="Buscando modelos no Hugging Face…";status.className="note warn";
   try{const response=await fetch(`/api/models?q=${encodeURIComponent(query)}`,{cache:"force-cache"}),body=await response.json().catch(()=>({}));if(requestId!==state.modelSearchRequest)return;if(!response.ok||!body.ok)throw new Error(body.error||`HTTP ${response.status}`);renderModelSearchResults(body.models||[]);status.textContent=`${body.models?.length||0} modelo(s) encontrado(s). Selecione para adicionar.`;status.className="note good"}catch(error){if(requestId!==state.modelSearchRequest)return;renderModelSearchResults([],"Busca indisponível");status.textContent=`Não foi possível buscar: ${error.message}`;status.className="note bad"}
 }
-function updateCommand(){const model=normalizeModelInput($("modelInput").value),tech=$("technologyInput").value,target=$("targetLayerInput").value.trim()||"auto";if(!model){$("commandOutput").textContent="# Informe org/modelo ou uma URL válida do Hugging Face.";$("modelValidation").textContent="Formato inválido. Exemplo: microsoft/Phi-3.5-mini-instruct";$("modelValidation").className="note bad";$("openModelBtn").href="https://huggingface.co/models";return}if(!/^(auto|[A-Za-z0-9_.-]+)$/.test(target)){$("commandOutput").textContent="# Informe 'auto' ou um nome de tensor válido.";$("modelValidation").textContent="Camada inválida; use apenas letras, números, ponto, hífen e sublinhado.";$("modelValidation").className="note bad";return}const trust=$("trustRemoteInput").checked||model==="moonshotai/Kimi-K3",technologies=tech==="all"?["rift","cascade","aether","spectra"]:[tech],commands=technologies.map(technology=>`!curl -fsSL "${launcherUrl(technology,model,target,trust)}" -o /content/${technology}_launcher.py && python /content/${technology}_launcher.py`);$("commandOutput").textContent=commands.join("\n");const kimi=model==="moonshotai/Kimi-K3"?" Kimi-K3 exige trust_remote_code e recursos muito superiores a um Colab comum.":"";$("modelValidation").textContent=`Modelo normalizado: ${model}. O launcher configura RIFT_RESULTS_ENDPOINT automaticamente.${kimi}`;$("modelValidation").className=`note ${kimi?"warn":"good"}`;$("openModelBtn").href=`https://huggingface.co/${model}`}
+function updateCommand(){
+  const model=normalizeModelInput($("modelInput").value),tech=$("technologyInput").value,target=$("targetLayerInput").value.trim()||"auto";
+  if(!model){$("commandOutput").textContent="# Informe org/modelo ou uma URL válida do Hugging Face.";$("modelValidation").textContent="Formato inválido. Exemplo: microsoft/Phi-3.5-mini-instruct";$("modelValidation").className="note bad";$("openModelBtn").href="https://huggingface.co/models";return}
+  $("openModelBtn").href=`https://huggingface.co/${model}`;
+  const blockedReason=colabBlockReason(model);
+  if(blockedReason){$("commandOutput").textContent="# Teste não gerado: Kimi-K3 não cabe na arquitetura atual da bateria Colab.";$("modelValidation").textContent=`${blockedReason} O código remoto oficial indica transformers==4.56.2, mas corrigir somente essa dependência ainda levaria a uma falha de recursos.`;$("modelValidation").className="note bad";return}
+  if(!/^(auto|[A-Za-z0-9_.-]+)$/.test(target)){$("commandOutput").textContent="# Informe 'auto' ou um nome de tensor válido.";$("modelValidation").textContent="Camada inválida; use apenas letras, números, ponto, hífen e sublinhado.";$("modelValidation").className="note bad";return}
+  const trust=$("trustRemoteInput").checked,technologies=tech==="all"?["rift","cascade","aether","spectra"]:[tech],commands=technologies.map(technology=>`!curl -fsSL "${launcherUrl(technology,model,target,trust)}" -o /content/${technology}_launcher.py && python /content/${technology}_launcher.py`);
+  $("commandOutput").textContent=commands.join("\n");$("modelValidation").textContent=`Modelo normalizado: ${model}. O launcher configura RIFT_RESULTS_ENDPOINT automaticamente.`;$("modelValidation").className="note good";
+}
 
 $("files").addEventListener("change",e=>loadFiles([...e.target.files]));$("reloadBtn").addEventListener("click",()=>{state.records=[];state.analysis=null;state.analysisError=null;state.ranking=[];loadPublishedData()});$("clearBtn").addEventListener("click",()=>{state.records=[];state.analysis=null;state.analysisError=null;state.ranking=[];render();$("dataStatus").textContent="Dados removidos da visualização.";$("dataStatus").className="sub"});["modelFilter","technologyFilter","batteryFilter"].forEach(id=>$(id).addEventListener("change",render));$("compareModel").addEventListener("change",renderCompare);$("analyzeBtn").addEventListener("click",()=>requestAIAnalysis(true));
 $("modelPreset").addEventListener("change",e=>{if(e.target.value!=="custom"){$("modelInput").value=e.target.value;if(e.target.value==="moonshotai/Kimi-K3")$("trustRemoteInput").checked=true}else $("modelInput").focus();updateCommand()});["modelInput","technologyInput","targetLayerInput","trustRemoteInput"].forEach(id=>$(id).addEventListener("input",updateCommand));

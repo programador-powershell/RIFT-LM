@@ -21,6 +21,8 @@ assert.match(html, /Copiar lista serial/);
 assert.match(html, /subprocess\.Popen/);
 assert.match(html, /nvidia-smi/);
 assert.match(html, /wait_for_resource_release/);
+assert.match(html, /COLAB_BLOCKED_MODELS/);
+assert.match(html, /Teste não gerado: Kimi-K3/);
 assert.doesNotMatch(html, /RIFT_GITHUB_TOKEN\s*=/);
 assert.doesNotMatch(html, /API_GOOGLE\s*=/);
 
@@ -158,6 +160,11 @@ assert.equal((await modelSearch.fetch(new Request("https://dashboard.example/api
 const kimi = launcherApi.normalizeModel("Kimi-K3");
 assert.equal(kimi.modelId, "moonshotai/Kimi-K3");
 assert.equal(kimi.trustRemoteCode, true);
+assert.equal(kimi.compatibility.colabSupported, false);
+assert.equal(kimi.compatibility.transformersVersion, "4.56.2");
+assert.equal(kimi.compatibility.minimumPackedWeightBytes, 1_400_000_000_000);
+const canonicalKimi = launcherApi.normalizeModel("moonshotai/Kimi-K3");
+assert.equal(canonicalKimi.compatibility.colabSupported, false);
 const launcherResponse = await testLauncher.fetch(new Request(
   "https://rift-lm.vercel.app/api/test?technology=aether&model=Kimi-K3",
 ));
@@ -168,6 +175,13 @@ assert.match(launcher, /aether_m0_phase1_test_v100_auto_batteries\.py/);
 assert.match(launcher, /moonshotai\/Kimi-K3/);
 assert.match(launcher, /--trust-remote-code/);
 assert.match(launcher, /https:\/\/rift-lm\.vercel\.app\/api\/results/);
+assert.match(launcher, /BLOQUEADO: este modelo não é compatível/);
+assert.match(launcher, /transformers==" \+ required_transformers/);
+assert.match(launcher, /minimumPackedWeightBytes/);
+assert.ok(
+  launcher.indexOf("enforce_compatibility()") < launcher.indexOf("urlopen(request"),
+  "a proteção de recursos precisa executar antes de qualquer download",
+);
 const untrustedOriginLauncher = launcherApi.buildLauncher({
   technology: "aether",
   model: launcherApi.normalizeModel("Kimi-K3"),

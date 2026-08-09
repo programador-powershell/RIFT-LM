@@ -29,7 +29,19 @@ const MODEL_ALIASES = {
   "kimi-k3": {
     modelId: "moonshotai/Kimi-K3",
     trustRemoteCode: true,
-    warning: "Kimi-K3 é um modelo de escala extrema; um Colab comum provavelmente não possui memória suficiente.",
+    warning: "Kimi-K3 exige Transformers 4.56.2 e infraestrutura distribuída; o benchmark Colab de dispositivo único não consegue carregá-lo.",
+    compatibility: {
+      colabSupported: false,
+      transformersVersion: "4.56.2",
+      totalParameters: 2_800_000_000_000,
+      minimumPackedWeightBytes: 1_400_000_000_000,
+      reason: (
+        "Kimi-K3 tem 2,8 trilhões de parâmetros. Mesmo no limite teórico de 4 bits, "
+        + "somente os pesos exigiriam pelo menos 1,4 TB; esta bateria carrega o modelo "
+        + "completo em um único dispositivo. Use infraestrutura distribuída compatível "
+        + "com vLLM/SGLang/TokenSpeed ou escolha um checkpoint que caiba no Colab."
+      ),
+    },
   },
 };
 
@@ -64,12 +76,22 @@ function normalizeModel(value) {
   } catch (error) {
     if (error instanceof ApiError) throw error;
   }
+  const knownModel = Object.values(MODEL_ALIASES).find(
+    (entry) => entry.modelId.toLowerCase() === modelId.toLowerCase(),
+  );
+  if (knownModel) return { ...knownModel, alias: null };
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(modelId)) {
     throw new ApiError(
       "Modelo inválido; use org/modelo, uma URL do Hugging Face ou o alias Kimi-K3",
     );
   }
-  return { modelId, trustRemoteCode: false, warning: null, alias: null };
+  return {
+    modelId,
+    trustRemoteCode: false,
+    warning: null,
+    compatibility: { colabSupported: true },
+    alias: null,
+  };
 }
 
 function normalizeTargetLayer(value) {
@@ -125,10 +147,14 @@ function buildLauncher({
       ? "trust_remote_code está habilitado: o repositório do modelo poderá executar código no Colab."
       : null,
   ].filter(Boolean);
+  const compatibility = model.compatibility || { colabSupported: true };
   return `#!/usr/bin/env python3
 # Launcher gerado por ${origin} para ${definition.label}.
 # O benchmark usa GPU do Colab; a Vercel apenas entrega este inicializador.
 import os
+import json
+import shutil
+import subprocess
 import sys
 from urllib.request import Request, urlopen
 
@@ -136,11 +162,53 @@ SCRIPT_URL = ${JSON.stringify(scriptUrl)}
 MODEL_ID = ${JSON.stringify(model.modelId)}
 ARGS = ${JSON.stringify(argumentsList)}
 WARNINGS = ${JSON.stringify(warnings)}
+COMPATIBILITY = json.loads(r'''${JSON.stringify(compatibility)}''')
+
+def format_bytes(value):
+    units = ("B", "KB", "MB", "GB", "TB", "PB")
+    amount = float(value)
+    for unit in units:
+        if amount < 1000 or unit == units[-1]:
+            return f"{amount:.2f} {unit}"
+        amount /= 1000
+
+def available_gpu_memory_bytes():
+    try:
+        output = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+        values = [int(line.strip()) for line in output.splitlines() if line.strip()]
+        return max(values, default=0) * 1024 * 1024
+    except (FileNotFoundError, ValueError, subprocess.SubprocessError):
+        return 0
+
+def enforce_compatibility():
+    if COMPATIBILITY.get("colabSupported", True):
+        return
+    minimum = int(COMPATIBILITY.get("minimumPackedWeightBytes") or 0)
+    content_root = "/content" if os.path.isdir("/content") else "."
+    free_disk = shutil.disk_usage(content_root).free
+    gpu_memory = available_gpu_memory_bytes()
+    required_transformers = COMPATIBILITY.get("transformersVersion")
+    print("[LAUNCHER] BLOQUEADO: este modelo não é compatível com a bateria Colab atual.")
+    print("[LAUNCHER] Motivo:", COMPATIBILITY.get("reason", "Recursos insuficientes."))
+    if minimum:
+        print("[LAUNCHER] Limite teórico dos pesos:", format_bytes(minimum))
+        print("[LAUNCHER] Disco livre detectado:", format_bytes(free_disk))
+        print("[LAUNCHER] Maior GPU detectada:", format_bytes(gpu_memory))
+    if required_transformers:
+        print("[LAUNCHER] Compatibilidade do código remoto: transformers==" + required_transformers)
+    print("[LAUNCHER] Nenhum peso foi baixado e nenhum resultado foi publicado.")
+    raise SystemExit(2)
 
 os.environ.setdefault("RIFT_RESULTS_ENDPOINT", ${JSON.stringify(RESULTS_ENDPOINT)})
 print("[LAUNCHER] Tecnologia: ${definition.label} | Modelo:", MODEL_ID)
 for warning in WARNINGS:
     print("[LAUNCHER] AVISO:", warning)
+enforce_compatibility()
 print("[LAUNCHER] Baixando bateria versionada:", SCRIPT_URL)
 request = Request(SCRIPT_URL, headers={"User-Agent": "rift-test-launcher/1.0"})
 source = urlopen(request, timeout=60).read()

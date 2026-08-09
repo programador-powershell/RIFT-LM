@@ -1,6 +1,6 @@
 {
   "name": "rift-cascade-aether-spectra-test-observatory",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "RIFT-LM, CASCADE, AETHER and SPECTRA benchmark dashboard for Vercel",
   "scripts": {
