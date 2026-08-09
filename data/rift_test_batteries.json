@@ -2640,5 +2640,56 @@
       }
     },
     "notes": "Erro de prefetch afeta apenas custo estimado; esta bateria não implementa I/O assíncrono."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:04:43Z",
+    "run_id": "20260809T210443Z-0e28c66a",
+    "spec": "AETHER-LM v1.0 reference",
+    "technology": "AETHER",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "B0_AETHER_BINARY_IR_FOUNDATION",
+    "status": "PASS",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "measurement_scope": "AETHER Header/IR/Stage Pages/MMAP correctness; desempenho não se aplica.",
+    "quality": {
+      "full_local_gate_pass": true
+    },
+    "metrics": {
+      "bundle": {
+        "file_size": 2835168,
+        "header_checksum": 15670846866147105000,
+        "hqr_packed_bytes": 2621444,
+        "tadds_residual_bytes": 213024,
+        "stages": [
+          {
+            "stage_id": 0,
+            "rank": 0,
+            "offset": 640,
+            "size": 2621444
+          },
+          {
+            "stage_id": 1,
+            "rank": 16,
+            "offset": 2622144,
+            "size": 213024
+          }
+        ]
+      },
+      "negative_tests_passed": 11
+    },
+    "notes": "Container AETH v1.0 test-local; ABI de produção ainda não congelada."
   }
 ]
