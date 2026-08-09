@@ -1,369 +1,260 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>RIFT-LM Test Observatory</title>
-<meta name="description" content="Dashboard de benchmarks RIFT-LM: baseline vs RIFT em Tok/s, RAM, espaço em disco, qualidade e ganho.">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RIFT-LM & CASCADE Test Observatory</title>
+<meta name="description" content="Dashboard comparativo de baterias RIFT-LM e CASCADE.">
 <meta name="theme-color" content="#0b0e14">
 <style>
 :root{
   --bg:#0b0e14;--panel:#121722;--panel2:#171d2a;--text:#eef2f7;--muted:#91a0b4;
   --border:#263043;--accent:#7c9cff;--good:#48c78e;--bad:#ff6b6b;--warn:#f5b942;
-  --baseline:#70809a;--rift:#7c9cff;
+  --baseline:#70809a;--rift:#7c9cff;--cascade:#a879ff;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 .shell{max-width:1440px;margin:auto;padding:24px}
 header{display:flex;gap:16px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;margin-bottom:20px}
-h1{font-size:24px;margin:0 0 6px}
-.sub{color:var(--muted);font-size:14px}
-.controls{display:flex;gap:10px;flex-wrap:wrap}
-button,.fileBtn,select{border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:10px;padding:9px 12px;font-size:14px}
-button,.fileBtn{cursor:pointer}
-.fileBtn input{display:none}
-.grid{display:grid;gap:14px}
-.metrics{grid-template-columns:repeat(4,minmax(180px,1fr));margin-bottom:16px}
+h1{font-size:24px;margin:0 0 6px}.sub{color:var(--muted);font-size:13px;line-height:1.5}
+.controls,.actions,.filters,.legend,.badges{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button,.fileBtn,select,input{border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:10px;padding:9px 12px;font-size:14px}
+button,.fileBtn{cursor:pointer}.fileBtn input{display:none}button:hover,.fileBtn:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#071020;font-weight:750}
+a.button{display:inline-flex;text-decoration:none;border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:10px;padding:9px 12px;font-size:14px}
+.grid{display:grid;gap:14px}.metrics{grid-template-columns:repeat(4,minmax(180px,1fr));margin:16px 0}
 .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px}
-.metricLabel{color:var(--muted);font-size:13px;margin-bottom:8px}
-.metricMain{font-size:28px;font-weight:750;letter-spacing:-.02em}
-.metricCompare{display:flex;justify-content:space-between;gap:8px;margin-top:8px;color:var(--muted);font-size:12px}
-.gain{font-weight:700}
-.good{color:var(--good)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+.sectionTitle{font-size:17px;font-weight:750;margin:26px 0 10px}.sectionTitle small{font-weight:400;color:var(--muted)}
+.metricLabel{color:var(--muted);font-size:13px;margin-bottom:8px}.metricMain{font-size:27px;font-weight:750;letter-spacing:-.02em}
+.metricCompare{display:flex;justify-content:space-between;gap:8px;margin-top:8px;color:var(--muted);font-size:12px}.gain{font-weight:700}
+.good{color:var(--good)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.launcher{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(340px,.95fr);gap:16px;align-items:start}
+.formGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:flex;flex-direction:column;gap:6px}.formGrid>.wide{grid-column:1/-1}
+.field label{font-size:12px;color:var(--muted)}.field input,.field select{width:100%}.check{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12px}.check input{width:auto}
+.commandBox{margin:8px 0 10px;padding:12px;border:1px solid var(--border);border-radius:10px;background:#090d14;color:#c7d3ff;white-space:pre-wrap;word-break:break-word;min-height:128px;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}
 .toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:12px 0 16px}
-.filters{display:flex;gap:8px;flex-wrap:wrap}
-.legend{display:flex;gap:12px;color:var(--muted);font-size:12px}
-.dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:5px}.baseline{background:var(--baseline)}.rift{background:var(--rift)}
-.empty{padding:44px 20px;text-align:center;color:var(--muted)}
-.battery{margin-bottom:16px}
-.batteryHead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px}
-.batteryTitle{font-size:18px;font-weight:700}
-.badges{display:flex;gap:7px;flex-wrap:wrap}
-.badge{border:1px solid var(--border);background:var(--panel2);padding:4px 8px;border-radius:999px;font-size:11px;color:var(--muted)}
-.charts{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:12px}
-.chart{background:var(--panel2);border:1px solid var(--border);border-radius:12px;padding:12px}
-.chartTitle{display:flex;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:10px}
-.chartTitle span:last-child{color:var(--muted)}
-.barRow{display:grid;grid-template-columns:58px 1fr 72px;gap:8px;align-items:center;margin:8px 0;font-size:12px}
-.track{height:11px;background:#0c111a;border:1px solid var(--border);border-radius:999px;overflow:hidden}
-.fill{height:100%;border-radius:999px}
-.fill.base{background:var(--baseline)} .fill.rift{background:var(--rift)}
-.value{text-align:right;font-variant-numeric:tabular-nums}
-.note{color:var(--muted);font-size:11px;margin-top:8px;line-height:1.4}
-.quality{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:10px;margin-top:12px}
-.qitem{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:10px}
-.qitem b{display:block;margin-top:4px}
-.tableWrap{overflow:auto;border:1px solid var(--border);border-radius:12px}
-table{border-collapse:collapse;width:100%;min-width:920px;background:var(--panel)}
-th,td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:left;font-size:12px}
-th{color:var(--muted);background:var(--panel2);position:sticky;top:0}
-td.num{text-align:right;font-variant-numeric:tabular-nums}
-.sectionTitle{font-size:17px;font-weight:700;margin:24px 0 10px}
-details{margin-top:16px}.help{color:var(--muted);font-size:13px;line-height:1.55}
-code{color:#b7c7ff}
-@media(max-width:1050px){.metrics,.charts{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:600px){.shell{padding:14px}.metrics,.charts,.quality{grid-template-columns:1fr}.metricMain{font-size:24px}}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:5px}.baseline{background:var(--baseline)}.rift{background:var(--rift)}.cascade{background:var(--cascade)}
+.empty{padding:36px 20px;text-align:center;color:var(--muted)}.battery{margin-bottom:16px}.battery.riftCard{border-left:3px solid var(--rift)}.battery.cascadeCard{border-left:3px solid var(--cascade)}
+.batteryHead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px}.batteryTitle{font-size:18px;font-weight:700}
+.badge{border:1px solid var(--border);background:var(--panel2);padding:4px 8px;border-radius:999px;font-size:11px;color:var(--muted)}.badge.techRift{color:#b7c7ff}.badge.techCascade{color:#cfb9ff}
+.charts{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:12px}.chart{background:var(--panel2);border:1px solid var(--border);border-radius:12px;padding:12px}
+.chartTitle{display:flex;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:10px}.chartTitle span:last-child{color:var(--muted)}
+.barRow{display:grid;grid-template-columns:68px 1fr 82px;gap:8px;align-items:center;margin:8px 0;font-size:12px}.track{height:11px;background:#0c111a;border:1px solid var(--border);border-radius:999px;overflow:hidden}
+.fill{height:100%;border-radius:999px}.fill.base{background:var(--baseline)}.fill.riftFill{background:var(--rift)}.fill.cascadeFill{background:var(--cascade)}
+.value{text-align:right;font-variant-numeric:tabular-nums}.note{color:var(--muted);font-size:11px;margin-top:8px;line-height:1.5}
+.quality{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;margin-top:12px}.qitem{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:10px}.qitem b{display:block;margin-top:4px}
+.compareGrid{display:grid;grid-template-columns:260px 1fr;gap:14px}.compareSide{display:flex;flex-direction:column;gap:10px}.compareStatus{padding:12px;border-radius:10px;border:1px solid var(--border);background:var(--panel2)}
+.tableWrap{overflow:auto;border:1px solid var(--border);border-radius:12px}table{border-collapse:collapse;width:100%;min-width:980px;background:var(--panel)}
+th,td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:left;font-size:12px}th{color:var(--muted);background:var(--panel2);position:sticky;top:0}td.num{text-align:right;font-variant-numeric:tabular-nums}
+.compareTable{min-width:620px}.compareTable th:first-child{width:33%}.compareTable th:nth-child(n+2),.compareTable td:nth-child(n+2){text-align:right}
+details{margin-top:18px}.help{color:var(--muted);font-size:13px;line-height:1.6}code{color:#b7c7ff}
+@media(max-width:1050px){.metrics,.charts{grid-template-columns:repeat(2,1fr)}.launcher,.compareGrid{grid-template-columns:1fr}}
+@media(max-width:620px){.shell{padding:14px}.metrics,.charts,.quality,.formGrid{grid-template-columns:1fr}.formGrid>.wide{grid-column:auto}.metricMain{font-size:24px}}
 </style>
 </head>
 <body>
-<div class="shell">
+<main class="shell">
 <header>
   <div>
-    <h1>RIFT-LM Test Observatory</h1>
-    <div class="sub">Acompanhamento de baterias • baseline vs. RIFT • velocidade, memória, espaço e ganho</div><div class="sub" id="dataStatus" aria-live="polite">Carregando histórico publicado…</div>
+    <h1>RIFT-LM & CASCADE Test Observatory</h1>
+    <div class="sub">Baterias de referência • qualidade, memória, disco e latência • comparação transparente</div>
+    <div class="sub" id="dataStatus" aria-live="polite">Carregando histórico publicado…</div>
+    <div class="sub">Datas exibidas em <strong>America/Sao_Paulo</strong> (GMT−3).</div>
   </div>
   <div class="controls">
     <label class="fileBtn">Carregar JSON/CSV<input id="files" type="file" multiple accept=".json,.csv"></label>
     <button id="demoBtn" type="button">Carregar exemplo</button>
-    <button id="reloadBtn" type="button">Recarregar publicado</button><button id="clearBtn" type="button">Limpar</button>
+    <button id="reloadBtn" type="button">Recarregar publicado</button>
+    <button id="clearBtn" type="button">Limpar</button>
   </div>
 </header>
+
+<div class="sectionTitle">Enviar um modelo para teste <small>• gera uma célula pronta para o Google Colab</small></div>
+<section class="card launcher">
+  <div>
+    <div class="formGrid">
+      <div class="field wide">
+        <label for="modelPreset">Modelo sugerido</label>
+        <select id="modelPreset">
+          <option value="Qwen/Qwen2.5-0.5B">Qwen 2.5 0.5B — rápido</option>
+          <option value="Qwen/Qwen2.5-1.5B-Instruct">Qwen 2.5 1.5B Instruct — mais forte</option>
+          <option value="TinyLlama/TinyLlama-1.1B-Chat-v1.0">TinyLlama 1.1B — outra família</option>
+          <option value="HuggingFaceTB/SmolLM2-1.7B-Instruct">SmolLM2 1.7B — Hugging Face</option>
+          <option value="microsoft/Phi-3.5-mini-instruct">Phi 3.5 Mini — Microsoft</option>
+          <option value="google/gemma-2-2b-it">Gemma 2 2B — Google (pode exigir acesso)</option>
+          <option value="custom">Outro modelo / URL…</option>
+        </select>
+      </div>
+      <div class="field wide">
+        <label for="modelInput">Model ID ou URL do projeto no Hugging Face</label>
+        <input id="modelInput" value="Qwen/Qwen2.5-0.5B" placeholder="org/modelo ou https://huggingface.co/org/modelo" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="technologyInput">Tecnologia</label>
+        <select id="technologyInput"><option value="both">RIFT + CASCADE</option><option value="rift">Somente RIFT</option><option value="cascade">Somente CASCADE</option></select>
+      </div>
+      <div class="field">
+        <label for="targetLayerInput">Camada alvo</label>
+        <input id="targetLayerInput" value="auto" placeholder="auto">
+      </div>
+      <label class="check wide"><input id="trustRemoteInput" type="checkbox"> Permitir <code>trust_remote_code</code> — habilite apenas se confiar no repositório do modelo.</label>
+    </div>
+    <p class="help">O dashboard não executa GPU no navegador. Ele transforma o model ID/URL em comandos seguros para o Colab. A opção <code>auto</code> procura uma camada Linear compatível em Qwen, Llama, Gemma, Phi e outras famílias.</p>
+  </div>
+  <div>
+    <div class="sub">Cole esta célula no Colab após configurar <code>RIFT_RESULTS_ENDPOINT</code> e <code>RIFT_INGEST_TOKEN</code> em Secrets:</div>
+    <pre class="commandBox" id="commandOutput" aria-live="polite"></pre>
+    <div class="actions">
+      <button class="primary" id="copyCommandBtn" type="button">Copiar célula</button>
+      <a class="button" id="openModelBtn" href="https://huggingface.co/Qwen/Qwen2.5-0.5B" target="_blank" rel="noopener">Abrir modelo</a>
+      <a class="button" href="https://colab.research.google.com/" target="_blank" rel="noopener">Abrir Colab</a>
+    </div>
+    <div class="note" id="modelValidation"></div>
+  </div>
+</section>
 
 <section class="grid metrics" id="summary">
   <div class="card"><div class="metricLabel">Tok/s — último teste</div><div class="metricMain" id="mTok">—</div><div class="metricCompare"><span id="mTokBase">Baseline: —</span><span class="gain" id="mTokGain">—</span></div></div>
   <div class="card"><div class="metricLabel">RAM necessária</div><div class="metricMain" id="mRam">—</div><div class="metricCompare"><span id="mRamBase">Baseline: —</span><span class="gain" id="mRamGain">—</span></div></div>
   <div class="card"><div class="metricLabel">Espaço em disco</div><div class="metricMain" id="mDisk">—</div><div class="metricCompare"><span id="mDiskBase">Baseline: —</span><span class="gain" id="mDiskGain">—</span></div></div>
-  <div class="card"><div class="metricLabel">Ganho composto</div><div class="metricMain" id="mOverall">—</div><div class="metricCompare"><span>Velocidade + memória + disco</span><span class="gain" id="mOverallHint">—</span></div></div>
+  <div class="card"><div class="metricLabel">Ganho composto medido</div><div class="metricMain" id="mOverall">—</div><div class="metricCompare"><span id="mTechnology">Tecnologia: —</span><span class="gain" id="mOverallHint">—</span></div></div>
+</section>
+
+<div class="sectionTitle">Comparador RIFT × CASCADE <small>• mesma família de modelo, métricas de referência</small></div>
+<section class="card compareGrid">
+  <aside class="compareSide">
+    <div class="field"><label for="compareModel">Modelo</label><select id="compareModel"><option value="">Selecione um modelo</option></select></div>
+    <div class="compareStatus" id="riftCompareStatus"><b>RIFT</b><div class="sub">Sem bateria principal.</div></div>
+    <div class="compareStatus" id="cascadeCompareStatus"><b>CASCADE</b><div class="sub">Sem bateria principal.</div></div>
+    <div class="note">Latência só é comparável quando hardware, camada e tamanho da ativação são equivalentes. O dashboard não transforma uma operação Linear em Tok/s do modelo.</div>
+  </aside>
+  <div class="tableWrap">
+    <table class="compareTable">
+      <thead><tr><th>Métrica</th><th>Baseline</th><th>RIFT</th><th>CASCADE</th></tr></thead>
+      <tbody id="compareBody"><tr><td colspan="4" class="empty">Execute as duas tecnologias para o mesmo modelo.</td></tr></tbody>
+    </table>
+  </div>
 </section>
 
 <div class="toolbar">
   <div class="filters">
     <select id="modelFilter"><option value="">Todos os modelos</option></select>
+    <select id="technologyFilter"><option value="">Todas as tecnologias</option><option value="RIFT">RIFT</option><option value="CASCADE">CASCADE</option></select>
     <select id="batteryFilter"><option value="">Todas as baterias</option></select>
   </div>
-  <div class="legend"><span><i class="dot baseline"></i>Baseline</span><span><i class="dot rift"></i>RIFT</span></div>
+  <div class="legend"><span><i class="dot baseline"></i>Baseline</span><span><i class="dot rift"></i>RIFT</span><span><i class="dot cascade"></i>CASCADE</span></div>
 </div>
 
-<div id="batteries"><div class="card empty">Carregue os relatórios dos testes para iniciar o acompanhamento.</div></div>
+<div id="batteries"><div class="card empty">Carregue os relatórios para iniciar o acompanhamento.</div></div>
 
 <div class="sectionTitle">Histórico consolidado</div>
 <div class="tableWrap">
 <table>
 <thead><tr>
-  <th>Data</th><th>Modelo</th><th>Bateria</th><th>Tok/s antes</th><th>Tok/s RIFT</th><th>Ganho vel.</th>
-  <th>RAM antes</th><th>RAM RIFT</th><th>Redução RAM</th><th>Disco antes</th><th>Disco RIFT</th><th>Redução disco</th>
+  <th>Data (São Paulo)</th><th>Modelo</th><th>Tecnologia</th><th>Bateria</th><th>Tok/s antes</th><th>Tok/s resultado</th><th>Ganho vel.</th>
+  <th>RAM antes</th><th>RAM resultado</th><th>Redução RAM</th><th>Disco antes</th><th>Disco resultado</th><th>Redução disco</th>
 </tr></thead>
-<tbody id="historyBody"><tr><td colspan="12" class="empty">Sem dados.</td></tr></tbody>
+<tbody id="historyBody"><tr><td colspan="13" class="empty">Sem dados.</td></tr></tbody>
 </table>
 </div>
 
 <details>
-<summary>Formato de dados e compatibilidade</summary>
+<summary>Formato, segurança e limites da comparação</summary>
 <div class="help">
-  <p>A página aceita o <code>rift_phase1_gain_report.json</code> e o <code>rift_phase1_gain_history.csv</code> gerados pelo script atual. Quando o teste ainda é apenas de uma operação Linear, a página não chama operações/s de Tok/s: Tok/s fica como “não medido”.</p>
-  <p>Para baterias completas de inferência, use campos como <code>baseline_tok_s</code>, <code>rift_tok_s</code>, <code>baseline_ram_bytes</code>, <code>rift_ram_bytes</code>, <code>baseline_disk_bytes</code> e <code>rift_disk_bytes</code>. O ganho é calculado automaticamente.</p>
+  <p>Os registros novos usam <code>technology</code> e campos neutros <code>candidate_*</code>. O dashboard continua aceitando o histórico RIFT anterior com campos <code>rift_*</code>.</p>
+  <p>RIFT e CASCADE publicam pela mesma Function <code>/api/results</code>. O PAT do GitHub permanece apenas na Vercel; o Colab recebe somente a chave independente de ingestão.</p>
+  <p>O CASCADE v0.3 incluído é uma implementação de referência da Fase 1. O prefetch é simulado e não existe kernel fused nativo. Portanto, resultados de latência não autorizam reivindicar ganho nativo de inferência.</p>
 </div>
 </details>
-</div>
+</main>
 
 <script>
 const state={records:[]};
 const $=id=>document.getElementById(id);
+const SAO_PAULO_TZ="America/Sao_Paulo";
+const dateFormatter=new Intl.DateTimeFormat("pt-BR",{timeZone:SAO_PAULO_TZ,day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false,timeZoneName:"shortOffset"});
+const scriptUrls={
+  rift:"https://raw.githubusercontent.com/programador-powershell/RIFT-LM/main/rift_m0_phase1_test_v035_auto_batteries.py",
+  cascade:"https://raw.githubusercontent.com/programador-powershell/RIFT-LM/main/cascade_m0_phase1_test_v030_auto_batteries.py"
+};
 
 function n(v){const x=Number(v);return Number.isFinite(x)?x:null}
-function pctGainHigherBetter(base,rift){return base&&rift?((rift/base)-1)*100:null}
-function pctReduction(base,rift){return base&&rift?(1-rift/base)*100:null}
-function fmtNum(v,d=2){return v==null?"—":Number(v).toFixed(d)}
-function fmtBytes(v){
-  if(v==null)return "—"; const units=["B","KB","MB","GB","TB"]; let x=Number(v),i=0;
-  while(Math.abs(x)>=1024&&i<units.length-1){x/=1024;i++}
-  return `${x.toFixed(i<2?1:2)} ${units[i]}`
-}
+function pctGainHigherBetter(base,candidate){return base&&candidate!=null?((candidate/base)-1)*100:null}
+function pctReduction(base,candidate){return base&&candidate!=null?(1-candidate/base)*100:null}
+function fmtBytes(v){if(v==null)return "—";const units=["B","KB","MB","GB","TB"];let x=Number(v),i=0;while(Math.abs(x)>=1024&&i<units.length-1){x/=1024;i++}return `${x.toFixed(i<2?1:2)} ${units[i]}`}
 function fmtTok(v){return v==null?"não medido":`${Number(v).toFixed(2)} tok/s`}
 function fmtPct(v){return v==null?"—":`${v>=0?"+":""}${v.toFixed(1)}%`}
+function fmtMs(v){return v==null?"—":`${Number(v).toFixed(4)} ms`}
+function fmtMetric(v,d=6){return v==null?"—":Number(v).toFixed(d)}
 function gainClass(v){return v==null?"warn":v>0?"good":v<0?"bad":"warn"}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
+function fmtDate(value){if(!value)return "—";const date=new Date(value);return Number.isNaN(date.getTime())?String(value):dateFormatter.format(date).replace(",","")}
+function inferTechnology(o){const explicit=String(o.technology||"").toUpperCase();if(explicit==="RIFT"||explicit==="CASCADE")return explicit;const hint=`${o.spec||""} ${o.battery_id||o.battery||""}`.toUpperCase();return hint.includes("CASCADE")?"CASCADE":"RIFT"}
 
 function normalizePreferred(o,source="json"){
   const op=o.metrics?.operation||{};
+  const technology=inferTechnology(o);
   return {
-    timestamp:o.timestamp_utc||o.timestamp||new Date().toISOString(),
-    model:o.model_id||o.model||"Modelo não informado",
-    battery:o.battery_id||o.battery||o.stage||"Phase 1",
-    status:o.status||((o.quality&&o.quality.full_local_gate_pass)?"PASS":"EXPERIMENTAL"),
-    baselineTok:n(o.baseline_tok_s ?? o.baseline?.tok_s),
-    riftTok:n(o.rift_tok_s ?? o.rift?.tok_s),
-    baselineRam:n(o.baseline_ram_bytes ?? o.baseline?.ram_bytes),
-    riftRam:n(o.rift_ram_bytes ?? o.rift?.ram_bytes),
-    baselineDisk:n(o.baseline_disk_bytes ?? o.baseline?.disk_bytes),
-    riftDisk:n(o.rift_disk_bytes ?? o.rift?.disk_bytes),
-    linearBaselineMs:n(o.baseline_operation_ms ?? op.baseline_median_ms),
-    linearRiftMs:n(o.rift_operation_ms ?? op.rift_median_ms),
-    operationSpeedup:n(o.operation_speedup_x ?? op.speedup_x),
-    quality:o.quality||null,
-    gains:o.gains||null,
-    measurementScope:o.measurement_scope||"",
-    notes:o.notes||"",
-    source,
-    raw:o
+    timestamp:o.timestamp_utc||o.timestamp||new Date().toISOString(),model:o.model_id||o.model||"Modelo não informado",
+    technology,battery:o.battery_id||o.battery||o.stage||"Phase 1",status:o.status||((o.quality&&o.quality.full_local_gate_pass)?"PASS":"EXPERIMENTAL"),
+    comparisonRole:o.comparison_role||null,baselineTok:n(o.baseline_tok_s??o.baseline?.tok_s),candidateTok:n(o.candidate_tok_s??o.rift_tok_s??o.cascade_tok_s??o.rift?.tok_s),
+    baselineRam:n(o.baseline_ram_bytes??o.baseline?.ram_bytes),candidateRam:n(o.candidate_ram_bytes??o.rift_ram_bytes??o.cascade_ram_bytes??o.rift?.ram_bytes),
+    baselineDisk:n(o.baseline_disk_bytes??o.baseline?.disk_bytes),candidateDisk:n(o.candidate_disk_bytes??o.rift_disk_bytes??o.cascade_disk_bytes??o.rift?.disk_bytes),
+    linearBaselineMs:n(o.baseline_operation_ms??op.baseline_median_ms),linearCandidateMs:n(o.candidate_operation_ms??o.rift_operation_ms??op.candidate_median_ms??op.rift_median_ms),
+    operationSpeedup:n(o.operation_speedup_x??op.speedup_x),quality:o.quality||null,gains:o.gains||null,measurementScope:o.measurement_scope||"",notes:o.notes||"",source,raw:o
   };
 }
+function normalizeCurrentReport(o){return normalizePreferred({
+  ...o,technology:"RIFT",battery_id:o.b0?.b0_passed_reference?"Phase 1 • B0 + codec":"Phase 1",
+  baseline_disk_bytes:o.storage?.source_tensor_bytes??o.storage?.baseline_raw_file_bytes,candidate_disk_bytes:o.storage?.full?.candidate_bytes,
+  baseline_operation_ms:o.performance?.baseline_fp32_matmul?.median_ms,candidate_operation_ms:o.performance?.rift_full_decode_plus_matmul?.median_ms
+},"rift_phase1_gain_report");}
+function normalizeCsvRow(r){const normalized=normalizePreferred(r,r.technology?"technology-history.csv":"rift-history.csv");if(!normalized.quality&&("quality_gate_pass" in r)){normalized.quality={full_local_gate_pass:String(r.quality_gate_pass).toLowerCase()==="true",output:{cosine:n(r.output_cosine_full),nrmse:n(r.output_nrmse_full)},weight:{cosine:n(r.weight_cosine_full),nrmse:n(r.weight_nrmse_full)}}}return normalized}
+function parseCsv(txt){const lines=txt.trim().split(/\r?\n/);if(lines.length<2)return[];const parseLine=line=>{let a=[],v="",q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(q&&line[i+1]==='"'){v+='"';i++}else q=!q}else if(c===","&&!q){a.push(v);v=""}else v+=c}a.push(v);return a};const h=parseLine(lines[0]);return lines.slice(1).filter(Boolean).map(line=>{const vals=parseLine(line),o={};h.forEach((k,i)=>o[k]=vals[i]??"");return o})}
 
-function normalizeCurrentReport(o){
-  const baseDisk=n(o.storage?.source_tensor_bytes ?? o.storage?.baseline_raw_file_bytes);
-  const riftDisk=n(o.storage?.full?.candidate_bytes);
-  return {
-    timestamp:o.timestamp_utc||new Date().toISOString(),
-    model:o.model_id||"Modelo não informado",
-    battery:o.b0?.b0_passed_reference ? "Phase 1 • B0 + codec" : "Phase 1",
-    status:o.quality?.full_local_gate_pass?"PASS":"EXPERIMENTAL",
-    baselineTok:null,
-    riftTok:null,
-    baselineRam:n(o.memory?.baseline_ram_bytes),
-    riftRam:n(o.memory?.rift_ram_bytes),
-    baselineDisk:baseDisk,
-    riftDisk:riftDisk,
-    linearBaselineMs:n(o.performance?.baseline_fp32_matmul?.median_ms),
-    linearRiftMs:n(o.performance?.rift_full_decode_plus_matmul?.median_ms),
-    quality:o.quality||null,
-    source:"rift_phase1_gain_report",
-    raw:o
-  };
+async function loadPublishedData(){const status=$("dataStatus");try{const res=await fetch("/data/rift_test_batteries.json",{cache:"no-store"});if(!res.ok)throw new Error(`HTTP ${res.status}`);const payload=await res.json();const arr=Array.isArray(payload)?payload:(Array.isArray(payload.records)?payload.records:[payload]);arr.forEach(o=>state.records.push(o.storage&&o.performance&&o.model_id?normalizeCurrentReport(o):normalizePreferred(o,"published-data")));dedupe();render();status.textContent=`Histórico publicado carregado • ${arr.length} bateria(s)`;status.className="sub good"}catch(err){status.textContent="Sem histórico publicado disponível • use Carregar JSON/CSV";status.className="sub warn";render()}}
+async function loadFiles(files){for(const file of files){const txt=await file.text();try{if(file.name.toLowerCase().endsWith(".csv"))parseCsv(txt).forEach(r=>state.records.push(normalizeCsvRow(r)));else{const j=JSON.parse(txt),arr=Array.isArray(j)?j:[j];arr.forEach(o=>state.records.push(o.storage&&o.performance&&o.model_id?normalizeCurrentReport(o):normalizePreferred(o,file.name)))}}catch(e){alert(`Falha ao ler ${file.name}: ${e.message}`)}}dedupe();render()}
+function dedupe(){const m=new Map();state.records.forEach(r=>m.set([r.timestamp,r.model,r.technology,r.battery,r.source].join("|"),r));state.records=[...m.values()].sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)))}
+
+function overallGain(r){const vals=[];const tg=pctGainHigherBetter(r.baselineTok,r.candidateTok);if(tg!=null)vals.push(tg);const rg=pctReduction(r.baselineRam,r.candidateRam);if(rg!=null)vals.push(rg);const dg=pctReduction(r.baselineDisk,r.candidateDisk);if(dg!=null)vals.push(dg);return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null}
+function metricChart(title,unit,base,candidate,technology,higherBetter=true,note=""){
+  if(base==null&&candidate==null)return `<div class="chart"><div class="chartTitle"><b>${title}</b><span>${unit}</span></div><div class="note">Ainda não medido nesta bateria.</div></div>`;
+  const max=Math.max(base||0,candidate||0,1),bw=base==null?0:base/max*100,cw=candidate==null?0:candidate/max*100,g=higherBetter?pctGainHigherBetter(base,candidate):pctReduction(base,candidate);
+  const formatter=unit==="bytes"?fmtBytes:(v=>v==null?"—":unit==="tok/s"?`${v.toFixed(2)} tok/s`:`${v.toFixed(2)} ${unit}`),fill=technology==="CASCADE"?"cascadeFill":"riftFill";
+  return `<div class="chart"><div class="chartTitle"><b>${title}</b><span class="${gainClass(g)}">${fmtPct(g)}</span></div><div class="barRow"><span>Antes</span><div class="track"><div class="fill base" style="width:${bw}%"></div></div><span class="value">${formatter(base)}</span></div><div class="barRow"><span>${technology}</span><div class="track"><div class="fill ${fill}" style="width:${cw}%"></div></div><span class="value">${formatter(candidate)}</span></div>${note?`<div class="note">${esc(note)}</div>`:""}</div>`;
 }
+function gainSummaryChart(r){const items=[["Velocidade",pctGainHigherBetter(r.baselineTok,r.candidateTok)],["RAM",pctReduction(r.baselineRam,r.candidateRam)],["Disco",pctReduction(r.baselineDisk,r.candidateDisk)]].filter(x=>x[1]!=null);if(!items.length)return `<div class="chart"><div class="chartTitle"><b>Ganhos</b><span>—</span></div><div class="note">Sem métricas comparáveis.</div></div>`;const max=Math.max(...items.map(x=>Math.abs(x[1])),1),fill=r.technology==="CASCADE"?"cascadeFill":"riftFill";return `<div class="chart"><div class="chartTitle"><b>Ganhos medidos</b><span>${fmtPct(overallGain(r))}</span></div>${items.map(([label,v])=>`<div class="barRow"><span>${label}</span><div class="track"><div class="fill ${v>=0?fill:"base"}" style="width:${Math.min(100,Math.abs(v)/max*100)}%"></div></div><span class="value ${gainClass(v)}">${fmtPct(v)}</span></div>`).join("")}<div class="note">Valores negativos permanecem visíveis como regressão.</div></div>`}
 
-function normalizeCsvRow(r){
-  const isNew=("baseline_disk_bytes" in r)||("battery_id" in r&&"measurement_scope" in r);
-  return {
-    timestamp:r.timestamp_utc||"",
-    model:r.model_id||"Modelo não informado",
-    battery:r.battery_id||"Phase 1 history",
-    status:r.status||"EXPERIMENTAL",
-    baselineTok:n(r.baseline_tok_s),
-    riftTok:n(r.rift_tok_s),
-    baselineRam:n(r.baseline_ram_bytes),
-    riftRam:n(r.rift_ram_bytes),
-    baselineDisk:n(isNew?r.baseline_disk_bytes:r.source_tensor_bytes),
-    riftDisk:n(isNew?r.rift_disk_bytes:r.rift_full_payload_bytes),
-    linearBaselineMs:n(isNew?r.baseline_operation_ms:r.baseline_median_ms),
-    linearRiftMs:n(isNew?r.rift_operation_ms:r.rift_full_reference_path_median_ms),
-    operationSpeedup:n(r.operation_speedup_x),
-    quality:{full_local_gate_pass:String(r.quality_gate_pass).toLowerCase()==="true",weight_full:{cosine:n(r.weight_cosine_full),nrmse:n(r.weight_nrmse_full)},output_full:{cosine:n(r.output_cosine_full),nrmse:n(r.output_nrmse_full)}},
-    measurementScope:r.measurement_scope||"",
-    notes:r.notes||"",
-    source:isNew?"rift_test_batteries.csv":"rift_phase1_gain_history",
-    raw:r
-  };
-}
+function qualityOutput(q){return q?.output_full??q?.output??null}
+function renderBattery(r){let throughputNote="";if(r.baselineTok==null&&r.linearBaselineMs!=null)throughputNote=`Latência de uma operação Linear: ${fmtMs(r.linearBaselineMs)} → ${fmtMs(r.linearCandidateMs)}. Não é Tok/s do modelo.`;const q=r.quality||{},out=qualityOutput(q)||{},weight=q.weight_full??q.weight??{},stageRate=n(r.raw?.metrics?.cascade?.stage_activation_rate);return `<section class="card battery ${r.technology==="CASCADE"?"cascadeCard":"riftCard"}"><div class="batteryHead"><div><div class="batteryTitle">${esc(r.model)}</div><div class="sub" title="UTC: ${esc(r.timestamp)}">${esc(r.battery)} • ${esc(fmtDate(r.timestamp))}</div></div><div class="badges"><span class="badge ${r.technology==="CASCADE"?"techCascade":"techRift"}">${r.technology}</span><span class="badge">${esc(r.status||"")}</span><span class="badge">${esc(r.source||"")}</span></div></div><div class="charts">${metricChart("Throughput","tok/s",r.baselineTok,r.candidateTok,r.technology,true,throughputNote)}${metricChart("RAM necessária","bytes",r.baselineRam,r.candidateRam,r.technology,false)}${metricChart("Espaço em disco","bytes",r.baselineDisk,r.candidateDisk,r.technology,false)}${gainSummaryChart(r)}</div><div class="quality"><div class="qitem"><span class="sub">Weight cosine</span><b>${fmtMetric(weight.cosine)}</b></div><div class="qitem"><span class="sub">Output cosine</span><b>${fmtMetric(out.cosine)}</b></div><div class="qitem"><span class="sub">Quality gate</span><b>${q.full_local_gate_pass===true?"PASS":q.full_local_gate_pass===false?"FAIL":"—"}</b></div><div class="qitem"><span class="sub">F1 ativado</span><b>${stageRate==null?"—":`${(stageRate*100).toFixed(1)}%`}</b></div></div>${(r.measurementScope||r.notes)?`<div class="note" style="margin-top:12px">${esc(r.measurementScope)}${r.notes?`<br>${esc(r.notes)}`:""}</div>`:""}</section>`}
 
-function parseCsv(txt){
-  const lines=txt.trim().split(/\r?\n/); if(lines.length<2)return[];
-  const parseLine=line=>{let a=[],v="",q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c=='"'){if(q&&line[i+1]=='"'){v+='"';i++}else q=!q}else if(c==","&&!q){a.push(v);v=""}else v+=c}a.push(v);return a}
-  const h=parseLine(lines[0]);
-  return lines.slice(1).filter(Boolean).map(line=>{const vals=parseLine(line),o={};h.forEach((k,i)=>o[k]=vals[i]??"");return o});
-}
+function renderSummary(rows){const r=rows.at(-1);if(!r){["mTok","mRam","mDisk","mOverall"].forEach(id=>$(id).textContent="—");$("mTechnology").textContent="Tecnologia: —";return}const tg=pctGainHigherBetter(r.baselineTok,r.candidateTok),rg=pctReduction(r.baselineRam,r.candidateRam),dg=pctReduction(r.baselineDisk,r.candidateDisk),og=overallGain(r);$("mTok").textContent=fmtTok(r.candidateTok);$("mTokBase").textContent=`Baseline: ${fmtTok(r.baselineTok)}`;$("mTokGain").textContent=fmtPct(tg);$("mTokGain").className=`gain ${gainClass(tg)}`;$("mRam").textContent=fmtBytes(r.candidateRam);$("mRamBase").textContent=`Baseline: ${fmtBytes(r.baselineRam)}`;$("mRamGain").textContent=rg==null?"—":`${fmtPct(rg)} RAM`;$("mRamGain").className=`gain ${gainClass(rg)}`;$("mDisk").textContent=fmtBytes(r.candidateDisk);$("mDiskBase").textContent=`Baseline: ${fmtBytes(r.baselineDisk)}`;$("mDiskGain").textContent=dg==null?"—":`${fmtPct(dg)} espaço`;$("mDiskGain").className=`gain ${gainClass(dg)}`;$("mOverall").textContent=og==null?"dados parciais":fmtPct(og);$("mTechnology").textContent=`Tecnologia: ${r.technology}`;$("mOverallHint").textContent=r.status||"—";$("mOverallHint").className=`gain ${og==null?"warn":gainClass(og)}`}
 
-async function loadPublishedData(){
-  const status=$("dataStatus");
-  try{
-    const res=await fetch("/data/rift_test_batteries.json",{cache:"no-store"});
-    if(!res.ok)throw new Error(`HTTP ${res.status}`);
-    const payload=await res.json();
-    const arr=Array.isArray(payload)?payload:(Array.isArray(payload.records)?payload.records:[payload]);
-    arr.forEach(o=>{
-      if(o.storage&&o.performance&&o.model_id)state.records.push(normalizeCurrentReport(o));
-      else state.records.push(normalizePreferred(o,"published-data"));
-    });
-    dedupe();
-    render();
-    status.textContent=`Histórico publicado carregado • ${arr.length} bateria(s)`;
-    status.className="sub good";
-  }catch(err){
-    status.textContent="Sem histórico publicado disponível • use “Carregar JSON/CSV”";
-    status.className="sub warn";
-    render();
-  }
-}
+function isPrimary(r){return r.comparisonRole==="primary"||r.battery==="P1_Q4_LINEAR_BASE_PLUS_REF_4BIT"||r.battery==="P1_CASCADE_GATED_F0_PLUS_F1"}
+function latestPrimary(model,technology){return state.records.filter(r=>r.model===model&&r.technology===technology&&isPrimary(r)).at(-1)||null}
+function renderCompare(){const select=$("compareModel"),models=[...new Set(state.records.filter(isPrimary).map(r=>r.model))].sort(),old=select.value;select.innerHTML='<option value="">Selecione um modelo</option>'+models.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");select.value=models.includes(old)?old:(models[0]||"");const model=select.value,rift=latestPrimary(model,"RIFT"),cascade=latestPrimary(model,"CASCADE");for(const [id,label,r] of [["riftCompareStatus","RIFT",rift],["cascadeCompareStatus","CASCADE",cascade]]){$(id).innerHTML=r?`<b>${label} • ${esc(r.status)}</b><div class="sub" title="UTC: ${esc(r.timestamp)}">${esc(fmtDate(r.timestamp))}<br>${esc(r.battery)}</div>`:`<b>${label}</b><div class="sub">Sem bateria principal para este modelo.</div>`}if(!rift&&!cascade){$("compareBody").innerHTML='<tr><td colspan="4" class="empty">Execute RIFT e CASCADE para o mesmo modelo.</td></tr>';return}const baseline=rift||cascade,ro=qualityOutput(rift?.quality),co=qualityOutput(cascade?.quality),stageRate=n(cascade?.raw?.metrics?.cascade?.stage_activation_rate);const rows=[
+  ["Payload / bundle",fmtBytes(baseline?.baselineDisk),fmtBytes(rift?.candidateDisk),fmtBytes(cascade?.candidateDisk)],
+  ["RAM estimada",fmtBytes(baseline?.baselineRam),fmtBytes(rift?.candidateRam),fmtBytes(cascade?.candidateRam)],
+  ["Latência Linear",fmtMs(baseline?.linearBaselineMs),fmtMs(rift?.linearCandidateMs),fmtMs(cascade?.linearCandidateMs)],
+  ["Speedup da operação","1.000x",rift?.operationSpeedup==null?"—":`${rift.operationSpeedup.toFixed(3)}x`,cascade?.operationSpeedup==null?"—":`${cascade.operationSpeedup.toFixed(3)}x`],
+  ["Output cosine","1.000000",fmtMetric(ro?.cosine),fmtMetric(co?.cosine)],
+  ["Output NRMSE","0.000000",fmtMetric(ro?.nrmse),fmtMetric(co?.nrmse)],
+  ["Quality gate","—",rift?.quality?.full_local_gate_pass===true?"PASS":rift?.quality?.full_local_gate_pass===false?"FAIL":"—",cascade?.quality?.full_local_gate_pass===true?"PASS":cascade?.quality?.full_local_gate_pass===false?"FAIL":"—"],
+  ["F1 / refinamento ativado","—","Sempre (BASE+REF)",stageRate==null?"—":`${(stageRate*100).toFixed(1)}%`]
+];$("compareBody").innerHTML=rows.map(row=>`<tr>${row.map((cell,i)=>`<${i?"td":"td"} class="${i?"num":""}">${esc(cell)}</td>`).join("")}</tr>`).join("")}
 
-async function loadFiles(files){
-  for(const file of files){
-    const txt=await file.text();
-    try{
-      if(file.name.toLowerCase().endsWith(".csv")){
-        parseCsv(txt).forEach(r=>state.records.push(normalizeCsvRow(r)));
-      }else{
-        const j=JSON.parse(txt),arr=Array.isArray(j)?j:[j];
-        arr.forEach(o=>{
-          if(o.storage&&o.performance&&o.model_id)state.records.push(normalizeCurrentReport(o));
-          else state.records.push(normalizePreferred(o,file.name));
-        });
-      }
-    }catch(e){alert(`Falha ao ler ${file.name}: ${e.message}`)}
-  }
-  dedupe(); render();
-}
+function renderTable(rows){const body=$("historyBody");if(!rows.length){body.innerHTML='<tr><td colspan="13" class="empty">Sem dados.</td></tr>';return}body.innerHTML=rows.slice().reverse().map(r=>{const tg=pctGainHigherBetter(r.baselineTok,r.candidateTok),rg=pctReduction(r.baselineRam,r.candidateRam),dg=pctReduction(r.baselineDisk,r.candidateDisk);return `<tr><td title="UTC: ${esc(r.timestamp)}">${esc(fmtDate(r.timestamp))}</td><td>${esc(r.model)}</td><td>${r.technology}</td><td>${esc(r.battery)}</td><td class="num">${fmtTok(r.baselineTok)}</td><td class="num">${fmtTok(r.candidateTok)}</td><td class="num ${gainClass(tg)}">${fmtPct(tg)}</td><td class="num">${fmtBytes(r.baselineRam)}</td><td class="num">${fmtBytes(r.candidateRam)}</td><td class="num ${gainClass(rg)}">${fmtPct(rg)}</td><td class="num">${fmtBytes(r.baselineDisk)}</td><td class="num">${fmtBytes(r.candidateDisk)}</td><td class="num ${gainClass(dg)}">${fmtPct(dg)}</td></tr>`}).join("")}
+function render(){const models=[...new Set(state.records.map(r=>r.model))].sort(),batteries=[...new Set(state.records.map(r=>r.battery))].sort(),mf=$("modelFilter"),bf=$("batteryFilter"),oldM=mf.value,oldB=bf.value;mf.innerHTML='<option value="">Todos os modelos</option>'+models.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");bf.innerHTML='<option value="">Todas as baterias</option>'+batteries.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");if(models.includes(oldM))mf.value=oldM;if(batteries.includes(oldB))bf.value=oldB;const tf=$("technologyFilter"),rows=state.records.filter(r=>(!mf.value||r.model===mf.value)&&(!tf.value||r.technology===tf.value)&&(!bf.value||r.battery===bf.value));renderSummary(rows);$("batteries").innerHTML=rows.length?rows.slice().reverse().map(renderBattery).join(""):'<div class="card empty">Nenhuma bateria corresponde aos filtros.</div>';renderTable(rows);renderCompare()}
 
-function dedupe(){
-  const m=new Map();
-  state.records.forEach(r=>m.set([r.timestamp,r.model,r.battery,r.source].join("|"),r));
-  state.records=[...m.values()].sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
-}
+function normalizeModelInput(value){const raw=String(value||"").trim();try{const url=new URL(raw);if(!["huggingface.co","www.huggingface.co"].includes(url.hostname.toLowerCase()))throw new Error();const parts=url.pathname.split("/").filter(Boolean);if(parts.length<2)throw new Error();return `${parts[0]}/${parts[1]}`}catch{if(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(raw))return raw;return null}}
+function shellQuote(value){return `"${String(value).replace(/["\\$`]/g,"\\$&")}"`}
+function updateCommand(){const model=normalizeModelInput($("modelInput").value),tech=$("technologyInput").value,target=$("targetLayerInput").value.trim()||"auto",trust=$("trustRemoteInput").checked?" --trust-remote-code":"";if(!model){$("commandOutput").textContent="# Informe org/modelo ou uma URL válida do Hugging Face.";$("modelValidation").textContent="Formato inválido. Exemplo: microsoft/Phi-3.5-mini-instruct";$("modelValidation").className="note bad";$("openModelBtn").href="https://huggingface.co/models";return}if(!/^(auto|[A-Za-z0-9_.-]+)$/.test(target)){$("commandOutput").textContent="# Informe 'auto' ou um nome de tensor válido.";$("modelValidation").textContent="Camada inválida; use apenas letras, números, ponto, hífen e sublinhado.";$("modelValidation").className="note bad";return}const commands=[];if(tech==="rift"||tech==="both"){commands.push(`!wget -q -O /content/rift_test.py ${scriptUrls.rift}`,`!python /content/rift_test.py --mode phase1 --model ${shellQuote(model)} --target-layer ${shellQuote(target)} --device cuda --publish required${trust}`)}if(tech==="cascade"||tech==="both"){commands.push(`!wget -q -O /content/cascade_test.py ${scriptUrls.cascade}`,`!python /content/cascade_test.py --model ${shellQuote(model)} --target-layer ${shellQuote(target)} --device cuda --publish required${trust}`)}$("commandOutput").textContent=commands.join("\n");$("modelValidation").textContent=`Modelo normalizado: ${model}. Modelos gated podem exigir HF_TOKEN nos Secrets do Colab.`;$("modelValidation").className="note good";$("openModelBtn").href=`https://huggingface.co/${model}`}
 
-function metricChart(title,unit,base,rift,higherBetter=true,note=""){
-  if(base==null&&rift==null)return `<div class="chart"><div class="chartTitle"><b>${title}</b><span>${unit}</span></div><div class="note">Ainda não medido nesta bateria.</div></div>`;
-  const max=Math.max(base||0,rift||0,1), bw=base==null?0:(base/max*100), rw=rift==null?0:(rift/max*100);
-  const g=higherBetter?pctGainHigherBetter(base,rift):pctReduction(base,rift);
-  const formatter=unit==="bytes"?fmtBytes:(v=>v==null?"—":unit==="tok/s"?`${v.toFixed(2)} tok/s`:`${v.toFixed(2)} ${unit}`);
-  return `<div class="chart">
-    <div class="chartTitle"><b>${title}</b><span class="${gainClass(g)}">${fmtPct(g)}</span></div>
-    <div class="barRow"><span>Antes</span><div class="track"><div class="fill base" style="width:${bw}%"></div></div><span class="value">${formatter(base)}</span></div>
-    <div class="barRow"><span>RIFT</span><div class="track"><div class="fill rift" style="width:${rw}%"></div></div><span class="value">${formatter(rift)}</span></div>
-    ${note?`<div class="note">${note}</div>`:""}
-  </div>`;
-}
-
-function overallGain(r){
-  const vals=[];
-  const tg=pctGainHigherBetter(r.baselineTok,r.riftTok); if(tg!=null)vals.push(tg);
-  const rg=pctReduction(r.baselineRam,r.riftRam); if(rg!=null)vals.push(rg);
-  const dg=pctReduction(r.baselineDisk,r.riftDisk); if(dg!=null)vals.push(dg);
-  return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
-}
-
-function gainSummaryChart(r){
-  const items=[
-    ["Velocidade",pctGainHigherBetter(r.baselineTok,r.riftTok)],
-    ["RAM",pctReduction(r.baselineRam,r.riftRam)],
-    ["Disco",pctReduction(r.baselineDisk,r.riftDisk)]
-  ].filter(x=>x[1]!=null);
-  if(!items.length)return `<div class="chart"><div class="chartTitle"><b>Ganhos</b><span>—</span></div><div class="note">Ainda não há métricas comparáveis nesta bateria.</div></div>`;
-  const max=Math.max(...items.map(x=>Math.abs(x[1])),1);
-  return `<div class="chart"><div class="chartTitle"><b>Ganhos medidos</b><span>${fmtPct(overallGain(r))}</span></div>`+
-    items.map(([label,v])=>`<div class="barRow"><span>${label}</span><div class="track"><div class="fill ${v>=0?"rift":"base"}" style="width:${Math.min(100,Math.abs(v)/max*100)}%"></div></div><span class="value ${gainClass(v)}">${fmtPct(v)}</span></div>`).join("")+
-    `<div class="note">Valores negativos são regressões e permanecem visíveis.</div></div>`;
-}
-
-function renderSummary(records){
-  const r=records.at(-1);
-  if(!r){["mTok","mRam","mDisk","mOverall"].forEach(id=>$(id).textContent="—");return}
-  const tg=pctGainHigherBetter(r.baselineTok,r.riftTok), rg=pctReduction(r.baselineRam,r.riftRam), dg=pctReduction(r.baselineDisk,r.riftDisk), og=overallGain(r);
-  $("mTok").textContent=fmtTok(r.riftTok); $("mTokBase").textContent=`Baseline: ${fmtTok(r.baselineTok)}`; $("mTokGain").textContent=fmtPct(tg); $("mTokGain").className=`gain ${gainClass(tg)}`;
-  $("mRam").textContent=fmtBytes(r.riftRam); $("mRamBase").textContent=`Baseline: ${fmtBytes(r.baselineRam)}`; $("mRamGain").textContent=rg==null?"—":`${fmtPct(rg)} RAM`; $("mRamGain").className=`gain ${gainClass(rg)}`;
-  $("mDisk").textContent=fmtBytes(r.riftDisk); $("mDiskBase").textContent=`Baseline: ${fmtBytes(r.baselineDisk)}`; $("mDiskGain").textContent=dg==null?"—":`${fmtPct(dg)} espaço`; $("mDiskGain").className=`gain ${gainClass(dg)}`;
-  $("mOverall").textContent=og==null?"dados parciais":fmtPct(og); $("mOverallHint").textContent=r.status||"—"; $("mOverallHint").className=`gain ${og==null?"warn":gainClass(og)}`;
-}
-
-function render(){
-  const models=[...new Set(state.records.map(r=>r.model))], batteries=[...new Set(state.records.map(r=>r.battery))];
-  const mf=$("modelFilter"), bf=$("batteryFilter"), oldM=mf.value, oldB=bf.value;
-  mf.innerHTML='<option value="">Todos os modelos</option>'+models.map(x=>`<option>${esc(x)}</option>`).join("");
-  bf.innerHTML='<option value="">Todas as baterias</option>'+batteries.map(x=>`<option>${esc(x)}</option>`).join("");
-  if(models.includes(oldM))mf.value=oldM;if(batteries.includes(oldB))bf.value=oldB;
-  const rows=state.records.filter(r=>(!mf.value||r.model===mf.value)&&(!bf.value||r.battery===bf.value));
-  renderSummary(rows);
-  const root=$("batteries");
-  if(!rows.length){root.innerHTML='<div class="card empty">Nenhuma bateria corresponde aos filtros.</div>'}
-  else root.innerHTML=rows.slice().reverse().map(renderBattery).join("");
-  renderTable(rows);
-}
-
-function renderBattery(r){
-  let throughputNote="";
-  if(r.baselineTok==null&&r.linearBaselineMs!=null) throughputNote=`Este teste mede latência de uma operação Linear (${r.linearBaselineMs.toFixed(4)} ms → ${r.linearRiftMs?.toFixed(4)??"—"} ms). Não é correto chamar isso de Tok/s.`;
-  const q=r.quality||{}, wf=q.weight_full||{}, of=q.output_full||{};
-  return `<section class="card battery">
-    <div class="batteryHead">
-      <div><div class="batteryTitle">${esc(r.model)}</div><div class="sub">${esc(r.battery)} • ${esc(r.timestamp||"")}</div></div>
-      <div class="badges"><span class="badge">${esc(r.status||"")}</span><span class="badge">${esc(r.source||"")}</span></div>
-    </div>
-    <div class="charts">
-      ${metricChart("Throughput","tok/s",r.baselineTok,r.riftTok,true,throughputNote)}
-      ${metricChart("RAM necessária","bytes",r.baselineRam,r.riftRam,false)}
-      ${metricChart("Espaço em disco","bytes",r.baselineDisk,r.riftDisk,false)}
-      ${gainSummaryChart(r)}
-    </div>
-    <div class="quality">
-      <div class="qitem"><span class="sub">Weight cosine</span><b>${(q.weight_full?.cosine??q.weight?.cosine)==null?"—":Number(q.weight_full?.cosine??q.weight?.cosine).toFixed(6)}</b></div>
-      <div class="qitem"><span class="sub">Output cosine</span><b>${(q.output_full?.cosine??q.output?.cosine)==null?"—":Number(q.output_full?.cosine??q.output?.cosine).toFixed(6)}</b></div>
-      <div class="qitem"><span class="sub">Quality gate</span><b>${q.full_local_gate_pass===true?"PASS":q.full_local_gate_pass===false?"FAIL":"—"}</b></div>
-    </div>
-    ${(r.measurementScope||r.notes)?`<div class="note" style="margin-top:12px">${esc(r.measurementScope)}${r.notes?`<br>${esc(r.notes)}`:""}</div>`:""}
-  </section>`;
-}
-
-function renderTable(rows){
-  const b=$("historyBody"); if(!rows.length){b.innerHTML='<tr><td colspan="12" class="empty">Sem dados.</td></tr>';return}
-  b.innerHTML=rows.slice().reverse().map(r=>{
-    const tg=pctGainHigherBetter(r.baselineTok,r.riftTok), rg=pctReduction(r.baselineRam,r.riftRam), dg=pctReduction(r.baselineDisk,r.riftDisk);
-    return `<tr><td>${esc(r.timestamp||"")}</td><td>${esc(r.model)}</td><td>${esc(r.battery)}</td>
-    <td class="num">${fmtTok(r.baselineTok)}</td><td class="num">${fmtTok(r.riftTok)}</td><td class="num ${gainClass(tg)}">${fmtPct(tg)}</td>
-    <td class="num">${fmtBytes(r.baselineRam)}</td><td class="num">${fmtBytes(r.riftRam)}</td><td class="num ${gainClass(rg)}">${fmtPct(rg)}</td>
-    <td class="num">${fmtBytes(r.baselineDisk)}</td><td class="num">${fmtBytes(r.riftDisk)}</td><td class="num ${gainClass(dg)}">${fmtPct(dg)}</td></tr>`;
-  }).join("");
-}
-
-function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
-
-$("files").addEventListener("change",e=>loadFiles([...e.target.files]));
-$("reloadBtn").addEventListener("click",()=>{state.records=[];loadPublishedData()});
-$("clearBtn").addEventListener("click",()=>{state.records=[];render();$("dataStatus").textContent="Dados removidos da visualização.";$("dataStatus").className="sub";});
-$("modelFilter").addEventListener("change",render);
-$("batteryFilter").addEventListener("change",render);
-$("demoBtn").addEventListener("click",()=>{
-  state.records=[
-    {timestamp:"exemplo",model:"Modelo demo",battery:"Bateria A",status:"EXEMPLO",baselineTok:2.4,riftTok:4.1,baselineRam:8*1024**3,riftRam:5.2*1024**3,baselineDisk:12*1024**3,riftDisk:4.2*1024**3,quality:{full_local_gate_pass:true,weight_full:{cosine:.997},output_full:{cosine:.995}},source:"dados ilustrativos"},
-    {timestamp:"exemplo 2",model:"Modelo demo",battery:"Bateria B",status:"EXEMPLO",baselineTok:2.5,riftTok:5.0,baselineRam:8*1024**3,riftRam:4.8*1024**3,baselineDisk:12*1024**3,riftDisk:3.9*1024**3,quality:{full_local_gate_pass:true,weight_full:{cosine:.996},output_full:{cosine:.994}},source:"dados ilustrativos"}
-  ];render()
-});
-loadPublishedData();
+$("files").addEventListener("change",e=>loadFiles([...e.target.files]));$("reloadBtn").addEventListener("click",()=>{state.records=[];loadPublishedData()});$("clearBtn").addEventListener("click",()=>{state.records=[];render();$("dataStatus").textContent="Dados removidos da visualização.";$("dataStatus").className="sub"});["modelFilter","technologyFilter","batteryFilter"].forEach(id=>$(id).addEventListener("change",render));$("compareModel").addEventListener("change",renderCompare);
+$("modelPreset").addEventListener("change",e=>{if(e.target.value!=="custom")$("modelInput").value=e.target.value;else $("modelInput").focus();updateCommand()});["modelInput","technologyInput","targetLayerInput","trustRemoteInput"].forEach(id=>$(id).addEventListener("input",updateCommand));
+$("copyCommandBtn").addEventListener("click",async()=>{try{await navigator.clipboard.writeText($("commandOutput").textContent);const old=$("copyCommandBtn").textContent;$("copyCommandBtn").textContent="Copiado!";setTimeout(()=>$("copyCommandBtn").textContent=old,1500)}catch{alert("Não foi possível copiar automaticamente; selecione o texto da célula.")}});
+$("demoBtn").addEventListener("click",()=>{state.records=[normalizePreferred({timestamp_utc:"2026-08-09T14:56:43Z",run_id:"demo-rift",technology:"RIFT",model_id:"Qwen/Qwen2.5-1.5B-Instruct",battery_id:"P1_Q4_LINEAR_BASE_PLUS_REF_4BIT",status:"EXPERIMENTAL_FAIL",comparison_role:"primary",baseline_ram_bytes:13000000,candidate_ram_bytes:14000000,baseline_disk_bytes:12000000,candidate_disk_bytes:1500000,quality:{full_local_gate_pass:false,output:{cosine:.9803,nrmse:.0068}},metrics:{operation:{baseline_median_ms:.07,candidate_median_ms:3.3,speedup_x:.021}}},"demo"),normalizePreferred({timestamp_utc:"2026-08-09T15:02:00Z",run_id:"demo-cascade",technology:"CASCADE",model_id:"Qwen/Qwen2.5-1.5B-Instruct",battery_id:"P1_CASCADE_GATED_F0_PLUS_F1",status:"EXPERIMENTAL_FAIL",comparison_role:"primary",baseline_ram_bytes:13000000,candidate_ram_bytes:3400000,baseline_disk_bytes:12000000,candidate_disk_bytes:3100000,quality:{full_local_gate_pass:false,output:{cosine:.972,nrmse:.011}},metrics:{operation:{baseline_median_ms:.07,candidate_median_ms:.18,speedup_x:.389},cascade:{stage_activation_rate:.5}}},"demo")];render()});
+updateCommand();loadPublishedData();
 </script>
 </body>
 </html>

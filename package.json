@@ -1,9 +1,10 @@
 {
-  "name": "rift-lm-test-observatory",
-  "version": "0.1.0",
+  "name": "rift-cascade-test-observatory",
+  "version": "0.2.0",
   "private": true,
-  "description": "RIFT-LM benchmark dashboard for Vercel",
+  "description": "RIFT-LM and CASCADE benchmark dashboard for Vercel",
   "scripts": {
-    "dev": "python3 -m http.server 3000"
+    "dev": "node scripts/dev_server.mjs",
+    "test": "node scripts/dashboard_smoke.mjs"
   }
 }

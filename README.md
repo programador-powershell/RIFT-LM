@@ -1,116 +1,118 @@
-# RIFT-LM Test Observatory — Vercel
+# RIFT-LM & CASCADE Test Observatory
 
-Dashboard estático para acompanhar baterias de benchmark RIFT-LM.
+Dashboard estático para executar, publicar e comparar baterias de referência das tecnologias RIFT-LM v0.3.5 e CASCADE v0.3.
 
-## Estrutura
+## O que o dashboard faz
+
+- carrega automaticamente `data/rift_test_batteries.json`;
+- exibe datas em `America/Sao_Paulo` (GMT−3), preservando UTC no dado original;
+- aceita históricos JSON e CSV locais;
+- gera uma célula pronta para testar qualquer model ID ou URL do Hugging Face no Google Colab;
+- seleciona automaticamente uma camada `torch.nn.Linear` compatível entre famílias;
+- compara as baterias principais de RIFT e CASCADE para o mesmo modelo;
+- mantém métricas de operação Linear separadas de Tok/s do modelo.
+
+## Executar localmente
+
+```bash
+npm test
+npm run dev
+```
+
+Abra `http://localhost:3000`.
+
+Se o PowerShell bloquear `npm.ps1`, use os executáveis `.cmd` sem alterar a política global:
+
+```powershell
+npm.cmd test
+npm.cmd run dev
+```
+
+## Deploy automático na Vercel
+
+Conecte este repositório a um projeto Vercel. Cada atualização da branch `main`, inclusive commits de dados feitos pela Function, dispara um novo deploy.
+
+Configure as variáveis abaixo em **Vercel → Project Settings → Environment Variables**:
+
+```dotenv
+RIFT_GITHUB_TOKEN=github_pat_SEU_FINE_GRAINED_PAT
+RIFT_GITHUB_REPOSITORY=programador-powershell/RIFT-LM
+RIFT_GITHUB_BRANCH=main
+RIFT_GITHUB_DATA_PATH=data/rift_test_batteries.json
+RIFT_INGEST_TOKEN=UMA_CHAVE_ALEATORIA_COM_PELO_MENOS_32_CARACTERES
+```
+
+O PAT deve ficar somente na Vercel e ter `Contents: Read and write` apenas neste repositório. Nunca coloque o PAT no Colab ou em um arquivo versionado.
+
+## Secrets do Google Colab
+
+Cadastre e autorize:
+
+- `RIFT_RESULTS_ENDPOINT`: `https://SEU-DOMINIO.vercel.app/api/results`;
+- `RIFT_INGEST_TOKEN`: o mesmo segredo de ingestão configurado na Vercel;
+- `HF_TOKEN`: opcional para limites maiores ou modelos gated.
+
+## Testar um modelo
+
+O campo do dashboard aceita tanto `org/modelo` quanto uma URL, por exemplo:
 
 ```text
-rift-dashboard-vercel/
-├── index.html
-├── vercel.json
-├── .vercelignore
-├── data/
-│   ├── rift_test_batteries.json
-│   └── record-schema-example.json
-└── scripts/
-    └── publish_batteries.py
+microsoft/Phi-3.5-mini-instruct
+https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct
 ```
 
-## Deploy com Vercel CLI
-
-Na raiz deste projeto:
-
-```bash
-npm i -g vercel
-vercel
-```
-
-Para produção:
-
-```bash
-vercel --prod
-```
-
-A CLI pode solicitar login e associação/criação do projeto na primeira execução.
-
-## Deploy pelo Dashboard/Drop
-
-Também é possível enviar esta pasta como projeto estático para a Vercel.
-
-## Atualizar os testes publicados
-
-O dashboard carrega automaticamente:
-
-```text
-/data/rift_test_batteries.json
-```
-
-Copie o histórico produzido pelo script de testes RIFT:
-
-```bash
-python scripts/publish_batteries.py /caminho/para/rift_test_batteries.json
-```
-
-Depois faça novo deploy/commit.
-
-## Publicação automática pelo Google Colab
-
-O script `rift_m0_phase1_test_v035_auto_batteries.py` pode mesclar os resultados
-no arquivo `data/rift_test_batteries.json` por meio da Function `/api/results`.
-O PAT do GitHub fica somente no Vercel; o Colab recebe apenas uma chave de
-ingestão independente. O commit de dados dispara automaticamente um novo deploy.
-
-1. Crie um Fine-grained Personal Access Token no GitHub limitado a este
-   repositório, com permissão **Contents: Read and write**.
-2. Abra o `.env` local, substitua `RIFT_GITHUB_TOKEN` pelo PAT e importe o
-   arquivo em **Vercel > Project Settings > Environment Variables** para
-   Production, Preview e Development. O `.env` é ignorado pelo Git.
-3. Faça um novo deploy para aplicar as variáveis.
-4. No painel **Secrets** do Colab, cadastre:
-   - `RIFT_RESULTS_ENDPOINT`: `https://SEU-DOMINIO.vercel.app/api/results`;
-   - `RIFT_INGEST_TOKEN`: exatamente o mesmo valor presente no `.env` importado.
-5. Autorize o notebook a acessar esses dois secrets e execute:
+### RIFT
 
 ```bash
 python rift_m0_phase1_test_v035_auto_batteries.py \
   --mode phase1 \
+  --model microsoft/Phi-3.5-mini-instruct \
+  --target-layer auto \
   --device cuda \
   --publish required
 ```
 
-Também é possível informar o endpoint sem salvá-lo como secret:
+### CASCADE
 
 ```bash
-python rift_m0_phase1_test_v035_auto_batteries.py \
-  --mode phase1 \
+python cascade_m0_phase1_test_v030_auto_batteries.py \
+  --model microsoft/Phi-3.5-mini-instruct \
+  --target-layer auto \
   --device cuda \
-  --publish required \
-  --results-endpoint https://SEU-DOMINIO.vercel.app/api/results
+  --publish required
 ```
 
-O PAT do GitHub nunca deve ser colocado no Colab, passado como argumento ou
-gravado no notebook. O modo `auto` é o padrão e, dentro do Colab, falha
-explicitamente quando endpoint ou chave não estão configurados. Use
-`--publish off` somente para execuções locais.
+Use `--trust-remote-code` somente quando o modelo realmente exigir e você confiar no código do repositório.
 
-## Métricas
+## Contrato das métricas
 
-O dashboard aceita, por bateria:
+Registros novos declaram:
 
-- `baseline_tok_s` / `rift_tok_s`
-- `baseline_ram_bytes` / `rift_ram_bytes`
-- `baseline_disk_bytes` / `rift_disk_bytes`
-- `quality`
-- `gains`
-- `metrics.operation`
+- `technology`: `RIFT` ou `CASCADE`;
+- `candidate_tok_s`, `candidate_ram_bytes` e `candidate_disk_bytes`;
+- `comparison_role: primary` na bateria indicada ao comparador;
+- `quality`, `metrics`, `measurement_scope` e `notes`.
 
-Quando Tok/s real de modelo não foi medido, mantenha os campos como `null`.
-Não substitua Tok/s por throughput de uma única operação Linear.
+O dashboard continua compatível com registros RIFT anteriores que usam `rift_*`.
 
-## Dados persistentes
+## Limites atuais
 
-Esta versão publica os resultados como arquivo estático versionado junto com o deploy.
-Isso é deliberado para a Fase 1: cada deploy preserva exatamente o conjunto de
-resultados usado naquele build. A API de ingestão não grava no filesystem efêmero
-da Function: ela atualiza o arquivo no GitHub, preservando o histórico e acionando
-o redeploy da branch de produção.
+O teste RIFT usa o codec experimental `Q4_LINEAR_TEST`; ele não é MXFP4. O teste CASCADE usa decomposição low-rank, Gate heurístico e simulação lag-one do prefetch. Nenhum dos scripts contém o kernel low-bit/fused nativo de produção.
+
+Por isso:
+
+- latência de uma única operação Linear não deve ser chamada de Tok/s;
+- o prefetch CASCADE não representa I/O assíncrono real;
+- speedups nativos de inferência não devem ser reivindicados a partir dessas baterias de referência;
+- comparações de latência exigem o mesmo hardware, camada e forma de ativação.
+
+## Arquivos principais
+
+```text
+index.html
+api/results.mjs
+rift_m0_phase1_test_v035_auto_batteries.py
+cascade_m0_phase1_test_v030_auto_batteries.py
+data/rift_test_batteries.json
+data/record-schema-example.json
+```
