@@ -7,6 +7,7 @@
  * F0 stores ternary codes at 2 bits/weight (4 codes per byte) to cut GEMV
  * bandwidth ~4× vs int8-per-weight without changing residual rank or layer count.
  */
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 

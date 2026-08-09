@@ -203,44 +203,54 @@ def resolve_torch_device(requested: str):
     return torch.device("cpu")
 
 
-def cleanup_colab_workspace(*, label: str = "battery") -> None:
-    """Libera disco no Colab após publicar resultados, para o próximo modelo."""
+
+def cleanup_colab_workspace(*, label: str = "battery", wipe_hf_cache: bool = False) -> None:
+    """Libera artefatos temporários no Colab.
+
+    Por padrão NÃO apaga o cache Hugging Face entre tecnologias da mesma célula
+    serial (evita re-download de dezenas de GB). Wipe completo do hub só com
+    wipe_hf_cache=True (final da fila / célula).
+    """
     import gc
     import shutil
+    import glob as _glob
 
     gc.collect()
     try:
         import torch
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
+            try:
+                torch.cuda.ipc_collect()
+            except Exception:
+                pass
     except Exception:
         pass
 
     removed = []
-    home = Path.home()
-    targets = [
-        home / ".cache" / "huggingface" / "hub",
-        home / ".cache" / "huggingface" / "transformers",
-        home / ".cache" / "huggingface" / "modules",
-        home / ".cache" / "torch",
-        Path("/content") / ".cache",
-        Path("/root") / ".cache" / "huggingface" / "hub",
-        Path("/root") / ".cache" / "huggingface" / "transformers",
-    ]
-    for path in targets:
-        try:
-            if path.is_dir():
-                size = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
-                shutil.rmtree(path, ignore_errors=True)
-                removed.append(f"{path} (~{size / (1024**3):.2f} GiB)")
-            elif path.is_file():
-                path.unlink(missing_ok=True)
-                removed.append(str(path))
-        except Exception as exc:
-            print(f"[cleanup] AVISO ao remover {path}: {exc}")
+    if wipe_hf_cache:
+        home = Path.home()
+        targets = [
+            home / ".cache" / "huggingface" / "hub",
+            home / ".cache" / "huggingface" / "transformers",
+            home / ".cache" / "huggingface" / "modules",
+            home / ".cache" / "torch",
+            Path("/content") / ".cache",
+            Path("/root") / ".cache" / "huggingface" / "hub",
+            Path("/root") / ".cache" / "huggingface" / "transformers",
+        ]
+        for path in targets:
+            try:
+                if path.is_dir():
+                    size = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+                    shutil.rmtree(path, ignore_errors=True)
+                    removed.append(f"{path} (~{size / (1024**3):.2f} GiB)")
+                elif path.is_file():
+                    path.unlink(missing_ok=True)
+                    removed.append(str(path))
+            except Exception as exc:
+                print(f"[cleanup] AVISO ao remover {path}: {exc}")
 
-    # Artefatos temporários conhecidos no /tmp e /content
     patterns = [
         "/tmp/winner_cpp_*",
         "/tmp/winner_phase1_*",
@@ -250,7 +260,6 @@ def cleanup_colab_workspace(*, label: str = "battery") -> None:
         "/content/*_launcher.py",
         "/content/rift_serial_queue",
     ]
-    import glob as _glob
     for pattern in patterns:
         for match in _glob.glob(pattern):
             p = Path(match)
@@ -270,7 +279,7 @@ def cleanup_colab_workspace(*, label: str = "battery") -> None:
         if len(removed) > 12:
             print(f"  - … +{len(removed) - 12} outros")
     else:
-        print(f"[cleanup] {label}: nada relevante para limpar")
+        print(f"[cleanup] {label}: nada temporário para limpar (cache HF preservado)")
     gc.collect()
 
 

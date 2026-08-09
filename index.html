@@ -535,7 +535,7 @@ function updateCommand(){
   ];
   const cleanupLines=[
     "",
-    "# Limpeza final do Colab (cache HF + tmp) para liberar espaço antes do próximo modelo.",
+    "# Limpeza FINAL do Colab (após TODAS as tecnologias) — libera HF hub + tmp.",
     "import gc, shutil, glob, os",
     "from pathlib import Path",
     "gc.collect()",
@@ -548,13 +548,13 @@ function updateCommand(){
     "for p in [Path.home()/'.cache'/'huggingface'/'hub', Path.home()/'.cache'/'huggingface'/'transformers', Path('/root')/'.cache'/'huggingface'/'hub', Path('/content')/'.cache']:",
     "    if p.is_dir():",
     "        shutil.rmtree(p, ignore_errors=True)",
-    "        print('[cleanup] removido', p)",
-    "for pat in ['/tmp/winner_cpp_*', '/tmp/winner_phase1_*', '/tmp/phase1_load_fail*', '/content/*_launcher.py']:",
+    "        print('[cleanup-final] removido', p)",
+    "for pat in ['/tmp/winner_cpp_*', '/tmp/winner_phase1_*', '/tmp/phase1_load_fail*', '/content/*_launcher.py', '/content/rift_serial_queue']:",
     "    for m in glob.glob(pat):",
     "        p = Path(m)",
     "        shutil.rmtree(p, ignore_errors=True) if p.is_dir() else p.unlink(missing_ok=True)",
-    "        print('[cleanup] removido', m)",
-    "print('[cleanup] Colab pronto para outro modelo')",
+    "        print('[cleanup-final] removido', m)",
+    "print('[cleanup-final] Colab pronto para outro modelo')",
   ];
   $("commandOutput").textContent=[...colabSecretBootstrapLines(),"",...tokenizerDeps,"",...commands,...cleanupLines].join("\n");$("modelValidation").textContent=`Modelo normalizado: ${model}. A célula lê RIFT_INGEST_TOKEN no kernel e o transfere aos launchers sem exibir o valor. sentencepiece/tiktoken são instalados automaticamente.`;$("modelValidation").className="note good";
 }
