@@ -2739,5 +2739,100 @@
       }
     },
     "notes": "HQR ANS 0.85-bit não implementado; o dashboard usa somente bytes físicos medidos."
+  },
+  {
+    "timestamp_utc": "2026-08-09T21:04:46Z",
+    "run_id": "20260809T210443Z-0e28c66a",
+    "spec": "AETHER-LM v1.0 reference",
+    "technology": "AETHER",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_AETHER_HQR_PLUS_TADDS_DYNAMIC",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": "primary",
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 42315776,
+    "candidate_ram_bytes": 42741824,
+    "baseline_disk_bytes": 41943040,
+    "candidate_disk_bytes": 2835168,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": -1.0068301713290095,
+      "disk_reduction_pct": 93.24043273925781,
+      "disk_compression_ratio_x": 14.7938464316753,
+      "overall_gain_pct": 46.1168012839644
+    },
+    "measurement_scope": "Single Linear op; bundle AETH real; TADDS por entropia; latência do path Python/PyTorch; Tok/s não medido.",
+    "quality": {
+      "full_local_gate_pass": false,
+      "weight": {
+        "cosine": 0.8970403075218201,
+        "nrmse": 0.009836087003350258
+      },
+      "output": {
+        "cosine": 0.8612141609191895,
+        "nrmse": 0.013113552704453468
+      },
+      "output_base": {
+        "cosine": 0.8419888615608215,
+        "nrmse": 0.01445861253887415
+      },
+      "output_rank_max": {
+        "cosine": 0.9750725030899048,
+        "nrmse": 0.00552896736189723
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.42364499995528604,
+        "candidate_median_ms": 1.6951325001173245,
+        "speedup_x": 0.24991851665044737,
+        "rows_processed": 14
+      },
+      "aether": {
+        "maximum_rank": 16,
+        "mean_selected_rank": 1.8571429252624512,
+        "stage_activation_rate": 0.2142857313156128,
+        "rank_histogram": {
+          "0": 11,
+          "2": 1,
+          "8": 1,
+          "16": 1
+        },
+        "entropy_mean": 11.32161808013916,
+        "entropy_thresholds": [
+          11.321684837341309,
+          11.32168960571289,
+          11.321701049804688
+        ],
+        "activation_source": "real_model_activation",
+        "hqr_ans_native": false,
+        "pio_async_native": false,
+        "srfa_fused_native": false,
+        "ring_buffer_budget_bytes": 335544320
+      },
+      "bundle": {
+        "file_size": 2835168,
+        "header_checksum": 15670846866147105000,
+        "hqr_packed_bytes": 2621444,
+        "tadds_residual_bytes": 213024,
+        "stages": [
+          {
+            "stage_id": 0,
+            "rank": 0,
+            "offset": 640,
+            "size": 2621444
+          },
+          {
+            "stage_id": 1,
+            "rank": 16,
+            "offset": 2622144,
+            "size": 213024
+          }
+        ]
+      }
+    },
+    "notes": "P-IO e SRFA são simulados. Nenhum ganho nativo de inferência deve ser reivindicado."
   }
 ]
