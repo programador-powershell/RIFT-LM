@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>RIFT-LM Test Observatory</title>
+<meta name="description" content="Dashboard de benchmarks RIFT-LM: baseline vs RIFT em Tok/s, RAM, espaço em disco, qualidade e ganho.">
+<meta name="theme-color" content="#0b0e14">
+<style>
+:root{
+  --bg:#0b0e14;--panel:#121722;--panel2:#171d2a;--text:#eef2f7;--muted:#91a0b4;
+  --border:#263043;--accent:#7c9cff;--good:#48c78e;--bad:#ff6b6b;--warn:#f5b942;
+  --baseline:#70809a;--rift:#7c9cff;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.shell{max-width:1440px;margin:auto;padding:24px}
+header{display:flex;gap:16px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;margin-bottom:20px}
+h1{font-size:24px;margin:0 0 6px}
+.sub{color:var(--muted);font-size:14px}
+.controls{display:flex;gap:10px;flex-wrap:wrap}
+button,.fileBtn,select{border:1px solid var(--border);background:var(--panel2);color:var(--text);border-radius:10px;padding:9px 12px;font-size:14px}
+button,.fileBtn{cursor:pointer}
+.fileBtn input{display:none}
+.grid{display:grid;gap:14px}
+.metrics{grid-template-columns:repeat(4,minmax(180px,1fr));margin-bottom:16px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px}
+.metricLabel{color:var(--muted);font-size:13px;margin-bottom:8px}
+.metricMain{font-size:28px;font-weight:750;letter-spacing:-.02em}
+.metricCompare{display:flex;justify-content:space-between;gap:8px;margin-top:8px;color:var(--muted);font-size:12px}
+.gain{font-weight:700}
+.good{color:var(--good)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+.toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:12px 0 16px}
+.filters{display:flex;gap:8px;flex-wrap:wrap}
+.legend{display:flex;gap:12px;color:var(--muted);font-size:12px}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:5px}.baseline{background:var(--baseline)}.rift{background:var(--rift)}
+.empty{padding:44px 20px;text-align:center;color:var(--muted)}
+.battery{margin-bottom:16px}
+.batteryHead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px}
+.batteryTitle{font-size:18px;font-weight:700}
+.badges{display:flex;gap:7px;flex-wrap:wrap}
+.badge{border:1px solid var(--border);background:var(--panel2);padding:4px 8px;border-radius:999px;font-size:11px;color:var(--muted)}
+.charts{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:12px}
+.chart{background:var(--panel2);border:1px solid var(--border);border-radius:12px;padding:12px}
+.chartTitle{display:flex;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:10px}
+.chartTitle span:last-child{color:var(--muted)}
+.barRow{display:grid;grid-template-columns:58px 1fr 72px;gap:8px;align-items:center;margin:8px 0;font-size:12px}
+.track{height:11px;background:#0c111a;border:1px solid var(--border);border-radius:999px;overflow:hidden}
+.fill{height:100%;border-radius:999px}
+.fill.base{background:var(--baseline)} .fill.rift{background:var(--rift)}
+.value{text-align:right;font-variant-numeric:tabular-nums}
+.note{color:var(--muted);font-size:11px;margin-top:8px;line-height:1.4}
+.quality{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:10px;margin-top:12px}
+.qitem{background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:10px}
+.qitem b{display:block;margin-top:4px}
+.tableWrap{overflow:auto;border:1px solid var(--border);border-radius:12px}
+table{border-collapse:collapse;width:100%;min-width:920px;background:var(--panel)}
+th,td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:left;font-size:12px}
+th{color:var(--muted);background:var(--panel2);position:sticky;top:0}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.sectionTitle{font-size:17px;font-weight:700;margin:24px 0 10px}
+details{margin-top:16px}.help{color:var(--muted);font-size:13px;line-height:1.55}
+code{color:#b7c7ff}
+@media(max-width:1050px){.metrics,.charts{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.shell{padding:14px}.metrics,.charts,.quality{grid-template-columns:1fr}.metricMain{font-size:24px}}
+</style>
+</head>
+<body>
+<div class="shell">
+<header>
+  <div>
+    <h1>RIFT-LM Test Observatory</h1>
+    <div class="sub">Acompanhamento de baterias • baseline vs. RIFT • velocidade, memória, espaço e ganho</div><div class="sub" id="dataStatus" aria-live="polite">Carregando histórico publicado…</div>
+  </div>
+  <div class="controls">
+    <label class="fileBtn">Carregar JSON/CSV<input id="files" type="file" multiple accept=".json,.csv"></label>
+    <button id="demoBtn" type="button">Carregar exemplo</button>
+    <button id="reloadBtn" type="button">Recarregar publicado</button><button id="clearBtn" type="button">Limpar</button>
+  </div>
+</header>
+
+<section class="grid metrics" id="summary">
+  <div class="card"><div class="metricLabel">Tok/s — último teste</div><div class="metricMain" id="mTok">—</div><div class="metricCompare"><span id="mTokBase">Baseline: —</span><span class="gain" id="mTokGain">—</span></div></div>
+  <div class="card"><div class="metricLabel">RAM necessária</div><div class="metricMain" id="mRam">—</div><div class="metricCompare"><span id="mRamBase">Baseline: —</span><span class="gain" id="mRamGain">—</span></div></div>
+  <div class="card"><div class="metricLabel">Espaço em disco</div><div class="metricMain" id="mDisk">—</div><div class="metricCompare"><span id="mDiskBase">Baseline: —</span><span class="gain" id="mDiskGain">—</span></div></div>
+  <div class="card"><div class="metricLabel">Ganho composto</div><div class="metricMain" id="mOverall">—</div><div class="metricCompare"><span>Velocidade + memória + disco</span><span class="gain" id="mOverallHint">—</span></div></div>
+</section>
+
+<div class="toolbar">
+  <div class="filters">
+    <select id="modelFilter"><option value="">Todos os modelos</option></select>
+    <select id="batteryFilter"><option value="">Todas as baterias</option></select>
+  </div>
+  <div class="legend"><span><i class="dot baseline"></i>Baseline</span><span><i class="dot rift"></i>RIFT</span></div>
+</div>
+
+<div id="batteries"><div class="card empty">Carregue os relatórios dos testes para iniciar o acompanhamento.</div></div>
+
+<div class="sectionTitle">Histórico consolidado</div>
+<div class="tableWrap">
+<table>
+<thead><tr>
+  <th>Data</th><th>Modelo</th><th>Bateria</th><th>Tok/s antes</th><th>Tok/s RIFT</th><th>Ganho vel.</th>
+  <th>RAM antes</th><th>RAM RIFT</th><th>Redução RAM</th><th>Disco antes</th><th>Disco RIFT</th><th>Redução disco</th>
+</tr></thead>
+<tbody id="historyBody"><tr><td colspan="12" class="empty">Sem dados.</td></tr></tbody>
+</table>
+</div>
+
+<details>
+<summary>Formato de dados e compatibilidade</summary>
+<div class="help">
+  <p>A página aceita o <code>rift_phase1_gain_report.json</code> e o <code>rift_phase1_gain_history.csv</code> gerados pelo script atual. Quando o teste ainda é apenas de uma operação Linear, a página não chama operações/s de Tok/s: Tok/s fica como “não medido”.</p>
+  <p>Para baterias completas de inferência, use campos como <code>baseline_tok_s</code>, <code>rift_tok_s</code>, <code>baseline_ram_bytes</code>, <code>rift_ram_bytes</code>, <code>baseline_disk_bytes</code> e <code>rift_disk_bytes</code>. O ganho é calculado automaticamente.</p>
+</div>
+</details>
+</div>
+
+<script>
+const state={records:[]};
+const $=id=>document.getElementById(id);
+
+function n(v){const x=Number(v);return Number.isFinite(x)?x:null}
+function pctGainHigherBetter(base,rift){return base&&rift?((rift/base)-1)*100:null}
+function pctReduction(base,rift){return base&&rift?(1-rift/base)*100:null}
+function fmtNum(v,d=2){return v==null?"—":Number(v).toFixed(d)}
+function fmtBytes(v){
+  if(v==null)return "—"; const units=["B","KB","MB","GB","TB"]; let x=Number(v),i=0;
+  while(Math.abs(x)>=1024&&i<units.length-1){x/=1024;i++}
+  return `${x.toFixed(i<2?1:2)} ${units[i]}`
+}
+function fmtTok(v){return v==null?"não medido":`${Number(v).toFixed(2)} tok/s`}
+function fmtPct(v){return v==null?"—":`${v>=0?"+":""}${v.toFixed(1)}%`}
+function gainClass(v){return v==null?"warn":v>0?"good":v<0?"bad":"warn"}
+
+function normalizePreferred(o,source="json"){
+  const op=o.metrics?.operation||{};
+  return {
+    timestamp:o.timestamp_utc||o.timestamp||new Date().toISOString(),
+    model:o.model_id||o.model||"Modelo não informado",
+    battery:o.battery_id||o.battery||o.stage||"Phase 1",
+    status:o.status||((o.quality&&o.quality.full_local_gate_pass)?"PASS":"EXPERIMENTAL"),
+    baselineTok:n(o.baseline_tok_s ?? o.baseline?.tok_s),
+    riftTok:n(o.rift_tok_s ?? o.rift?.tok_s),
+    baselineRam:n(o.baseline_ram_bytes ?? o.baseline?.ram_bytes),
+    riftRam:n(o.rift_ram_bytes ?? o.rift?.ram_bytes),
+    baselineDisk:n(o.baseline_disk_bytes ?? o.baseline?.disk_bytes),
+    riftDisk:n(o.rift_disk_bytes ?? o.rift?.disk_bytes),
+    linearBaselineMs:n(o.baseline_operation_ms ?? op.baseline_median_ms),
+    linearRiftMs:n(o.rift_operation_ms ?? op.rift_median_ms),
+    operationSpeedup:n(o.operation_speedup_x ?? op.speedup_x),
+    quality:o.quality||null,
+    gains:o.gains||null,
+    measurementScope:o.measurement_scope||"",
+    notes:o.notes||"",
+    source,
+    raw:o
+  };
+}
+
+function normalizeCurrentReport(o){
+  const baseDisk=n(o.storage?.source_tensor_bytes ?? o.storage?.baseline_raw_file_bytes);
+  const riftDisk=n(o.storage?.full?.candidate_bytes);
+  return {
+    timestamp:o.timestamp_utc||new Date().toISOString(),
+    model:o.model_id||"Modelo não informado",
+    battery:o.b0?.b0_passed_reference ? "Phase 1 • B0 + codec" : "Phase 1",
+    status:o.quality?.full_local_gate_pass?"PASS":"EXPERIMENTAL",
+    baselineTok:null,
+    riftTok:null,
+    baselineRam:n(o.memory?.baseline_ram_bytes),
+    riftRam:n(o.memory?.rift_ram_bytes),
+    baselineDisk:baseDisk,
+    riftDisk:riftDisk,
+    linearBaselineMs:n(o.performance?.baseline_fp32_matmul?.median_ms),
+    linearRiftMs:n(o.performance?.rift_full_decode_plus_matmul?.median_ms),
+    quality:o.quality||null,
+    source:"rift_phase1_gain_report",
+    raw:o
+  };
+}
+
+function normalizeCsvRow(r){
+  const isNew=("baseline_disk_bytes" in r)||("battery_id" in r&&"measurement_scope" in r);
+  return {
+    timestamp:r.timestamp_utc||"",
+    model:r.model_id||"Modelo não informado",
+    battery:r.battery_id||"Phase 1 history",
+    status:r.status||"EXPERIMENTAL",
+    baselineTok:n(r.baseline_tok_s),
+    riftTok:n(r.rift_tok_s),
+    baselineRam:n(r.baseline_ram_bytes),
+    riftRam:n(r.rift_ram_bytes),
+    baselineDisk:n(isNew?r.baseline_disk_bytes:r.source_tensor_bytes),
+    riftDisk:n(isNew?r.rift_disk_bytes:r.rift_full_payload_bytes),
+    linearBaselineMs:n(isNew?r.baseline_operation_ms:r.baseline_median_ms),
+    linearRiftMs:n(isNew?r.rift_operation_ms:r.rift_full_reference_path_median_ms),
+    operationSpeedup:n(r.operation_speedup_x),
+    quality:{full_local_gate_pass:String(r.quality_gate_pass).toLowerCase()==="true",weight_full:{cosine:n(r.weight_cosine_full),nrmse:n(r.weight_nrmse_full)},output_full:{cosine:n(r.output_cosine_full),nrmse:n(r.output_nrmse_full)}},
+    measurementScope:r.measurement_scope||"",
+    notes:r.notes||"",
+    source:isNew?"rift_test_batteries.csv":"rift_phase1_gain_history",
+    raw:r
+  };
+}
+
+function parseCsv(txt){
+  const lines=txt.trim().split(/\r?\n/); if(lines.length<2)return[];
+  const parseLine=line=>{let a=[],v="",q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c=='"'){if(q&&line[i+1]=='"'){v+='"';i++}else q=!q}else if(c==","&&!q){a.push(v);v=""}else v+=c}a.push(v);return a}
+  const h=parseLine(lines[0]);
+  return lines.slice(1).filter(Boolean).map(line=>{const vals=parseLine(line),o={};h.forEach((k,i)=>o[k]=vals[i]??"");return o});
+}
+
+async function loadPublishedData(){
+  const status=$("dataStatus");
+  try{
+    const res=await fetch("/data/rift_test_batteries.json",{cache:"no-store"});
+    if(!res.ok)throw new Error(`HTTP ${res.status}`);
+    const payload=await res.json();
+    const arr=Array.isArray(payload)?payload:(Array.isArray(payload.records)?payload.records:[payload]);
+    arr.forEach(o=>{
+      if(o.storage&&o.performance&&o.model_id)state.records.push(normalizeCurrentReport(o));
+      else state.records.push(normalizePreferred(o,"published-data"));
+    });
+    dedupe();
+    render();
+    status.textContent=`Histórico publicado carregado • ${arr.length} bateria(s)`;
+    status.className="sub good";
+  }catch(err){
+    status.textContent="Sem histórico publicado disponível • use “Carregar JSON/CSV”";
+    status.className="sub warn";
+    render();
+  }
+}
+
+async function loadFiles(files){
+  for(const file of files){
+    const txt=await file.text();
+    try{
+      if(file.name.toLowerCase().endsWith(".csv")){
+        parseCsv(txt).forEach(r=>state.records.push(normalizeCsvRow(r)));
+      }else{
+        const j=JSON.parse(txt),arr=Array.isArray(j)?j:[j];
+        arr.forEach(o=>{
+          if(o.storage&&o.performance&&o.model_id)state.records.push(normalizeCurrentReport(o));
+          else state.records.push(normalizePreferred(o,file.name));
+        });
+      }
+    }catch(e){alert(`Falha ao ler ${file.name}: ${e.message}`)}
+  }
+  dedupe(); render();
+}
+
+function dedupe(){
+  const m=new Map();
+  state.records.forEach(r=>m.set([r.timestamp,r.model,r.battery,r.source].join("|"),r));
+  state.records=[...m.values()].sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
+}
+
+function metricChart(title,unit,base,rift,higherBetter=true,note=""){
+  if(base==null&&rift==null)return `<div class="chart"><div class="chartTitle"><b>${title}</b><span>${unit}</span></div><div class="note">Ainda não medido nesta bateria.</div></div>`;
+  const max=Math.max(base||0,rift||0,1), bw=base==null?0:(base/max*100), rw=rift==null?0:(rift/max*100);
+  const g=higherBetter?pctGainHigherBetter(base,rift):pctReduction(base,rift);
+  const formatter=unit==="bytes"?fmtBytes:(v=>v==null?"—":unit==="tok/s"?`${v.toFixed(2)} tok/s`:`${v.toFixed(2)} ${unit}`);
+  return `<div class="chart">
+    <div class="chartTitle"><b>${title}</b><span class="${gainClass(g)}">${fmtPct(g)}</span></div>
+    <div class="barRow"><span>Antes</span><div class="track"><div class="fill base" style="width:${bw}%"></div></div><span class="value">${formatter(base)}</span></div>
+    <div class="barRow"><span>RIFT</span><div class="track"><div class="fill rift" style="width:${rw}%"></div></div><span class="value">${formatter(rift)}</span></div>
+    ${note?`<div class="note">${note}</div>`:""}
+  </div>`;
+}
+
+function overallGain(r){
+  const vals=[];
+  const tg=pctGainHigherBetter(r.baselineTok,r.riftTok); if(tg!=null)vals.push(tg);
+  const rg=pctReduction(r.baselineRam,r.riftRam); if(rg!=null)vals.push(rg);
+  const dg=pctReduction(r.baselineDisk,r.riftDisk); if(dg!=null)vals.push(dg);
+  return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
+}
+
+function gainSummaryChart(r){
+  const items=[
+    ["Velocidade",pctGainHigherBetter(r.baselineTok,r.riftTok)],
+    ["RAM",pctReduction(r.baselineRam,r.riftRam)],
+    ["Disco",pctReduction(r.baselineDisk,r.riftDisk)]
+  ].filter(x=>x[1]!=null);
+  if(!items.length)return `<div class="chart"><div class="chartTitle"><b>Ganhos</b><span>—</span></div><div class="note">Ainda não há métricas comparáveis nesta bateria.</div></div>`;
+  const max=Math.max(...items.map(x=>Math.abs(x[1])),1);
+  return `<div class="chart"><div class="chartTitle"><b>Ganhos medidos</b><span>${fmtPct(overallGain(r))}</span></div>`+
+    items.map(([label,v])=>`<div class="barRow"><span>${label}</span><div class="track"><div class="fill ${v>=0?"rift":"base"}" style="width:${Math.min(100,Math.abs(v)/max*100)}%"></div></div><span class="value ${gainClass(v)}">${fmtPct(v)}</span></div>`).join("")+
+    `<div class="note">Valores negativos são regressões e permanecem visíveis.</div></div>`;
+}
+
+function renderSummary(records){
+  const r=records.at(-1);
+  if(!r){["mTok","mRam","mDisk","mOverall"].forEach(id=>$(id).textContent="—");return}
+  const tg=pctGainHigherBetter(r.baselineTok,r.riftTok), rg=pctReduction(r.baselineRam,r.riftRam), dg=pctReduction(r.baselineDisk,r.riftDisk), og=overallGain(r);
+  $("mTok").textContent=fmtTok(r.riftTok); $("mTokBase").textContent=`Baseline: ${fmtTok(r.baselineTok)}`; $("mTokGain").textContent=fmtPct(tg); $("mTokGain").className=`gain ${gainClass(tg)}`;
+  $("mRam").textContent=fmtBytes(r.riftRam); $("mRamBase").textContent=`Baseline: ${fmtBytes(r.baselineRam)}`; $("mRamGain").textContent=rg==null?"—":`${fmtPct(rg)} RAM`; $("mRamGain").className=`gain ${gainClass(rg)}`;
+  $("mDisk").textContent=fmtBytes(r.riftDisk); $("mDiskBase").textContent=`Baseline: ${fmtBytes(r.baselineDisk)}`; $("mDiskGain").textContent=dg==null?"—":`${fmtPct(dg)} espaço`; $("mDiskGain").className=`gain ${gainClass(dg)}`;
+  $("mOverall").textContent=og==null?"dados parciais":fmtPct(og); $("mOverallHint").textContent=r.status||"—"; $("mOverallHint").className=`gain ${og==null?"warn":gainClass(og)}`;
+}
+
+function render(){
+  const models=[...new Set(state.records.map(r=>r.model))], batteries=[...new Set(state.records.map(r=>r.battery))];
+  const mf=$("modelFilter"), bf=$("batteryFilter"), oldM=mf.value, oldB=bf.value;
+  mf.innerHTML='<option value="">Todos os modelos</option>'+models.map(x=>`<option>${esc(x)}</option>`).join("");
+  bf.innerHTML='<option value="">Todas as baterias</option>'+batteries.map(x=>`<option>${esc(x)}</option>`).join("");
+  if(models.includes(oldM))mf.value=oldM;if(batteries.includes(oldB))bf.value=oldB;
+  const rows=state.records.filter(r=>(!mf.value||r.model===mf.value)&&(!bf.value||r.battery===bf.value));
+  renderSummary(rows);
+  const root=$("batteries");
+  if(!rows.length){root.innerHTML='<div class="card empty">Nenhuma bateria corresponde aos filtros.</div>'}
+  else root.innerHTML=rows.slice().reverse().map(renderBattery).join("");
+  renderTable(rows);
+}
+
+function renderBattery(r){
+  let throughputNote="";
+  if(r.baselineTok==null&&r.linearBaselineMs!=null) throughputNote=`Este teste mede latência de uma operação Linear (${r.linearBaselineMs.toFixed(4)} ms → ${r.linearRiftMs?.toFixed(4)??"—"} ms). Não é correto chamar isso de Tok/s.`;
+  const q=r.quality||{}, wf=q.weight_full||{}, of=q.output_full||{};
+  return `<section class="card battery">
+    <div class="batteryHead">
+      <div><div class="batteryTitle">${esc(r.model)}</div><div class="sub">${esc(r.battery)} • ${esc(r.timestamp||"")}</div></div>
+      <div class="badges"><span class="badge">${esc(r.status||"")}</span><span class="badge">${esc(r.source||"")}</span></div>
+    </div>
+    <div class="charts">
+      ${metricChart("Throughput","tok/s",r.baselineTok,r.riftTok,true,throughputNote)}
+      ${metricChart("RAM necessária","bytes",r.baselineRam,r.riftRam,false)}
+      ${metricChart("Espaço em disco","bytes",r.baselineDisk,r.riftDisk,false)}
+      ${gainSummaryChart(r)}
+    </div>
+    <div class="quality">
+      <div class="qitem"><span class="sub">Weight cosine</span><b>${(q.weight_full?.cosine??q.weight?.cosine)==null?"—":Number(q.weight_full?.cosine??q.weight?.cosine).toFixed(6)}</b></div>
+      <div class="qitem"><span class="sub">Output cosine</span><b>${(q.output_full?.cosine??q.output?.cosine)==null?"—":Number(q.output_full?.cosine??q.output?.cosine).toFixed(6)}</b></div>
+      <div class="qitem"><span class="sub">Quality gate</span><b>${q.full_local_gate_pass===true?"PASS":q.full_local_gate_pass===false?"FAIL":"—"}</b></div>
+    </div>
+    ${(r.measurementScope||r.notes)?`<div class="note" style="margin-top:12px">${esc(r.measurementScope)}${r.notes?`<br>${esc(r.notes)}`:""}</div>`:""}
+  </section>`;
+}
+
+function renderTable(rows){
+  const b=$("historyBody"); if(!rows.length){b.innerHTML='<tr><td colspan="12" class="empty">Sem dados.</td></tr>';return}
+  b.innerHTML=rows.slice().reverse().map(r=>{
+    const tg=pctGainHigherBetter(r.baselineTok,r.riftTok), rg=pctReduction(r.baselineRam,r.riftRam), dg=pctReduction(r.baselineDisk,r.riftDisk);
+    return `<tr><td>${esc(r.timestamp||"")}</td><td>${esc(r.model)}</td><td>${esc(r.battery)}</td>
+    <td class="num">${fmtTok(r.baselineTok)}</td><td class="num">${fmtTok(r.riftTok)}</td><td class="num ${gainClass(tg)}">${fmtPct(tg)}</td>
+    <td class="num">${fmtBytes(r.baselineRam)}</td><td class="num">${fmtBytes(r.riftRam)}</td><td class="num ${gainClass(rg)}">${fmtPct(rg)}</td>
+    <td class="num">${fmtBytes(r.baselineDisk)}</td><td class="num">${fmtBytes(r.riftDisk)}</td><td class="num ${gainClass(dg)}">${fmtPct(dg)}</td></tr>`;
+  }).join("");
+}
+
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
+
+$("files").addEventListener("change",e=>loadFiles([...e.target.files]));
+$("reloadBtn").addEventListener("click",()=>{state.records=[];loadPublishedData()});
+$("clearBtn").addEventListener("click",()=>{state.records=[];render();$("dataStatus").textContent="Dados removidos da visualização.";$("dataStatus").className="sub";});
+$("modelFilter").addEventListener("change",render);
+$("batteryFilter").addEventListener("change",render);
+$("demoBtn").addEventListener("click",()=>{
+  state.records=[
+    {timestamp:"exemplo",model:"Modelo demo",battery:"Bateria A",status:"EXEMPLO",baselineTok:2.4,riftTok:4.1,baselineRam:8*1024**3,riftRam:5.2*1024**3,baselineDisk:12*1024**3,riftDisk:4.2*1024**3,quality:{full_local_gate_pass:true,weight_full:{cosine:.997},output_full:{cosine:.995}},source:"dados ilustrativos"},
+    {timestamp:"exemplo 2",model:"Modelo demo",battery:"Bateria B",status:"EXEMPLO",baselineTok:2.5,riftTok:5.0,baselineRam:8*1024**3,riftRam:4.8*1024**3,baselineDisk:12*1024**3,riftDisk:3.9*1024**3,quality:{full_local_gate_pass:true,weight_full:{cosine:.996},output_full:{cosine:.994}},source:"dados ilustrativos"}
+  ];render()
+});
+loadPublishedData();
+</script>
+</body>
+</html>
