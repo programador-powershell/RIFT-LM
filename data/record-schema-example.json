@@ -1,0 +1,16 @@
+{
+  "description": "Formato preferencial para uma bateria completa do dashboard RIFT-LM. Valores abaixo são apenas estrutura de exemplo.",
+  "timestamp_utc": "2026-08-09T10:00:00Z",
+  "model_id": "NOME_DO_MODELO",
+  "battery_id": "PHASE_1_K1",
+  "status": "PASS|FAIL|EXPERIMENTAL",
+  "baseline_tok_s": null,
+  "rift_tok_s": null,
+  "baseline_ram_bytes": null,
+  "rift_ram_bytes": null,
+  "baseline_disk_bytes": null,
+  "rift_disk_bytes": null,
+  "quality": {
+    "full_local_gate_pass": null
+  }
+}

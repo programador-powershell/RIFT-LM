@@ -1,0 +1,5418 @@
+RIFT-LM
+Residualized Inference & Tiered Fetching for Large Models
+=========================================================
+
+ESPECIFICAÇÃO TÉCNICA UNIVERSAL
+Versão: 0.3.5
+Status: Pre-Code Contract Freeze
+Data: 2026-08-09
+
+
+0. RESUMO EXECUTIVO
+===================
+
+RIFT-LM é um compilador e runtime universal de inferência para modelos
+open-weight / open-source de linguagem, multimodais, densos, MoE e híbridos.
+
+O objetivo não é criar apenas uma nova quantização, um novo formato de arquivo
+ou uma otimização específica para um modelo.
+
+O objetivo do RIFT-LM é:
+
+    transformar qualquer modelo compatível em uma representação progressiva,
+    específica para o hardware disponível, minimizando memória, movimentação
+    de dados, I/O e computação, sob um contrato formal e mensurável de
+    preservação de qualidade.
+
+O RIFT-LM deve poder receber famílias como:
+
+    - Kimi
+    - Qwen
+    - Gemma
+    - Llama
+    - DeepSeek
+    - Mistral
+    - modelos densos
+    - modelos MoE
+    - modelos híbridos
+    - modelos multimodais
+    - arquiteturas futuras suportadas por adapters
+
+sem exigir que o núcleo do runtime seja reescrito para cada modelo.
+
+Princípio fundamental:
+
+    o modelo original é traduzido para uma representação intermediária
+    universal (RIFT-IR).
+
+Após essa etapa, o compilador, planner, pager, kernels e executor não precisam
+conhecer a família original do modelo.
+
+Kimi-K3 será utilizado como um dos principais stress-tests do projeto devido
+ao seu tamanho e à sua forte pressão de memória/I/O, mas NÃO define a
+arquitetura interna do RIFT-LM.
+
+
+1. VISÃO E CONCEITO CENTRAL
+===========================
+
+1.1 Precisão como memória virtual
+---------------------------------
+
+Em sistemas convencionais, um tensor costuma ser tratado como tendo uma única
+representação:
+
+    FP16
+    BF16
+    FP8
+    INT8
+    INT4
+    INT3
+    INT2
+    ternary
+
+No RIFT-LM, a representação de um peso pode ser progressiva:
+
+    W ~= W_base + R1 + R2 + ... + Rn
+
+onde:
+
+    W_base = representação de menor custo
+    Rn     = refinamentos independentes
+
+Os refinamentos podem assumir formas diferentes, incluindo:
+
+    - bitplane refinement
+    - residual aditivo
+    - residual low-rank
+    - residual esparso
+    - outliers
+    - refinamento de precisão
+    - representação original completa
+
+A precisão deixa de ser uma propriedade fixa do tensor.
+
+Ela passa a ser um recurso gerenciado pelo compilador e pelo runtime.
+
+
+1.2 Objetivo global
+-------------------
+
+Objetivo primário:
+
+    minimizar custo total de inferência
+
+sujeito a:
+
+    Quality(RIFT(modelo)) >= QualityFloor
+
+O custo total deve considerar:
+
+    - BytesMovidosPorToken
+    - RAM residente
+    - VRAM residente
+    - tráfego RAM <-> CPU
+    - tráfego RAM <-> GPU
+    - tráfego SSD <-> RAM
+    - tráfego PCIe
+    - custo computacional
+    - TTFT
+    - latência de decode
+    - throughput de prefill
+    - energia por token
+
+Uma formulação simplificada:
+
+    Minimize:
+        C = a*BytesToken
+          + b*RAM
+          + c*VRAM
+          + d*SSD_IO
+          + e*Compute
+          + f*Latency
+
+    sujeito a:
+        Quality >= QualityFloor
+
+Os coeficientes são definidos automaticamente pelo Hardware Autotuner de
+acordo com o computador real.
+
+
+1.3 Regra de projeto
+--------------------
+
+O RIFT-LM NÃO deve perseguir simplesmente:
+
+    "menor número de bits"
+
+A métrica principal é:
+
+    menor custo de execução mantendo inteligência/qualidade dentro do
+    contrato escolhido.
+
+
+2. PRINCÍPIOS FUNDAMENTAIS
+==========================
+
+1. Universalidade vem do RIFT-IR, não de regras específicas por modelo.
+
+2. Precisão é virtualizada e progressiva.
+
+3. Quality gates são obrigatórios.
+
+4. Nenhum ganho de desempenho pode ser declarado sem benchmark reproduzível.
+
+5. O runtime não pode reduzir silenciosamente a qualidade abaixo do perfil
+   certificado.
+
+6. O compilador decide representação; o pager decide residência.
+
+7. O RIFT não depende exclusivamente de BitNet, T-MAC, TurboQuant, TurboVec,
+   CUDA, GGUF ou qualquer backend externo.
+
+8. Tecnologias externas são engines, codecs ou backends substituíveis.
+
+9. Modelos densos, MoE e híbridos devem compartilhar o mesmo núcleo.
+
+10. Hardware comum é prioridade:
+        - desktops
+        - notebooks
+        - CPUs x86-64
+        - ARM64
+        - GPUs NVIDIA
+        - GPUs AMD
+        - Apple Silicon
+        - iGPU
+        - NPU quando disponível
+        - SSD NVMe comum
+
+11. O sistema deve respeitar limites físicos de bandwidth e capacidade.
+
+12. Prefill e Decode são problemas diferentes e devem possuir planos distintos.
+
+
+3. ARQUITETURA DE ALTO NÍVEL
+============================
+
+Fluxo principal:
+
+    MODELO ORIGINAL
+    Hugging Face / Safetensors / GGUF / outros formatos
+            |
+            v
+    +-------------------+
+    | RIFT Front-End    |
+    +---------+---------+
+              |
+              v
+    +-------------------+
+    |      RIFT-IR      |
+    | Universal Graph   |
+    +---------+---------+
+              |
+       +------+------+
+       |             |
+       v             v
+    WEIGHTS         STATE
+       |             |
+       +------+------+
+              |
+              v
+    +-------------------+
+    | RIFT Compiler     |
+    | Calibration       |
+    | Sensitivity       |
+    +---------+---------+
+              |
+              v
+    +------------------------------+
+    | Progressive Representations  |
+    | BASE + refinements           |
+    +--------------+---------------+
+                   |
+                   v
+            RIFT Container
+                   |
+          +--------+--------+
+          |                 |
+          v                 v
+    RIFT Planner       RIFT Autotuner
+          |                 |
+          +--------+--------+
+                   |
+                   v
+          +------------------+
+          | RIFT Executor    |
+          +--------+---------+
+                   |
+        +----------+----------+
+        |          |          |
+        v          v          v
+       CPU        GPU        NPU
+       / iGPU / accelerators futuros
+
+
+4. RIFT FRONT-END
+=================
+
+O Front-End é responsável por transformar formatos e arquiteturas externas em
+RIFT-IR.
+
+4.1 Formatos de entrada
+-----------------------
+
+Prioridade inicial:
+
+    - Safetensors
+    - Hugging Face checkpoints/config
+    - GGUF import
+    - PyTorch state_dict quando necessário
+
+Futuro:
+
+    - ONNX
+    - formatos específicos de vendors
+    - formatos distribuídos/sharded adicionais
+
+
+4.2 Architecture Adapters
+-------------------------
+
+Cada família pode possuir um adapter pequeno.
+
+Exemplos:
+
+    adapters/kimi
+    adapters/qwen
+    adapters/gemma
+    adapters/llama
+    adapters/deepseek
+    adapters/mistral
+
+Responsabilidade do adapter:
+
+    - ler configuração da arquitetura
+    - mapear nomes de tensores
+    - reconhecer operações
+    - reconhecer estados persistentes
+    - gerar RIFT-IR válido
+
+Depois da geração do RIFT-IR:
+
+    nenhuma etapa central deve depender do nome da família.
+
+
+5. RIFT-IR
+==========
+
+RIFT-IR é a representação intermediária universal do RIFT.
+
+É o elemento mais importante para garantir que o sistema seja universal.
+
+
+5.1 Categorias de dados
+-----------------------
+
+Pesos são classificados semanticamente:
+
+    ALWAYS_ACTIVE
+
+        Pesos necessários em praticamente toda execução/token.
+
+    CONDITIONALLY_ACTIVE
+
+        Pesos utilizados apenas quando uma condição ou router os seleciona.
+
+    STATIC
+
+        Constantes e dados auxiliares.
+
+    STATE_DEPENDENT
+
+        Dados ligados a estados temporais ou contexto.
+
+    MULTIMODAL
+
+        Pesos específicos de vision/audio/video ou projectors.
+
+
+5.2 Exemplos
+------------
+
+Kimi MoE:
+
+    trunk/shared weights  -> ALWAYS_ACTIVE
+    routed experts        -> CONDITIONALLY_ACTIVE
+
+Llama denso:
+
+    praticamente todos os principais pesos -> ALWAYS_ACTIVE
+
+MoE genérico:
+
+    shared attention      -> ALWAYS_ACTIVE
+    routed experts        -> CONDITIONALLY_ACTIVE
+
+
+5.3 Operações mínimas do RIFT-IR
+--------------------------------
+
+Core:
+
+    RIFT_OP_LINEAR
+    RIFT_OP_EMBEDDING
+    RIFT_OP_RMSNORM
+    RIFT_OP_LAYERNORM
+
+Attention:
+
+    RIFT_OP_MHA
+    RIFT_OP_GQA
+    RIFT_OP_MQA
+    RIFT_OP_MLA
+    RIFT_OP_SLIDING_ATTENTION
+    RIFT_OP_DELTA_ATTENTION
+
+MoE:
+
+    RIFT_OP_MOE_ROUTER
+    RIFT_OP_MOE_EXPERT
+    RIFT_OP_SHARED_EXPERT
+
+State / hybrid:
+
+    RIFT_OP_STATE_READ
+    RIFT_OP_STATE_WRITE
+    RIFT_OP_STATE_UPDATE
+    RIFT_OP_SSM
+    RIFT_OP_DELTA_NET
+
+Multimodal:
+
+    RIFT_OP_CONV
+    RIFT_OP_VISION_EMBED
+    RIFT_OP_PROJECTOR
+    RIFT_OP_AUDIO_FRONTEND
+
+Extensão:
+
+    RIFT_OP_CUSTOM
+
+
+5.4 RIFT_OP_CUSTOM
+------------------
+
+Arquiteturas futuras podem inicialmente usar operações customizadas.
+
+Isso permite adicionar suporte rapidamente sem quebrar a especificação.
+
+Posteriormente a operação pode ser promovida ao core.
+
+
+5.5 RIFT-IR M0 — Schema mínimo da Fase 1
+----------------------------------------
+
+A Fase 1 NÃO implementará todo o RIFT-IR conceitual.
+
+Ela utilizará um subconjunto concreto denominado:
+
+    RIFT_IR_M0
+
+Objetivo:
+
+    permitir que Front-End -> IR -> Compiler -> Executor seja implementado e
+    testado antes de expandir a quantidade de operações.
+
+Versão:
+
+    RIFT_IR_VERSION = 1
+    RIFT_IR_PROFILE = M0
+
+
+5.5.1 Model
+-----------
+
+Representação lógica mínima:
+
+    Model {
+        ir_version: u16
+        model_id: string
+        architecture: string
+
+        tensors: Tensor[]
+        operations: Operation[]
+
+        input_ids_tensor: u32
+        output_tensor: u32
+    }
+
+
+5.5.2 Tensor
+------------
+
+    Tensor {
+        id: u32
+        name: string
+
+        dtype: enum
+        rank: u8
+        shape: u64[]
+
+        semantic_role: enum
+        activation_class: enum
+
+        source_tensor_name: string
+        flags: u32
+    }
+
+semantic_role M0:
+
+    RIFT_ROLE_ALWAYS_ACTIVE
+    RIFT_ROLE_CONDITIONALLY_ACTIVE
+    RIFT_ROLE_STATIC
+
+Na Fase 1:
+
+    CONDITIONALLY_ACTIVE pode existir no schema,
+    porém o scheduler condicional/MoE NÃO é requisito de execução.
+
+
+5.5.3 Operation
+---------------
+
+    Operation {
+        id: u32
+        opcode: enum
+
+        inputs: u32[]
+        outputs: u32[]
+        weights: u32[]
+
+        attrs: key/value[]
+    }
+
+
+5.5.4 Opcodes M0
+----------------
+
+Apenas:
+
+    RIFT_OP_EMBEDDING
+    RIFT_OP_LINEAR
+    RIFT_OP_RMSNORM
+    RIFT_OP_ROPE
+    RIFT_OP_ATTENTION
+    RIFT_OP_ACTIVATION
+    RIFT_OP_ADD
+    RIFT_OP_OUTPUT
+    RIFT_OP_CUSTOM
+
+Operações mais complexas permanecem na especificação universal, mas ficam
+fora do caminho crítico da Fase 1.
+
+
+5.5.5 Formato de desenvolvimento e contrato de ordem
+----------------------------------------------------
+
+Durante a Fase 1, RIFT-IR pode ser persistido separadamente do Container:
+
+    model.rift
+    model.riftir.json
+
+ou:
+
+    model.rift
+    model.riftir.bin
+
+Recomendação inicial:
+
+    JSON legível para debugging.
+
+O JSON M0 DEVE representar operações como um ARRAY ordenado:
+
+    {
+      "ir_version": 1,
+      "execution_model": "TOPOLOGICAL_ARRAY_V1",
+      "operations": [
+        {
+          "id": 0,
+          "opcode": "RIFT_OP_EMBEDDING",
+          "inputs": [0],
+          "outputs": [10],
+          "weights": [100]
+        },
+        {
+          "id": 7,
+          "opcode": "RIFT_OP_RMSNORM",
+          "inputs": [10],
+          "outputs": [11],
+          "weights": [101]
+        },
+        {
+          "id": 12,
+          "opcode": "RIFT_OP_LINEAR",
+          "inputs": [11],
+          "outputs": [12],
+          "weights": [102]
+        }
+      ]
+    }
+
+Contrato M0:
+
+    operations[] = ordem topológica canônica de execução.
+
+A posição no array:
+
+    - define a ordem de execução M0;
+    - NÃO é o ID da operação.
+
+O campo:
+
+    Operation.id
+
+é uma identidade estável para:
+
+    - debugging;
+    - referências;
+    - profiling;
+    - traces;
+    - futuras transformações do compilador.
+
+Logo, isto é válido:
+
+    operations[0].id = 45
+    operations[1].id = 83
+    operations[2].id = 12
+
+desde que a sequência do array seja uma ordem topológica válida.
+
+Regras adicionais:
+
+    - JSON object key ordering é irrelevante;
+    - attrs é metadata e não define ordem de execução;
+    - operações NÃO devem ser serializadas como mapa chave-valor para inferir
+      execução;
+    - um serializer pode reordenar chaves de objetos sem alterar semântica;
+    - um serializer NÃO pode reordenar elements de operations[] sem executar
+      novamente a ordenação topológica e validar o grafo.
+
+Somente após estabilização do schema o IR precisa ser incorporado ao
+Container binário de produção.
+
+
+5.5.5.1 Validação obrigatória do loader M0
+------------------------------------------
+
+Antes de aceitar um RIFT-IR M0, o loader deve validar:
+
+    1. ir_version suportada;
+
+    2. execution_model == "TOPOLOGICAL_ARRAY_V1";
+
+    3. Operation.id é único;
+
+    4. Tensor.id é único;
+
+    5. todo tensor referenciado existe;
+
+    6. todo input possui:
+           - produtor anterior no array;
+           OU
+           - classificação explícita como input externo/constante;
+
+    7. nenhum consumidor aparece antes do produtor de uma dependência normal;
+
+    8. cada output intermediário possui produtor válido;
+
+    9. ciclos são proibidos no RIFT-IR M0;
+
+   10. attrs não introduz dependências implícitas não declaradas;
+
+   11. opcodes desconhecidos são rejeitados, exceto RIFT_OP_CUSTOM quando o
+       backend custom correspondente estiver explicitamente registrado.
+
+Falha em qualquer regra:
+
+    RIFT_IR_INVALID
+
+e a execução não deve iniciar.
+
+
+5.5.5.2 Regra para futuras versões com ciclos/estado
+----------------------------------------------------
+
+O contrato TOPOLOGICAL_ARRAY_V1 é específico do M0/DAG.
+
+Arquiteturas futuras com:
+
+    - loops explícitos;
+    - recurrent state;
+    - control flow;
+    - stateful subgraphs;
+
+devem usar uma versão futura do execution_model.
+
+Não enfraquecer o contrato M0 para antecipar essas features.
+
+
+5.5.6 Regra de congelamento M0
+------------------------------
+
+Durante a Fase 1:
+
+    - adicionar novo opcode somente se um dos modelos-alvo mínimos não puder
+      ser representado de outra forma razoável;
+    - não adicionar scheduler MoE;
+    - não adicionar multimodal;
+    - não adicionar state codecs;
+    - não adicionar features apenas por previsão de necessidade futura.
+
+O objetivo do M0 é executar e medir, não antecipar todo o ecossistema.
+
+
+5.5.6.1 Proibição de expansão silenciosa
+----------------------------------------
+
+Qualquer alteração durante a Fase 1 em:
+
+    - lista de opcodes M0;
+    - campos de Model/Tensor/Operation;
+    - Header M0;
+    - Tensor Entry M0;
+    - Page Entry M0;
+    - significado de flags;
+    - execution_model;
+
+EXIGE um:
+
+    RIFT_M0_CHANGE_REQUEST
+
+Nenhum campo/opcode pode ser adicionado apenas porque "pode ser útil no
+futuro".
+
+
+5.5.6.2 Conteúdo mínimo do RIFT_M0_CHANGE_REQUEST
+-------------------------------------------------
+
+A justificativa deve conter pelo menos:
+
+    1. problema observado experimentalmente;
+
+    2. modelo/checkpoint que demonstrou a limitação;
+
+    3. teste reproduzível que falha sem a alteração;
+
+    4. motivo pelo qual RIFT_OP_CUSTOM, attrs ou mecanismo existente não
+       resolvem adequadamente;
+
+    5. impacto no formato/ABI;
+
+    6. impacto em golden files;
+
+    7. impacto em leitores C++/Rust;
+
+    8. compatibilidade ou necessidade de bump de versão.
+
+
+5.5.6.3 Regra para campos binários congelados
+---------------------------------------------
+
+Durante RIFT_PHASE1_MINIMAL:
+
+    Header M0 e Page Entry M0 são contratos congelados.
+
+Não reutilizar silenciosamente:
+
+    reserved0
+    reserved1
+
+para introduzir nova semântica.
+
+Se a alteração mudar interpretação de bytes existentes:
+
+    container_version ou profile deve mudar.
+
+Se apenas metadata experimental externa for necessária:
+
+    preferir sidecar/debug metadata antes de alterar M0.
+
+
+6. RIFT REPRESENTATION SYSTEM
+=============================
+
+6.1 Modelo genérico
+-------------------
+
+O RIFT deve suportar:
+
+    W ~= Q_base(W)
+         + R_precision
+         + R_lowrank
+         + R_sparse
+         + R_outlier
+
+Nem todos os termos precisam existir.
+
+
+6.2 Tipos de representação
+--------------------------
+
+BASE:
+
+    - Ternary
+    - INT2
+    - INT3
+    - INT4
+    - INT8
+    - MXFP4
+    - FP8
+    - BF16
+    - FP16
+    - passthrough original
+
+REFINEMENT_BITPLANE:
+
+    Reconstrói bits adicionais.
+
+    Exemplo:
+
+        MXFP4 code:
+
+            BASE  = 2 bits superiores
+            DELTA = 2 bits inferiores
+
+        full_code = (base << 2) | delta
+
+REFINEMENT_ADDITIVE:
+
+        W ~= Q(W) + Delta
+
+REFINEMENT_LOWRANK:
+
+        W ~= Q(W) + U*V^T
+
+REFINEMENT_SPARSE:
+
+        W ~= Q(W) + SparseDelta
+
+REFINEMENT_OUTLIER:
+
+        Valores sensíveis permanecem em stream separado de maior precisão.
+
+FULL:
+
+        Representação original ou aprovada em alta precisão.
+
+
+6.3 Reconstrução exata
+----------------------
+
+Quando um codec é declarado LOSSLESS_PROGRESSIVE:
+
+    BASE + todos os refinamentos obrigatórios
+
+deve reconstruir exatamente o código/valor alvo definido pelo codec.
+
+Exemplo MXFP4:
+
+    code_4bit = (base_2bit << 2) | delta_2bit
+
+
+6.4 Reconstrução aproximada
+---------------------------
+
+Quando o codec é LOSSY_PROGRESSIVE:
+
+    a representação deve possuir:
+
+        - erro medido
+        - quality certificate
+        - fallback
+        - perfil mínimo permitido
+
+
+7. GRANULARIDADE: SUPERBLOCKS / TILES
+====================================
+
+A versão universal não deve selecionar uma única precisão para todo tensor.
+
+Tensores grandes podem ser divididos em superblocks/tiles.
+
+
+7.1 Exemplo
+-----------
+
+Um tensor W pode ser compilado como:
+
+    tile 0 -> INT2
+    tile 1 -> INT2 + outliers
+    tile 2 -> INT4
+    tile 3 -> INT3
+    tile 4 -> INT2 + low-rank
+    tile 5 -> INT2
+
+
+7.2 Tamanhos
+------------
+
+Tamanhos candidatos:
+
+    64 x 128
+    64 x 256
+    128 x 128
+    128 x 256
+    256 x 256
+
+O tamanho ideal é escolhido pelo autotuner/backend.
+
+
+7.3 Regra
+---------
+
+Granularidade menor melhora adaptação de qualidade.
+
+Granularidade excessivamente pequena:
+
+    - aumenta metadata
+    - aumenta branches
+    - prejudica coalescing
+    - prejudica kernels
+    - aumenta scheduling overhead
+
+O compilador deve encontrar o melhor ponto.
+
+
+8. FORMATO RIFT CONTAINER
+=========================
+
+O formato físico deve ser extensível e independente de arquitetura.
+
+
+8.1 Estrutura de alto nível
+---------------------------
+
+    [FILE HEADER]
+
+    [MANIFEST]
+
+    [GRAPH / RIFT-IR]
+
+    [TENSOR TABLE]
+
+    [PAGE TABLE]
+
+    [PHYSICAL EXTENT TABLE]
+
+    [QUALITY PROFILES]
+
+    [HARDWARE HINTS]
+
+    [PAYLOAD EXTENTS]
+
+    [CHECKSUM TABLE]
+
+
+8.2 Tensor metadata
+-------------------
+
+Não limitar tensores a rows/cols.
+
+Campos recomendados:
+
+    tensor_id
+    semantic_role
+    dtype_original
+    rank
+    dimensions[]
+    layout
+    layer_id
+    operation_id
+    activation_class
+    flags
+
+
+8.3 Page metadata
+-----------------
+
+Campos mínimos:
+
+    page_id
+    tensor_id
+    tile_id
+    page_type
+    codec_id
+    codec_version
+    refinement_level
+    dependency_page_id
+    physical_extent_id
+    extent_suboffset
+    payload_bytes
+    logical_alignment
+    checksum
+    flags
+
+
+8.4 Tipos de página
+-------------------
+
+Sugestão:
+
+    0x01 BASE
+    0x02 REFINEMENT
+    0x03 FULL
+    0x04 META
+    0x05 STATE_CODEC
+    0x06 QUALITY
+    0x07 GRAPH
+    0x08 INDEX
+
+
+8.5 Precision / codec
+---------------------
+
+Não utilizar um único campo "precision" como definição completa.
+
+Usar:
+
+    codec_id
+    codec_params
+
+Exemplos de codec_id:
+
+    RIFT_CODEC_TERNARY
+    RIFT_CODEC_INT2
+    RIFT_CODEC_INT3
+    RIFT_CODEC_INT4
+    RIFT_CODEC_MXFP4
+    RIFT_CODEC_FP8
+    RIFT_CODEC_BF16
+    RIFT_CODEC_BITPLANE
+    RIFT_CODEC_LOW_RANK
+    RIFT_CODEC_SPARSE
+    RIFT_CODEC_OUTLIER
+    RIFT_CODEC_FULL
+
+
+8.6 Alinhamento e mmap-native
+-----------------------------
+
+O RIFT Container v1 deve ser desenhado para zero-copy addressability em CPU
+quando o codec/layout permitirem.
+
+Isso NÃO significa "latência zero":
+
+    - mmap() não elimina page faults;
+    - a primeira leitura pode trazer páginas do SSD para o page cache;
+    - GPU pode exigir transferência explícita, pinned memory, DMA ou mecanismo
+      específico do backend.
+
+Requisitos físicos:
+
+    - FILE HEADER e tabelas estruturais devem iniciar em offsets alinhados;
+    - seções principais devem preferencialmente usar alinhamento de 64 KiB;
+    - 4 KiB é a granularidade física mínima de referência;
+    - o backend pode escolher 16 KiB, 64 KiB, 2 MiB ou maior quando vantajoso;
+    - offsets persistidos são relativos ao início do arquivo;
+    - nunca serializar ponteiros de processo;
+    - PAGE TABLE deve possuir entries de tamanho fixo ou versão explicitamente
+      indexável;
+    - PAYLOAD EXTENTS devem possuir offset e tamanho conhecidos sem parsing
+      sequencial do arquivo;
+    - permitir mmap read-only;
+    - permitir read-ahead/prefault opcional;
+    - permitir direct I/O quando o hardware/SO/backend justificar;
+    - permitir pinned staging buffers para GPU;
+    - permitir GPU DMA / mecanismos equivalentes quando suportados.
+
+Meta:
+
+    minimizar parsing, cópia e tempo de preparação, mantendo compatibilidade
+    com lazy paging do sistema operacional.
+
+
+8.7 Logical Pages e Physical Extents
+------------------------------------
+
+RIFT separa a unidade semântica da unidade física de armazenamento.
+
+LOGICAL PAGE:
+
+    Unidade de representação, dependência e qualidade.
+
+    Exemplos:
+        BASE
+        BITPLANE
+        LOW_RANK
+        SPARSE
+        OUTLIER
+        FULL
+        STATE_CODEC
+
+PHYSICAL EXTENT:
+
+    Região real do arquivo usada para mmap/I/O.
+
+Uma Logical Page aponta para:
+
+    physical_extent_id
+    extent_suboffset
+    payload_bytes
+
+Várias Logical Pages pequenas podem compartilhar um mesmo Physical Extent.
+
+Exemplo:
+
+    Physical Extent de 64 KiB
+    +------------------------------------------------------------+
+    | BASE | LOW_RANK | OUTLIER | INDEX | padding/alignment      |
+    +------------------------------------------------------------+
+
+Benefícios:
+
+    - evita desperdiçar um extent alinhado inteiro por residual pequeno;
+    - reduz fragmentação;
+    - mantém alinhamento favorável a mmap/NVMe;
+    - permite pages semânticas finas;
+    - permite reempacotamento físico sem alterar semântica/quality profile.
+
+
+8.8 Physical Extent Table
+-------------------------
+
+Campos mínimos:
+
+    physical_extent_id
+    file_offset
+    extent_bytes
+    alignment
+    storage_flags
+    checksum
+    compression_mode
+    prefetch_class
+
+storage_flags pode indicar:
+
+    MMAP_SAFE
+    DIRECT_IO_SAFE
+    GPU_STAGING_PREFERRED
+    READ_MOSTLY
+    HOT
+    WARM
+    COLD
+
+Regra:
+
+    layout físico é decisão do Container/Planner;
+    representação e qualidade pertencem às Logical Pages.
+
+
+8.9 RIFT Container M0 — Formato mínimo da Fase 1
+-------------------------------------------------
+
+O Container completo descrito nas seções anteriores permanece como objetivo
+de produção.
+
+A Fase 1 implementará primeiro:
+
+    RIFT_CONTAINER_M0
+
+Estrutura:
+
+    [HEADER]
+    [TENSOR TABLE]
+    [PAGE TABLE]
+    [PAYLOAD]
+
+Não fazem parte do M0:
+
+    - Graph binário embutido;
+    - Hardware Hints;
+    - Quality Certificate embutido;
+    - State Table;
+    - Predictor metadata;
+    - Autotuner metadata;
+    - Physical Extent allocator avançado;
+    - compressão de metadados.
+
+
+8.9.1 Header M0 — contrato binário congelado
+---------------------------------------------
+
+O Header M0 possui tamanho FIXO:
+
+    RIFT_HEADER_M0_SIZE = 128 bytes
+
+Endian canônico:
+
+    RIFT_ENDIAN = LITTLE_ENDIAN
+
+O layout em disco é definido por offsets de bytes desta especificação.
+
+Ele NÃO é definido pela ABI de C, C++ ou Rust.
+
+
+8.9.1.1 Layout canônico
+-----------------------
+
+    Offset  Size  Campo
+    ------  ----  --------------------------------
+    0x00      4  magic = bytes "RIFT"
+    0x04      2  container_version : u16 LE
+    0x06      2  profile           : u16 LE
+    0x08      4  flags             : u32 LE
+    0x0C      4  reserved0         : u32 LE = 0
+
+    0x10      8  tensor_table_offset : u64 LE
+    0x18      8  tensor_count        : u64 LE
+
+    0x20      8  page_table_offset   : u64 LE
+    0x28      8  page_count          : u64 LE
+
+    0x30      8  payload_offset      : u64 LE
+    0x38      8  file_size           : u64 LE
+
+    0x40      8  header_checksum     : u64 LE
+
+    0x48     56  reserved1[56]       : bytes = 0
+
+Fim:
+
+    0x80 = 128 bytes
+
+
+8.9.1.2 Por que NÃO usar packed como contrato
+---------------------------------------------
+
+Não usar:
+
+    #[repr(C, packed)]
+
+ou:
+
+    #pragma pack(1)
+
+como definição oficial do formato.
+
+Motivo:
+
+    packed pode criar acessos desalinhados, especialmente em campos u64.
+
+No layout M0:
+
+    reserved0 em 0x0C
+
+garante que o primeiro u64 comece em:
+
+    0x10
+
+e todos os campos u64 permaneçam naturalmente alinhados.
+
+A estrutura da linguagem é apenas uma representação conveniente em memória.
+
+A autoridade final é:
+
+    offset + size + endian
+
+definidos nesta especificação.
+
+
+8.9.1.3 Estrutura de referência em Rust
+---------------------------------------
+
+Exemplo de representação em memória:
+
+    #[repr(C)]
+    pub struct RiftHeaderM0 {
+        pub magic: [u8; 4],
+        pub container_version: u16,
+        pub profile: u16,
+        pub flags: u32,
+
+        pub reserved0: u32,
+
+        pub tensor_table_offset: u64,
+        pub tensor_count: u64,
+
+        pub page_table_offset: u64,
+        pub page_count: u64,
+
+        pub payload_offset: u64,
+        pub file_size: u64,
+
+        pub header_checksum: u64,
+
+        pub reserved1: [u8; 56],
+    }
+
+Validação mínima:
+
+    size_of::<RiftHeaderM0>() == 128
+
+Implementações Rust devem possuir testes de offset para todos os campos
+persistidos críticos.
+
+
+8.9.1.4 Estrutura de referência em C++
+---------------------------------------
+
+Exemplo:
+
+    struct RiftHeaderM0 {
+        uint8_t  magic[4];
+        uint16_t container_version;
+        uint16_t profile;
+        uint32_t flags;
+
+        uint32_t reserved0;
+
+        uint64_t tensor_table_offset;
+        uint64_t tensor_count;
+
+        uint64_t page_table_offset;
+        uint64_t page_count;
+
+        uint64_t payload_offset;
+        uint64_t file_size;
+
+        uint64_t header_checksum;
+
+        uint8_t reserved1[56];
+    };
+
+Validações mínimas:
+
+    static_assert(sizeof(RiftHeaderM0) == 128);
+    static_assert(offsetof(RiftHeaderM0, magic) == 0x00);
+    static_assert(offsetof(RiftHeaderM0, container_version) == 0x04);
+    static_assert(offsetof(RiftHeaderM0, flags) == 0x08);
+    static_assert(offsetof(RiftHeaderM0, tensor_table_offset) == 0x10);
+    static_assert(offsetof(RiftHeaderM0, page_table_offset) == 0x20);
+    static_assert(offsetof(RiftHeaderM0, payload_offset) == 0x30);
+    static_assert(offsetof(RiftHeaderM0, header_checksum) == 0x40);
+
+
+8.9.1.5 Serialização canônica
+-----------------------------
+
+Writer:
+
+    - escrever cada inteiro explicitamente em little-endian;
+    - zerar reserved0 e reserved1;
+    - nunca persistir ponteiros;
+    - validar overflow antes de calcular offsets;
+    - escrever file_size final;
+    - calcular checksum conforme regra abaixo.
+
+Reader:
+
+    - validar magic;
+    - validar container_version/profile;
+    - converter little-endian para endian do host quando necessário;
+    - validar file_size contra tamanho real;
+    - validar todos os offsets e ranges antes de dereference/mmap use;
+    - rejeitar overlap inválido de regiões estruturais;
+    - rejeitar integer overflow em:
+          offset + size;
+    - validar checksum;
+    - rejeitar campos reserved não zero no M0, salvo extensão explicitamente
+      versionada no futuro.
+
+
+8.9.1.6 Regra do header_checksum — CONGELADA
+---------------------------------------------
+
+Algoritmo oficial do Header M0:
+
+    RIFT_CHECKSUM_M0 = XXH3-64
+    seed             = 0
+    output           = unsigned 64-bit
+    serialized       = little-endian
+
+Função de referência:
+
+    XXH3_64bits(header_bytes, 128)
+
+ou implementação rigorosamente equivalente com seed 0.
+
+Objetivo:
+
+    detectar corrupção acidental e divergência de serialização.
+
+NÃO é:
+
+    - assinatura criptográfica;
+    - MAC;
+    - proteção contra adulteração maliciosa.
+
+
+8.9.1.6.1 Procedimento canônico
+-------------------------------
+
+Para tornar Rust, C++ e outras implementações byte-a-byte interoperáveis:
+
+    1. construir exatamente os 128 bytes do Header M0;
+
+    2. preencher todos os campos;
+
+    3. garantir reserved0 = 0;
+
+    4. garantir reserved1[56] = 0;
+
+    5. definir os bytes 0x40..0x47 (header_checksum) como zero;
+
+    6. calcular XXH3-64 sobre os 128 bytes completos;
+
+    7. gravar o resultado u64 little-endian em 0x40.
+
+
+8.9.1.6.2 Validação
+-------------------
+
+Reader:
+
+    1. lê os 128 bytes;
+
+    2. salva o u64 recebido em 0x40;
+
+    3. cria uma visão/cópia lógica com 0x40..0x47 = zero;
+
+    4. calcula XXH3-64 seed 0;
+
+    5. compara com o valor recebido.
+
+Falha:
+
+    RIFT_HEADER_CHECKSUM_MISMATCH
+
+
+8.9.1.6.3 Versionamento
+-----------------------
+
+Para:
+
+    container_version = 0x0001
+    profile           = RIFT_PROFILE_M0
+
+o checksum do Header é SEMPRE XXH3-64 seed 0.
+
+Trocar o algoritmo no futuro exige:
+
+    - novo container_version;
+      OU
+    - novo profile com contrato explicitamente diferente.
+
+Não existe negociação dinâmica de checksum dentro do Header M0.
+
+
+8.9.1.6.4 Golden vector obrigatório
+-----------------------------------
+
+Golden Header M0 vazio canônico:
+
+    container_version    = 0x0001
+    profile              = 0x0000  (RIFT_PROFILE_M0)
+    flags                = 0
+    reserved0            = 0
+    tensor_table_offset  = 0x80
+    tensor_count         = 0
+    page_table_offset    = 0x80
+    page_count           = 0
+    payload_offset       = 0x80
+    file_size            = 0x80
+    reserved1            = todos os bytes zero
+
+Com header_checksum zerado durante o cálculo:
+
+    XXH3-64 =
+        0x8DB3A70FC08A38F3
+
+Serializado em 0x40..0x47 little-endian:
+
+    F3 38 8A C0 0F A7 B3 8D
+
+Qualquer implementação M0 deve reproduzir esse vetor antes de ser considerada
+compatível.
+
+
+8.9.1.7 mmap e casting
+----------------------
+
+O início de um mmap normalmente possui alinhamento de página suficiente para
+o Header, mas o Reader não deve depender de reinterpret_cast/ponteiro cru como
+única forma de parsing.
+
+Caminho portátil:
+
+    bytes
+      ->
+    validação de tamanho
+      ->
+    load little-endian por offset
+      ->
+    representação interna
+
+Um backend pode utilizar acesso zero-copy direto quando:
+
+    - host/layout forem compatíveis;
+    - alinhamento estiver garantido;
+    - testes de layout passarem;
+    - a implementação não violar regras de aliasing/alignment da linguagem.
+
+Payload zero-copy continua sendo um objetivo independente do parsing seguro do
+Header.
+
+
+8.9.2 Tensor Entry M0
+---------------------
+
+Campos mínimos:
+
+    tensor_id:              u32
+    dtype_original:         u16
+    rank:                   u8
+    semantic_role:          u8
+
+    shape_offset:           u64
+    first_page:             u64
+    page_count:             u32
+
+    flags:                  u32
+
+
+8.9.3 Page Entry M0
+-------------------
+
+Campos mínimos:
+
+    tensor_id:              u32
+    tile_id:                u32
+
+    codec_id:               u16
+    page_type:              u8
+    refinement_level:       u8
+
+    file_offset:            u64
+    payload_bytes:          u64
+
+    dependency_page:        u64
+    checksum:               u64
+
+
+8.9.4 mmap M0
+-------------
+
+M0 deve suportar:
+
+    mmap/read-only no backend POSIX;
+
+e uma abstração equivalente no runtime para outros sistemas.
+
+Requisitos:
+
+    - offsets alinhados ao mínimo requerido pelo SO;
+    - payload não precisa ser copiado para um heap intermediário antes de ser
+      consumido pela implementação CPU de referência;
+    - page faults devem ser medidos, não ignorados;
+    - prefault/read-ahead ficam opcionais.
+
+A separação completa Logical Page / Physical Extent continua especificada,
+mas o allocator avançado pode ser adiado até após o M0 funcional.
+
+
+8.9.5 Critério de promoção M0 -> Container v1 completo
+------------------------------------------------------
+
+Somente promover após:
+
+    1. Writer funcional;
+    2. Reader funcional;
+    3. round-trip de metadata;
+    4. mmap funcional;
+    5. checksum validation;
+    6. execução de pelo menos um modelo/bloco a partir do Container;
+    7. profiling real de page faults e bytes lidos.
+
+
+9. RIFT COMPILER
+================
+
+O compilador é responsável por transformar RIFT-IR em uma representação
+otimizada.
+
+
+9.1 Pipeline
+------------
+
+    Modelo
+      |
+      v
+    Front-End
+      |
+      v
+    RIFT-IR
+      |
+      v
+    Tensor/Operation Analysis
+      |
+      v
+    Calibration
+      |
+      v
+    Sensitivity Pre-Screener
+      |
+      v
+    Candidate Representation Search
+      |
+      v
+    Quality Gates
+      |
+      v
+    Superblock Optimization
+      |
+      v
+    Hardware Cost Model
+      |
+      v
+    Profile Generation
+      |
+      v
+    RIFT Container
+
+
+9.2 Candidate search
+--------------------
+
+O Candidate Search NÃO deve testar cegamente todas as representações em todos
+os superblocks.
+
+Primeiro, o Sensitivity Pre-Screener elimina candidatos claramente
+inadequados.
+
+Somente então, para cada superblock, testar quando aplicável:
+
+    - Ternary
+    - INT2
+    - INT3
+    - INT4
+    - INT8
+    - MXFP4 passthrough
+    - FP8
+    - BF16
+    - FP16
+    - BASE + bitplane
+    - BASE + additive residual
+    - BASE + low-rank residual
+    - BASE + sparse residual
+    - BASE + outlier stream
+    - original
+
+Exemplo de política:
+
+    LOW sensitivity:
+        Ternary
+        INT2
+        INT3
+        refinements se necessário
+
+    MEDIUM sensitivity:
+        INT2 + refinement
+        INT3
+        INT4
+        MXFP4
+
+    HIGH sensitivity:
+        INT3 + refinement
+        INT4
+        MXFP4
+        FP8
+        BF16/original
+
+A política real é aprendida/calibrada por modelo e hardware.
+
+
+9.2.1 Sensitivity Pre-Screener
+------------------------------
+
+O modo padrão deve ser forward-only.
+
+Estatísticas candidatas:
+
+    - weight distribution
+    - weight variance
+    - activation variance
+    - activation magnitude
+    - activation kurtosis
+    - channel variance
+    - outlier ratio
+    - quantization reconstruction error
+    - cosine drift
+    - local output drift
+    - local logit drift quando disponível
+    - router/state sensitivity quando aplicável
+
+Gradientes NÃO são requisito do compilador normal.
+
+Um modo opcional avançado pode existir:
+
+    RIFT_SENSITIVITY_GRADIENT
+
+para ambientes onde custo de calibração elevado seja aceitável.
+
+Pipeline obrigatório:
+
+    PASS 1 - PRE-SCREEN
+        estatísticas baratas
+        ->
+        eliminar candidatos improváveis
+
+    PASS 2 - QUALITY SEARCH
+        candidatos plausíveis
+        ->
+        quality gate local
+        ->
+        quality gate por bloco
+        ->
+        validação end-to-end
+
+Objetivo:
+
+    reduzir drasticamente o custo de compilação em modelos muito grandes sem
+    assumir uma quantização fixa.
+
+
+9.2.2 Calibration Sampling Protocol v1
+--------------------------------------
+
+A Fase 1 deve possuir uma política explícita para impedir que calibração em
+modelos grandes se torne proibitivamente cara.
+
+O protocolo é hierárquico.
+
+
+NÍVEL L0 — Structural Scan
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Executado para todos os tensors/superblocks considerados.
+
+Não exige inferência.
+
+Coletar:
+
+    - min/max;
+    - média;
+    - variance;
+    - kurtosis;
+    - percentis;
+    - outlier ratio;
+    - distribuição por canal;
+    - erro teórico de candidatos low-bit em pequena amostra;
+    - tamanho e layout.
+
+Objetivo:
+
+    eliminar candidatos claramente ruins e gerar signatures de similaridade.
+
+
+NÍVEL L1 — Activation Calibration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Default experimental inicial:
+
+    prompts:                   128
+    tokens máximos/prompt:     512
+    tokens úteis alvo:         32k a 64k
+
+Corpus inicial sugerido:
+
+    20% linguagem natural
+    20% reasoning
+    15% código
+    15% matemática
+    10% multilingual
+    10% long-form
+    10% instruction/dialog
+
+Essas proporções são defaults experimentais.
+
+Não constituem padrão definitivo de qualidade.
+
+O corpus deve possuir:
+
+    - seed registrada;
+    - hash/versionamento;
+    - política de truncamento registrada;
+    - tokenizer/revision registrados.
+
+
+NÍVEL L2 — End-to-End Validation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Somente candidatos finais.
+
+Default inicial:
+
+    512 a 2048 prompts
+
+mais:
+
+    - perplexity dataset;
+    - geração longa;
+    - benchmarks comportamentais suportados pelo modelo.
+
+Somente L2 pode gerar um Quality Certificate de produção.
+
+
+9.2.3 Representative Layer Sampling
+-----------------------------------
+
+Modelos enormes NÃO devem obrigatoriamente testar todas as camadas durante a
+primeira exploração.
+
+A Fase 1 usará amostragem representativa.
+
+Primeiro selecionar posições que cubram:
+
+    - início;
+    - early-middle;
+    - middle;
+    - late-middle;
+    - final.
+
+Exemplo apenas para um modelo de aproximadamente 93 camadas:
+
+    0
+    1
+    8
+    16
+    32
+    46
+    60
+    76
+    91
+    92
+
+Esses índices NÃO são universais.
+
+O sampler deve converter a política em percentuais relativos para outras
+profundidades.
+
+
+9.2.4 Layer Signature Clustering
+--------------------------------
+
+Uma assinatura de camada pode incluir:
+
+    weight_variance
+    activation_variance
+    kurtosis
+    outlier_ratio
+    candidate_quant_error
+    output_drift
+
+Camadas estatisticamente semelhantes podem reutilizar:
+
+    - ordem inicial de candidatos;
+    - tile size inicial;
+    - faixa inicial de precisão.
+
+A política compartilhada é apenas um ponto de partida.
+
+Quality Gates continuam sendo obrigatórios antes de promover a configuração
+para a camada completa.
+
+
+9.2.5 Budget de calibração
+--------------------------
+
+O compilador deve aceitar:
+
+    calibration_budget = small | medium | full
+
+SMALL:
+
+    L0 completo
+    L1 reduzido
+    representative layers
+
+MEDIUM:
+
+    L0 completo
+    L1 padrão
+    mais camadas
+
+FULL:
+
+    L0 completo
+    L1 ampliado
+    todas as camadas necessárias
+    L2 completo
+
+O budget modifica custo de busca.
+
+Ele NÃO autoriza reduzir o QualityFloor do perfil final.
+
+
+9.3 Objetivo local
+------------------
+
+Escolher a representação que maximize:
+
+    benefício_de_memória
+    benefício_de_bandwidth
+    benefício_computacional
+
+sujeito ao orçamento de erro local.
+
+
+9.4 Objetivo global
+-------------------
+
+A seleção final NÃO é feita apenas pelo erro local.
+
+O modelo completo deve passar pelo certificado end-to-end.
+
+
+10. QUALITY SYSTEM
+==================
+
+Qualidade é requisito de arquitetura, não etapa opcional.
+
+
+10.1 Gates locais
+-----------------
+
+Métricas:
+
+    - erro MSE / normalized error
+    - cosine similarity
+    - KL divergence
+    - top-k agreement
+    - activation drift
+    - output drift
+    - router agreement
+    - state drift
+
+Os limites devem ser calibrados por arquitetura/modelo.
+
+
+10.2 Gates por bloco
+--------------------
+
+Avaliar saída após:
+
+    attention block
+    MLP block
+    MoE block
+    hybrid-state block
+
+
+10.3 Gates end-to-end
+---------------------
+
+Obrigatórios:
+
+    - logits
+    - perplexity
+    - token ranking
+    - geração longa
+    - estabilidade numérica
+
+
+10.4 Benchmarks comportamentais
+-------------------------------
+
+Quando aplicável:
+
+    - reasoning
+    - math
+    - coding
+    - instruction following
+    - tool use
+    - agentic tasks
+    - long context
+    - multilingual
+    - retrieval
+
+Multimodal:
+
+    - vision
+    - OCR
+    - image reasoning
+    - audio
+    - video
+
+Somente executar os benchmarks suportados pelo modelo.
+
+
+10.5 Perfis certificados
+------------------------
+
+RIFT não deve alterar a qualidade dinamicamente abaixo do contrato.
+
+Perfis padrão:
+
+    RIFT_SAFE
+    RIFT_BALANCED
+    RIFT_FAST
+    RIFT_MINMEM
+
+Os valores reais são calculados durante compilação/validação.
+
+Exemplo ilustrativo:
+
+    Profile: RIFT_BALANCED
+
+    Quality reference: 100.00
+    Quality measured: 99.xx
+
+    RAM:
+    VRAM:
+    Disk:
+    TTFT:
+    Prefill tok/s:
+    Decode tok/s:
+    Joules/token:
+
+IMPORTANTE:
+
+    os números só podem ser publicados após medição real.
+
+
+10.6 Regra de runtime
+---------------------
+
+O Pager pode mudar:
+
+    - onde a page reside
+    - quando fazer prefetch
+    - qual device executa
+    - qual buffer reutilizar
+
+O Pager NÃO pode mudar para uma representação abaixo do QualityFloor
+certificado sem autorização explícita do usuário.
+
+
+10.7 Cumulative Drift Budget
+----------------------------
+
+Erros locais pequenos podem se acumular ao longo de dezenas de camadas.
+
+Portanto:
+
+    LocalError(layer_n) <= threshold
+
+NÃO é condição suficiente.
+
+A Fase 1 deve medir:
+
+    CumulativeDrift(layer_n)
+
+em checkpoints distribuídos pela profundidade.
+
+
+10.7.1 Drift checkpoints
+------------------------
+
+Default experimental:
+
+    checkpoint no início;
+    aproximadamente a cada 10%–15% da profundidade;
+    checkpoint nas últimas camadas;
+    checkpoint na saída final.
+
+Para um modelo específico, o compilador pode adicionar checkpoints em blocos
+detectados como sensíveis.
+
+
+10.7.2 Métricas de drift
+------------------------
+
+Em cada checkpoint:
+
+    - cosine similarity;
+    - normalized RMSE;
+    - activation magnitude drift;
+    - KL divergence quando semanticamente aplicável;
+    - top-k overlap quando houver logits/projeção apropriada.
+
+
+10.7.3 Orçamento global
+-----------------------
+
+Representação conceitual:
+
+    B_total = orçamento global de drift
+
+e:
+
+    B_1 + B_2 + ... + B_n <= B_total
+
+não implica necessariamente divisão uniforme.
+
+Camadas resistentes podem receber orçamento maior.
+
+Camadas sensíveis devem receber precisão adicional.
+
+O objetivo do compilador continua:
+
+    minimizar custo
+
+sujeito a:
+
+    FinalQuality >= QualityFloor
+    AND
+    CumulativeDrift <= DriftBudget
+
+
+10.7.4 Rollback de precisão
+---------------------------
+
+Se o drift composto ultrapassar o orçamento:
+
+    1. localizar primeiro checkpoint que excedeu a trajetória esperada;
+    2. identificar candidatos de maior contribuição desde o checkpoint anterior;
+    3. promover precisão/refinement dos candidatos;
+    4. reexecutar apenas a janela afetada quando possível;
+    5. repetir validação global no candidato final.
+
+
+10.8 Defaults experimentais da Fase 1
+-------------------------------------
+
+Os valores abaixo existem para permitir implementação e teste.
+
+Eles NÃO são padrões definitivos do ecossistema RIFT.
+
+Tag obrigatória:
+
+    RIFT_QUALITY_DEFAULTS_EXPERIMENTAL_V1
+
+
+10.8.1 Local Pre-Screen
+-----------------------
+
+Valores iniciais sugeridos:
+
+    cosine similarity >= 0.995
+
+    normalized RMSE <= 0.05
+
+Falha:
+
+    não significa necessariamente rejeição definitiva;
+    pode mover o candidato para refinement ou precisão superior.
+
+
+10.8.2 Block Checkpoint
+-----------------------
+
+Valores iniciais sugeridos:
+
+    cosine similarity >= 0.990
+
+    top-5 overlap >= 0.980
+
+Quando top-k não fizer sentido para o ponto medido:
+
+    usar métricas de ativação equivalentes.
+
+
+10.8.3 End-to-End
+-----------------
+
+Valores iniciais sugeridos:
+
+    perplexity degradation <= 2%
+
+    top-1 agreement >= 95%
+
+    top-5 agreement >= 98%
+
+Esses valores devem ser revistos após os primeiros experimentos.
+
+
+10.8.4 Agregação
+----------------
+
+Nunca certificar apenas pela média.
+
+Para cada métrica registrar quando aplicável:
+
+    mean
+    median
+    p95
+    p99
+    max
+
+Política inicial:
+
+    mean dentro do budget
+    AND
+    p95 dentro do budget definido
+    AND
+    catastrophic_failures == 0
+
+
+10.8.5 Catastrophic failure
+---------------------------
+
+Exemplos:
+
+    - NaN/Inf;
+    - colapso de logits;
+    - geração degenerada;
+    - divergência extrema de ativação;
+    - perda completa de comportamento em uma classe de prompt;
+    - crash ou overflow numérico.
+
+Qualquer catastrophic failure invalida o candidato até investigação.
+
+
+10.8.6 Reprodutibilidade
+------------------------
+
+Toda execução de calibração/validação deve registrar:
+
+    model revision
+    tokenizer revision
+    dataset/corpus hash
+    prompt count
+    token count
+    random seed
+    compiler version
+    codec version
+    tile size
+    profile
+    hardware
+    thread count
+
+
+11. RIFT-STATE
+==============
+
+RIFT-State substitui o conceito limitado de "RIFT-KV".
+
+Nem toda arquitetura moderna utiliza somente KV cache.
+
+
+11.1 Estados suportados
+-----------------------
+
+    - KV cache
+    - MLA latent cache/state
+    - KDA state
+    - DeltaNet recurrent state
+    - SSM state
+    - architecture-specific state
+
+
+11.2 State codecs
+-----------------
+
+RIFT-State oferece interface modular.
+
+Possíveis codecs:
+
+    - FP16/BF16
+    - FP8
+    - INT8
+    - INT4
+    - TurboQuant-derived codec
+    - sparse state
+    - custom architecture codec
+
+
+11.3 Tiers
+----------
+
+Estados podem ocupar:
+
+    HOT:
+        GPU/fast RAM
+
+    WARM:
+        RAM
+
+    COLD:
+        SSD / compressed backing store
+
+
+11.4 Quality
+------------
+
+Compressão de state possui quality gate próprio.
+
+Nunca assumir que um codec adequado a KV tradicional é adequado a toda
+arquitetura.
+
+
+12. RIFT-PAGER
+==============
+
+RIFT-Pager gerencia residência física das pages.
+
+
+12.1 Diferença para LRU
+-----------------------
+
+LRU tradicional considera recência.
+
+RIFT-Pager deve considerar:
+
+    - frequência
+    - probabilidade futura
+    - bytes evitados
+    - custo de reload
+    - custo PCIe
+    - custo SSD
+    - sensibilidade
+    - criticidade
+    - dependências
+    - fase prefill/decode
+
+
+12.2 Métrica inicial
+--------------------
+
+Uma heurística inicial:
+
+    ResidencyValue =
+        ExpectedBytesAvoided
+        * AccessProbability
+        / ResidentBytes
+
+A versão real pode incorporar:
+
+    latency
+    device bandwidth
+    transfer concurrency
+    energy
+
+
+12.3 Classes
+------------
+
+    ALWAYS_ACTIVE:
+        prioridade máxima de residência.
+
+    CONDITIONALLY_ACTIVE:
+        residency/prefetch baseado em probabilidade e custo.
+
+    STATE:
+        política específica por comprimento de contexto.
+
+    STATIC:
+        mmap ou residente conforme custo.
+
+
+13. RIFT-PREDICT
+================
+
+RIFT-Predict é opcional.
+
+Ele é especialmente útil para operações condicionais como MoE.
+
+
+13.1 Responsabilidade
+---------------------
+
+Prever antecipadamente:
+
+    - expert provável
+    - page provável
+    - state provável
+    - operação provável
+
+para permitir prefetch.
+
+
+13.2 Segurança de qualidade
+---------------------------
+
+Predição NÃO substitui o router oficial.
+
+Fluxo:
+
+    predictor -> inicia prefetch
+
+    router real -> escolhe operação/expert definitivo
+
+Se predictor errar:
+
+    custo = desempenho
+
+Nunca:
+
+    custo = inteligência
+
+
+13.3 TurboVec / TurboQuant
+--------------------------
+
+TurboVec pode ser explorado para:
+
+    - índices compactos
+    - assinaturas
+    - busca vetorial de padrões
+    - previsão de acesso
+    - cache vetorial de planos
+    - matching de subgrafos
+    - backend vetorial de RAG
+
+Ele não é dependência obrigatória do RIFT.
+
+Regra:
+
+    TurboVec nunca substitui:
+        - o DAG canônico;
+        - o validador topológico;
+        - o router original de um MoE;
+        - o Quality Gate;
+        - o benchmark real de um plano.
+
+TurboVec atua como:
+
+    INDEX
+    RETRIEVER
+    PREDICTOR
+    CANDIDATE GENERATOR
+
+e não como autoridade de correção.
+
+
+13.4 RIFT-GRAPH INTELLIGENCE
+============================
+
+RIFT-Graph Intelligence é um módulo opcional do COMPILADOR e do AUTOTUNER.
+
+Objetivo:
+
+    reduzir o custo de encontrar bons planos de execução para grafos,
+    operações e subgrafos já semelhantes a casos anteriormente medidos.
+
+Ele NÃO altera a semântica do RIFT-IR.
+
+
+13.4.1 Princípio
+----------------
+
+O DAG permanece:
+
+    RIFT-IR
+        ->
+    operations[] em ordem topológica canônica
+        ->
+    planner/optimizer determinístico
+        ->
+    executor
+
+RIFT-Graph Intelligence atua em paralelo:
+
+    subgrafo atual
+        ->
+    Graph Signature
+        ->
+    TurboVec Index
+        ->
+    planos/subgrafos semelhantes já medidos
+        ->
+    Candidate Plans
+        ->
+    benchmark/validação
+        ->
+    planner seleciona resultado final
+
+Logo:
+
+    TurboVec sugere.
+
+    O planner mede.
+
+    O DAG manda.
+
+
+13.4.2 Graph Signature
+----------------------
+
+Uma assinatura vetorial de subgrafo pode incluir features normalizadas de:
+
+Estrutura:
+
+    - opcode sequence;
+    - número de operações;
+    - fan-in/fan-out;
+    - profundidade;
+    - dependências;
+    - fusion candidates.
+
+Shapes:
+
+    - M/N/K de GEMMs;
+    - batch;
+    - sequence length;
+    - head count;
+    - hidden size;
+    - expert count quando aplicável.
+
+Pesos:
+
+    - bytes;
+    - dtype;
+    - codec;
+    - bits efetivos;
+    - ALWAYS_ACTIVE / CONDITIONALLY_ACTIVE.
+
+Hardware/custo:
+
+    - backend;
+    - RAM bandwidth;
+    - VRAM bandwidth;
+    - PCIe bandwidth;
+    - cache size;
+    - measured latency;
+    - bytes moved.
+
+Plano:
+
+    - device placement;
+    - kernel family;
+    - tile size;
+    - prefetch strategy;
+    - fusion pattern.
+
+A assinatura NÃO precisa conter conteúdo semântico do prompt.
+
+
+13.4.3 Plan Record
+------------------
+
+Cada item indexado pode apontar para:
+
+    GraphPlanRecord {
+        graph_signature
+        model_family_hint
+        hardware_class
+        phase
+        context_bucket
+
+        candidate_plan
+        measured_latency
+        measured_bytes
+        measured_memory
+        measured_energy
+
+        quality_profile
+        validation_hash
+        compiler_version
+    }
+
+phase:
+
+    PREFILL
+    DECODE
+
+
+13.4.4 Uso de TurboVec
+----------------------
+
+TurboVec pode armazenar Graph Signatures compactas e recuperar:
+
+    top-k subgrafos/planos mais próximos.
+
+Uso sugerido:
+
+    nearest_plans =
+        turbovec.search(graph_signature, k)
+
+O resultado alimenta:
+
+    Candidate Plan Seed
+
+e NÃO:
+
+    Final Plan.
+
+
+13.4.5 Verificação obrigatória
+------------------------------
+
+Um plano recuperado só pode ser aceito se:
+
+    1. for compatível com o RIFT-IR atual;
+
+    2. respeitar o QualityFloor;
+
+    3. usar backends disponíveis;
+
+    4. respeitar RAM/VRAM disponível;
+
+    5. passar benchmark ou cost-model validation;
+
+    6. não introduzir dependências que violem operations[].
+
+
+13.4.6 Cache positivo e negativo
+--------------------------------
+
+O índice pode armazenar:
+
+POSITIVE PLAN:
+
+    plano que funcionou e foi medido.
+
+NEGATIVE PLAN:
+
+    plano já testado e rejeitado.
+
+Isso evita repetir buscas caras.
+
+Exemplo:
+
+    signature S
+        ->
+    INT2 + tile 128x256 + CPU
+        ->
+    rejeitado por latência
+
+Registrar:
+
+    negative candidate
+
+para reduzir recompilação futura.
+
+
+13.4.7 Universalidade
+---------------------
+
+O índice deve preferir features arquiteturais e de hardware, não nomes de
+modelos.
+
+Desejável:
+
+    um plano medido em Qwen pode ajudar a inicializar busca para um subgrafo
+    equivalente de Llama, Gemma ou Kimi.
+
+O modelo/família pode existir apenas como hint secundário.
+
+
+13.4.8 Falha segura
+-------------------
+
+Se TurboVec estiver:
+
+    - indisponível;
+    - vazio;
+    - incompatível;
+    - lento;
+    - retornar vizinhos ruins;
+
+o RIFT continua funcionando através do planner convencional.
+
+RIFT-Graph Intelligence é aceleração de compilação/autotuning, não requisito
+de correção.
+
+
+13.4.9 Métricas
+---------------
+
+Medir:
+
+    compiler search time
+    number of candidates benchmarked
+    cache hit rate
+    candidate precision@k
+    best-plan recall@k
+    final latency delta
+    final bytes/token delta
+
+Critério de sucesso:
+
+    reduzir custo de busca sem piorar o melhor plano final.
+
+
+13.4.10 Fase
+------------
+
+RIFT-Graph Intelligence fica:
+
+    FORA de RIFT_PHASE1_MINIMAL.
+
+Entrada recomendada:
+
+    após existir:
+        - planner funcional;
+        - benchmark runner;
+        - múltiplos planos medidos;
+        - Hardware Profile estável.
+
+
+13.5 RIFT-RAG
+=============
+
+RIFT-RAG é o subsistema opcional de retrieval do ecossistema RIFT.
+
+Objetivo:
+
+    oferecer RAG local de baixo consumo de RAM/CPU usando um backend vetorial
+    eficiente, mantendo a interface desacoplada do fornecedor.
+
+
+13.5.1 Arquitetura
+------------------
+
+    documentos
+        ->
+    chunking
+        ->
+    embedding model
+        ->
+    RIFT Vector API
+        ->
+    vector backend
+        ->
+    retrieval top-k
+        ->
+    optional reranker
+        ->
+    contexto do LLM
+
+
+13.5.2 TurboVec como backend preferencial
+-----------------------------------------
+
+TurboVec pode ser o primeiro backend nativo de referência para:
+
+    - indexação;
+    - busca vetorial;
+    - armazenamento compacto de embeddings;
+    - índices low-bit quando suportados;
+    - execução local CPU eficiente.
+
+Interface conceitual:
+
+    rift_vector_create()
+    rift_vector_add()
+    rift_vector_build()
+    rift_vector_search()
+    rift_vector_delete()
+    rift_vector_save()
+    rift_vector_load()
+
+
+13.5.3 Abstração
+----------------
+
+RIFT-RAG NÃO deve depender estruturalmente de TurboVec.
+
+Backend API:
+
+    RIFT_VECTOR_BACKEND
+
+Implementações futuras podem incluir:
+
+    TURBOVEC
+    HNSW
+    FAISS
+    vendor/custom backend
+
+TurboVec é:
+
+    backend preferencial inicial,
+
+não:
+
+    contrato universal do RIFT-RAG.
+
+
+13.5.4 Embeddings
+-----------------
+
+O RIFT-RAG deve permitir:
+
+    - FP32 embeddings;
+    - FP16 embeddings;
+    - quantized embeddings;
+    - representação compacta suportada pelo backend.
+
+A quantização de embeddings deve possuir métricas próprias.
+
+Ela não usa automaticamente o QualityFloor do modelo generativo.
+
+
+13.5.5 Retrieval Quality Contract
+---------------------------------
+
+RAG precisa de contrato independente:
+
+    RIFT_RETRIEVAL_QUALITY
+
+Métricas mínimas:
+
+    Recall@K
+    Precision@K
+    MRR
+    nDCG@K
+
+quando houver ground truth.
+
+Sem ground truth:
+
+    - overlap contra índice de referência;
+    - top-k agreement;
+    - distance/ranking drift.
+
+
+13.5.6 Perfis RAG
+-----------------
+
+Perfis sugeridos:
+
+    RIFT_RAG_SAFE
+    RIFT_RAG_BALANCED
+    RIFT_RAG_MINMEM
+
+Exemplo conceitual:
+
+SAFE:
+    índice de maior precisão;
+    máxima preservação de ranking.
+
+BALANCED:
+    embeddings/índice compactos;
+    pequena perda de retrieval permitida.
+
+MINMEM:
+    foco em RAM mínima;
+    só permitido se Retrieval Quality Contract for explicitamente aceito.
+
+
+13.5.7 Métricas de desempenho
+-----------------------------
+
+Medir:
+
+    index build time
+    index size
+    RAM resident
+    query latency p50
+    query latency p95
+    query latency p99
+    queries/sec
+    Recall@K
+    nDCG@K
+    energy/query quando disponível
+
+
+13.5.8 Integração com RIFT-Graph Intelligence
+---------------------------------------------
+
+RIFT-RAG e RIFT-Graph Intelligence podem usar a mesma tecnologia vetorial,
+mas são índices LOGICAMENTE separados.
+
+Nunca misturar:
+
+    document embeddings
+
+com:
+
+    graph signatures
+
+no mesmo namespace sem isolamento explícito.
+
+Sugestão:
+
+    index://rag/<collection>
+    index://graph/<compiler-version>/<hardware-class>
+
+
+13.5.9 Integração com RIFT-Predict
+----------------------------------
+
+TurboVec pode atender três casos independentes:
+
+    RIFT-RAG:
+        buscar informação externa.
+
+    RIFT-Predict:
+        prever acesso/expert/page.
+
+    RIFT-Graph Intelligence:
+        recuperar planos/subgrafos semelhantes.
+
+Cada caso deve possuir:
+
+    - schema próprio;
+    - índice próprio;
+    - métricas próprias;
+    - lifecycle próprio.
+
+
+13.5.10 Fase
+------------
+
+RIFT-RAG fica:
+
+    FORA de RIFT_PHASE1_MINIMAL.
+
+Ele não pode bloquear:
+
+    H1 Universal IR
+    H2 Progressive Precision
+    H3 Quality-Constrained Compilation
+
+Implementação pode iniciar após o núcleo mínimo estar demonstrado.
+
+
+13.6 TURBOVEC INTEGRATION CONTRACT
+=================================
+
+Contrato geral:
+
+    1. TurboVec é opcional;
+
+    2. o core deve funcionar sem ele;
+
+    3. TurboVec pode acelerar busca, retrieval e seleção de candidatos;
+
+    4. TurboVec não altera a semântica do modelo;
+
+    5. TurboVec não pode reduzir QualityFloor silenciosamente;
+
+    6. resultado vetorial aproximado deve ser validado quando afeta plano de
+       execução;
+
+    7. índices devem ser versionados;
+
+    8. índices devem registrar schema/version/hash;
+
+    9. incompatibilidade de índice deve resultar em rebuild ou fallback;
+
+   10. nenhuma decisão crítica de correção depende exclusivamente de nearest
+       neighbor search.
+
+
+13.7 O QUE TURBOVEC NÃO FAZ
+===========================
+
+TurboVec NÃO é:
+
+    - executor do DAG;
+    - validador do DAG;
+    - quantizador universal dos pesos;
+    - substituto do RIFT-Pager;
+    - substituto do RIFT-Compiler;
+    - substituto do router MoE;
+    - substituto do Quality Harness.
+
+Seu papel é acelerar problemas de busca/vizinhança/indexação onde a
+aproximação pode ser validada ou onde retrieval é o próprio objetivo.
+
+
+
+14. RIFT EXPERT OPTIMIZATION
+============================
+
+Otimizações MoE são módulos específicos sobre a infraestrutura universal.
+
+
+14.1 Expert residency
+---------------------
+
+Experts são CONDITIONALLY_ACTIVE.
+
+Possíveis políticas:
+
+    - frequência
+    - contexto
+    - camada
+    - sequência de routers
+    - clustering
+
+
+14.2 Expert Folding
+-------------------
+
+Fase experimental:
+
+    W_expert ~= B_group + Delta_expert
+
+onde:
+
+    B_group:
+        base compartilhada e preferencialmente residente
+
+    Delta_expert:
+        especialização menor, carregada sob demanda
+
+
+14.3 Variantes
+--------------
+
+Delta_expert pode ser:
+
+    - denso low-bit
+    - low-rank
+    - sparse
+    - mixed
+
+
+14.4 Regra
+----------
+
+Expert Folding só entra em produção se:
+
+    economia de bytes
+    +
+    ganho de latência
+
+forem demonstrados sem violar o quality profile.
+
+
+15. RIFT-KERNEL HAL
+===================
+
+RIFT não deve depender de uma engine de kernel única.
+
+
+15.1 API mínima
+---------------
+
+    rift_matmul()
+    rift_matmul_lowbit()
+    rift_attention()
+    rift_moe()
+    rift_norm()
+    rift_state_update()
+    rift_fused_decode()
+    rift_fused_reconstruct_matmul()
+
+
+15.2 Backends
+-------------
+
+Planejados:
+
+    RIFT_CPU_GENERIC
+    RIFT_AVX2
+    RIFT_AVX512
+    RIFT_AMX
+    RIFT_NEON
+
+    RIFT_CUDA
+    RIFT_HIP
+    RIFT_METAL
+    RIFT_VULKAN
+    RIFT_SYCL
+
+    RIFT_NPU
+
+Integrações:
+
+    RIFT_TMAC
+    RIFT_BITNET
+
+
+15.3 BitNet
+-----------
+
+Uso:
+
+    engine para representações ternárias/ultra-low-bit quando tecnicamente
+    compatível.
+
+BitNet não define o formato universal do RIFT.
+
+
+15.4 T-MAC
+----------
+
+Uso:
+
+    backend low-bit generalista quando vantajoso.
+
+O planner pode escolher T-MAC ou outro kernel dependendo do hardware.
+
+
+15.5 Fused reconstruction
+-------------------------
+
+Objetivo:
+
+    evitar reconstruir todo tensor em alta precisão na RAM/VRAM.
+
+Ideal:
+
+    BASE + refinement
+        ->
+    registradores/shared memory
+        ->
+    operação
+
+Exemplo:
+
+    fused_reconstruct_matmul(BASE, DELTA, activation)
+
+
+15.6 Fused Low-Rank Residual
+----------------------------
+
+Para:
+
+    W ~= Q(W) + U * V^T
+
+é PROIBIDO, no caminho otimizado, materializar U*V^T como uma matriz completa
+apenas para somá-la ao peso base.
+
+Para uma ativação X:
+
+    Y = X * Q(W) + (X * U) * V^T
+
+O backend deve executar:
+
+    GEMM_LOWBIT(X, QW)
+        +
+    GEMM(GEMM(X, U), V^T)
+
+com acumulação direta no output.
+
+API HAL sugerida:
+
+    rift_gemm_lowbit_lowrank(
+        X,
+        QW,
+        U,
+        V,
+        rank,
+        output
+    )
+
+Requisitos:
+
+    - não materializar U*V^T;
+    - rank variável por tensor/superblock quando permitido;
+    - U/V podem usar FP16, BF16, FP8 ou codec quantizado aprovado;
+    - permitir acumulação fused;
+    - permitir CPU/GPU split;
+    - permitir fusion futura com bias/activation;
+    - incluir o custo dos dois GEMMs adicionais no Hardware Cost Model.
+
+A complexidade adicional é proporcional a:
+
+    O(B * d_in * r + B * r * d_out)
+
+em vez de reconstruir e armazenar uma matriz residual d_in x d_out.
+
+Regra:
+
+    low-rank só é selecionado quando:
+        economia_de_bytes
+        +
+        ganho_de_latência_ou_memória
+        +
+        QualityFloor
+
+superarem candidatos alternativos.
+
+
+16. HARDWARE AUTOTUNER
+======================
+
+RIFT deve adaptar-se ao computador real.
+
+
+16.1 Descoberta
+---------------
+
+CPU:
+
+    - arquitetura
+    - cores
+    - threads
+    - cache
+    - AVX2
+    - AVX512
+    - AMX
+    - NEON
+
+RAM:
+
+    - capacidade
+    - bandwidth estimada
+    - NUMA
+
+GPU:
+
+    - vendor
+    - VRAM
+    - compute capability
+    - bandwidth
+    - tensor/matrix capabilities
+
+Storage:
+
+    - tipo
+    - sequential read
+    - random read
+    - latency
+
+Interconnect:
+
+    - PCIe generation
+    - measured host<->device bandwidth
+
+
+16.2 Microbenchmarks
+--------------------
+
+Na primeira execução:
+
+    - GEMM pequeno
+    - GEMM low-bit
+    - memcpy
+    - RAM bandwidth
+    - SSD streaming
+    - random page read
+    - host->GPU
+    - GPU->host
+
+
+16.3 Resultado
+--------------
+
+Gerar um Hardware Profile:
+
+    CPU_SCORE
+    GPU_SCORE
+    RAM_BW
+    SSD_BW
+    PCIE_BW
+    available_RAM
+    available_VRAM
+
+
+17. RIFT PLANNER
+================
+
+O planner resolve:
+
+    - representation placement
+    - device placement
+    - page residency
+    - prefetch
+    - kernel backend
+    - parallelism
+    - buffer reuse
+
+
+17.1 Dois planos obrigatórios
+-----------------------------
+
+RIFT_PREFILL_PLAN
+
+    otimizado para:
+        throughput
+        batching
+        grandes matrizes
+        processamento paralelo
+
+RIFT_DECODE_PLAN
+
+    otimizado para:
+        latency/token
+        page reuse
+        state update
+        low batch
+
+
+17.2 Exemplo
+------------
+
+Um mesmo tensor pode:
+
+    prefill:
+        executar na GPU
+
+    decode:
+        executar na CPU low-bit
+
+se isso reduzir custo total no hardware alvo.
+
+
+18. RIFT EXECUTOR
+================
+
+Responsável pela execução do plano compilado.
+
+
+18.1 Features
+-------------
+
+    - asynchronous page loading
+    - prefetch
+    - double buffering
+    - pinned memory
+    - mmap
+    - direct I/O quando vantajoso
+    - CPU/GPU overlap
+    - concurrent transfer/compute
+    - fused operations
+    - NUMA-aware scheduling
+
+
+18.2 Regra
+----------
+
+Nenhuma transferência deve ocorrer se:
+
+    custo_transferência > benefício_compute
+
+quando existir um plano local melhor.
+
+
+19. KIMI-K3 COMO STRESS-TEST
+============================
+
+Kimi-K3 continua sendo um alvo estratégico.
+
+Mas seus conceitos específicos ficam em um adapter/planner profile.
+
+
+19.1 Mapeamento
+---------------
+
+    Kimi trunk/shared weights
+        -> ALWAYS_ACTIVE
+
+    routed experts
+        -> CONDITIONALLY_ACTIVE
+
+    KDA state
+        -> RIFT-State
+
+
+19.2 Fase inicial
+-----------------
+
+O ataque inicial ao trunk continua válido porque:
+
+    - reduz I/O repetitivo
+    - testa progressive precision
+    - testa quality gates
+    - testa residência
+    - é suficientemente grande para estressar o sistema
+
+
+19.3 Regra
+----------
+
+Nenhum conceito Kimi-specific pode ser requisito do core.
+
+
+19.4 Kimi Adapter — Fase 1 Scope
+--------------------------------
+
+Esta subseção define operacionalmente o termo "Kimi trunk" usado na Fase 1.
+
+No RIFT, "trunk" NÃO é uma categoria do core.
+
+No adapter Kimi da Fase 1:
+
+    KIMI_TRUNK_PHASE1
+
+é o conjunto de pesos classificados como:
+
+    ALWAYS_ACTIVE
+
+pela semântica de execução do modelo.
+
+
+19.4.1 ALWAYS_ACTIVE no adapter Kimi
+------------------------------------
+
+Entram, quando presentes e executados incondicionalmente:
+
+    - token embeddings;
+
+    - output/lm_head;
+
+    - RMSNorm/LayerNorm parameters;
+
+    - pesos de attention compartilhada;
+
+    - projeções Q/K/V/O quando fizerem parte do caminho compartilhado;
+
+    - pesos/projeções associados a MLA/KDA que sejam executados para todo
+      token/camada;
+
+    - parâmetros de gating/router necessários para decidir quais experts serão
+      usados;
+
+    - shared projections do bloco;
+
+    - qualquer shared expert que a arquitetura/configuração declare como
+      executado incondicionalmente;
+
+    - scales/metadata indispensáveis para decodificar pesos ALWAYS_ACTIVE.
+
+
+19.4.2 CONDITIONALLY_ACTIVE no adapter Kimi
+-------------------------------------------
+
+Ficam FORA do trunk da Fase 1:
+
+    - matrizes específicas de routed experts;
+
+    - biases/scales específicos de routed experts;
+
+    - metadata cujo único uso pertença a um routed expert;
+
+    - páginas/residuais exclusivas de um expert condicionado pelo router.
+
+Esses pesos são:
+
+    CONDITIONALLY_ACTIVE
+
+e pertencem às fases MoE posteriores.
+
+
+19.4.3 STATE
+------------
+
+Estados temporais de KDA/attention:
+
+    NÃO são pesos do trunk.
+
+Eles são classificados como:
+
+    RIFT-State / runtime state
+
+e compressão avançada desses estados continua fora da Fase 1 mínima.
+
+
+19.4.4 Como isolar tensores do checkpoint real
+----------------------------------------------
+
+O adapter Kimi deve produzir um manifesto determinístico:
+
+    kimi_phase1_manifest.json
+
+Pipeline:
+
+    1. carregar config/model metadata;
+
+    2. carregar o weight map/index do checkpoint Safetensors;
+
+    3. mapear tensor -> módulo/operação do grafo;
+
+    4. classificar o módulo semanticamente;
+
+    5. marcar:
+           ALWAYS_ACTIVE
+           CONDITIONALLY_ACTIVE
+           STATE/OTHER;
+
+    6. emitir lista de shards e ranges necessários;
+
+    7. somar bytes por classe;
+
+    8. falhar em modo estrito caso um tensor relevante não possa ser
+       classificado.
+
+Regra:
+
+    NÃO classificar somente por substring do nome do tensor.
+
+Nomes podem ser usados como sinal pelo adapter, mas a autoridade deve ser:
+
+    config
+    +
+    estrutura do módulo/grafo
+    +
+    regras versionadas do Kimi adapter.
+
+
+19.4.5 Manifest mínimo
+----------------------
+
+Para cada tensor:
+
+    tensor_name
+    source_shard
+    dtype
+    shape
+    bytes
+    layer_id
+    semantic_role
+    module_role
+    classification_rule
+
+Resumo:
+
+    always_active_tensor_count
+    always_active_bytes
+
+    conditionally_active_tensor_count
+    conditionally_active_bytes
+
+    unclassified_tensor_count
+    unclassified_bytes
+
+
+19.4.6 Regra de segurança
+-------------------------
+
+Para Fase 1:
+
+    unclassified_tensor_count != 0
+
+em um bloco selecionado deve interromper a compilação desse bloco por padrão.
+
+Não assumir silenciosamente:
+
+    unknown -> ALWAYS_ACTIVE
+
+nem:
+
+    unknown -> CONDITIONALLY_ACTIVE.
+
+
+19.4.7 Ordem operacional do alvo Kimi
+-------------------------------------
+
+O alvo NÃO é o trunk completo no primeiro teste.
+
+A sequência obrigatória é:
+
+    K1 — ONE BLOCK
+
+        um bloco real do caminho ALWAYS_ACTIVE;
+        BF16 reference;
+        Container M0;
+        primeiro quality/drift comparison.
+
+    K2 — REPRESENTATIVE SET
+
+        aproximadamente 8–10 blocos/camadas representativos;
+        selecionados ao longo da profundidade;
+        medir cumulative drift.
+
+    K3 — FULL ALWAYS_ACTIVE SET
+
+        somente após K1 e K2 passarem;
+        compilar o conjunto completo classificado como ALWAYS_ACTIVE.
+
+    K4 — ROUTED EXPERTS
+
+        explicitamente fora da Fase 1 mínima.
+
+Correspondência com a sequência geral:
+
+    K1 -> PHASE 1B
+    K2 -> PHASE 1C
+    K3 -> PHASE 1D
+
+
+20. DENSE MODELS
+================
+
+Em modelos densos:
+
+    quase todos os pesos são ALWAYS_ACTIVE.
+
+O principal problema torna-se:
+
+    - tamanho residente
+    - bandwidth RAM/VRAM
+    - eficiência low-bit
+    - state/context
+    - CPU/GPU placement
+
+RIFT deve otimizar principalmente:
+
+    superblock representation
+    +
+    fused low-bit compute
+    +
+    hardware placement
+
+
+21. MOE MODELS
+==============
+
+Em MoE:
+
+    pesos compartilhados -> ALWAYS_ACTIVE
+    routed experts       -> CONDITIONALLY_ACTIVE
+
+RIFT adiciona:
+
+    - predictor
+    - expert residency
+    - prefetch
+    - expert folding
+    - expert delta streams
+
+
+22. HYBRID MODELS
+=================
+
+Arquiteturas híbridas podem combinar:
+
+    attention
+    recurrent state
+    SSM
+    DeltaNet
+    MoE
+    convolution
+    multimodal encoders
+
+RIFT-IR representa cada operação explicitamente.
+
+RIFT-State guarda os estados temporais necessários.
+
+
+23. MULTIMODAL
+==============
+
+O RIFT não deve ser restrito a text-only.
+
+Um modelo multimodal pode conter:
+
+    vision encoder
+    audio encoder
+    projector
+    language backbone
+
+Cada subsistema é compilado de forma independente e integrado no mesmo grafo.
+
+
+24. RELAÇÃO COM TECNOLOGIAS EXISTENTES
+======================================
+
+24.1 BitNet / bitnet.cpp
+------------------------
+
+Papel:
+
+    backend para execução ternária/ultra-low-bit.
+
+Não é:
+
+    formato universal
+    compilador universal
+    planner universal
+
+
+24.2 T-MAC
+----------
+
+Papel:
+
+    backend low-bit.
+
+Não é dependência obrigatória.
+
+
+24.3 TurboQuant
+---------------
+
+Papel:
+
+    candidato para codecs de RIFT-State e técnicas de quantização/rotação.
+
+
+24.4 TurboVec
+-------------
+
+Papel formal na v0.3.4:
+
+    1. RIFT-RAG:
+        backend vetorial preferencial inicial para embeddings/retrieval.
+
+    2. RIFT-Predict:
+        índices de assinaturas e previsão de pages/experts/acessos.
+
+    3. RIFT-Graph Intelligence:
+        índice de Graph Signatures e Plan Records para reutilizar conhecimento
+        de compilação/autotuning.
+
+Não é:
+
+    - executor do DAG;
+    - autoridade de ordem topológica;
+    - dependência obrigatória do core;
+    - substituto dos quality/validation gates.
+
+
+24.5 llama.cpp / GGUF
+---------------------
+
+Podem servir como:
+
+    - benchmark
+    - referência de portabilidade
+    - frontend/import source
+    - integração futura
+
+RIFT não deve apenas reproduzir GGUF.
+
+
+24.6 KTransformers
+------------------
+
+Referência para:
+
+    - CPU/GPU heterogeneous inference
+    - MoE scheduling
+
+RIFT deve medir ganhos contra soluções desse tipo.
+
+
+24.7 vLLM
+---------
+
+Referência para:
+
+    - serving
+    - batching
+    - throughput
+    - KV/state management
+
+RIFT tem foco adicional em execução local e minimização de recursos.
+
+
+25. QUALITY CERTIFICATE
+=======================
+
+Todo modelo RIFT distribuível deve poder conter um certificado.
+
+Exemplo:
+
+    Model:
+    Source revision:
+    RIFT compiler version:
+    RIFT profile:
+    Hardware class:
+
+    Quality:
+        perplexity delta
+        logit divergence
+        benchmark scores
+
+    Resources:
+        disk size
+        RAM
+        VRAM
+
+    Performance:
+        load time
+        TTFT
+        prefill tok/s
+        decode tok/s
+        joules/token
+
+    Validation:
+        calibration dataset hash
+        benchmark config hash
+        compiler config hash
+
+Isso garante reprodutibilidade.
+
+
+26. BENCHMARK PROTOCOL
+======================
+
+Para afirmar superioridade, todos os testes devem ocorrer:
+
+    - no mesmo hardware
+    - com o mesmo modelo/família
+    - mesmo contexto
+    - mesmo prompt
+    - mesma temperatura/configuração
+    - mesmo número de threads
+    - mesmas condições térmicas quando possível
+
+
+26.1 Métricas
+-------------
+
+Memória:
+
+    RAM peak
+    RAM steady
+    VRAM peak
+    VRAM steady
+
+Storage:
+
+    model size
+    bytes read/token
+    IOPS
+    sequential MB/s
+
+Performance:
+
+    startup
+    load time
+    TTFT
+    prefill tok/s
+    decode tok/s
+
+Qualidade:
+
+    perplexity delta
+    benchmark delta
+    output agreement
+
+Energia:
+
+    watts
+    joules/token
+
+
+26.2 Baselines
+--------------
+
+Quando aplicável:
+
+    llama.cpp
+    GGUF quantizations
+    BitNet
+    T-MAC
+    KTransformers
+    vLLM
+    vendor runtimes
+
+
+27. HARDWARE TARGETS
+====================
+
+Tier A - PC comum mínimo:
+
+    16 GB RAM
+    CPU moderna
+    SSD NVMe
+    GPU opcional
+
+Tier B - PC gamer comum:
+
+    32 GB RAM
+    GPU 8-16 GB VRAM
+    NVMe
+
+Tier C - workstation doméstica:
+
+    64-128 GB RAM
+    GPU 16-32 GB
+    NVMe rápido
+
+Tier D - high-end local:
+
+    múltiplas GPUs / grande RAM
+
+
+27.1 Objetivo
+-------------
+
+RIFT deve gerar um plano diferente para cada tier.
+
+Nunca assumir que todos possuem GPU.
+
+
+28. SEGURANÇA CONTRA REGRESSÃO E FALLBACK DE COMPILAÇÃO
+=========================================================
+
+O compilador deve possuir fallback automático e evitar buscas obviamente
+ruins.
+
+28.1 Pre-screen antes do fallback
+---------------------------------
+
+Antes do Candidate Search completo, o Sensitivity Pre-Screener classifica o
+superblock.
+
+Se estatísticas de pesos/ativações indicarem alta sensibilidade, o compilador
+pode pular:
+
+    Ternary
+    INT2 puro
+
+e iniciar em:
+
+    INT2 + refinement
+    INT3
+    INT3 + refinement
+    INT4
+    MXFP4
+    ou representação superior
+
+Isso economiza tempo de compilação.
+
+A decisão de pular candidatos deve ser conservadora e reversível durante
+validação global.
+
+
+28.2 Fallback automático
+-------------------------
+
+Se:
+
+    representation_candidate
+
+falhar no quality gate:
+
+    subir precisão
+    ou adicionar refinement.
+
+Sequência possível:
+
+    Ternary
+      ->
+    INT2
+      ->
+    INT2 + refinement
+      ->
+    INT3
+      ->
+    INT3 + refinement
+      ->
+    INT4
+      ->
+    MXFP4 / FP8
+      ->
+    BF16/original
+
+A ordem real depende de:
+
+    - codec;
+    - tipo de operação;
+    - hardware;
+    - estatísticas de sensibilidade;
+    - custo de memória/bandwidth;
+    - QualityFloor.
+
+
+28.3 Regra de segurança
+-----------------------
+
+O pre-screen nunca é prova final de qualidade.
+
+Somente os Quality Gates e a validação end-to-end podem certificar a
+representação final.
+
+
+29. ROADMAP
+===========
+
+FASE 0 - Fundação
+-----------------
+
+    [x] conceito Progressive Precision
+    [x] BASE + DELTA
+    [x] PoC MXFP4 2-bit + 2-bit round-trip
+    [x] I/O planner inicial
+    [x] especificação universal 0.3
+    [x] especificação 0.3.1 congelada para Fase 1
+    [x] mmap-native container requirements
+    [x] Logical Page / Physical Extent separation
+    [x] fused low-rank residual definido
+    [x] Sensitivity Pre-Screener definido
+    [x] especificação 0.3.2 Phase 1 Implementation Freeze
+    [x] RIFT-IR M0 definido
+    [x] Container M0 definido
+    [x] Calibration Sampling Protocol v1 definido
+    [x] Cumulative Drift Budget definido
+    [x] defaults experimentais de qualidade definidos
+
+Próximo:
+
+    [ ] implementar RIFT-IR M0
+    [ ] implementar RIFT Container M0 writer/reader
+    [ ] implementar mmap reader
+    [ ] implementar calibration sampler
+    [ ] implementar cumulative drift harness
+
+
+FASE 1 - Minimum Viable RIFT
+----------------------------
+
+Nome formal:
+
+    RIFT_PHASE1_MINIMAL
+
+Objetivo:
+
+    provar as hipóteses fundamentais do RIFT com o menor sistema possível.
+
+
+AVISO OBRIGATÓRIO — STATUS EXPERIMENTAL
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Todos os números de qualidade, thresholds e budgets usados na Fase 1 são:
+
+    EXPERIMENTAIS
+
+até que sejam medidos e validados pelo protocolo L2.
+
+Isso inclui, entre outros:
+
+    - cosine >= 0.995;
+    - NRMSE <= 0.05;
+    - top-1 agreement >= 95%;
+    - top-5 agreement >= 98%;
+    - perplexity degradation <= 2%;
+    - qualquer budget inicial de cumulative drift.
+
+Esses valores existem para:
+
+    - tornar a implementação executável;
+    - permitir comparação;
+    - gerar dados;
+    - calibrar versões futuras.
+
+Eles NÃO constituem:
+
+    - contrato de produto;
+    - garantia universal de preservação de inteligência;
+    - padrão definitivo do RIFT;
+    - autorização para anunciar equivalência ao modelo original.
+
+Uma configuração só pode ser apresentada como perfil certificado após:
+
+    L2 End-to-End Validation
+    +
+    benchmark registrado
+    +
+    metodologia reproduzível.
+
+
+IN - obrigatório
+~~~~~~~~~~~~~~~~
+
+    - Safetensors input
+    - RIFT-IR M0
+    - RIFT Container M0
+    - mmap reader
+    - CPU reference backend
+
+Operações M0:
+
+    - Embedding
+    - Linear
+    - RMSNorm
+    - RoPE
+    - Attention
+    - Activation
+    - Add
+    - Output
+
+Representações:
+
+    - BF16 passthrough
+    - INT4
+    - INT2
+    - BASE
+    - REFINEMENT_BITPLANE
+
+Granularidade:
+
+    - um tile size fixo inicial
+    - superblock support mínimo
+
+Qualidade:
+
+    - L0 Structural Scan
+    - L1 Activation Calibration
+    - Representative Layer Sampling
+    - Sensitivity Pre-Screener
+    - Cumulative Drift
+    - L2 em candidatos finais
+
+
+OUT - explicitamente fora da Fase 1
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    - MoE scheduler
+    - Expert Folding
+    - RIFT-Predict
+    - RIFT-Graph Intelligence
+    - RIFT-RAG / TurboVec backend
+    - RIFT-State compression
+    - low-rank residual em produção
+    - sparse residual em produção
+    - outlier residual em produção
+    - CUDA otimizado
+    - T-MAC backend
+    - BitNet backend
+    - Hardware Autotuner
+    - HIP
+    - Vulkan
+    - Metal
+    - NPU
+    - multimodal
+    - server
+    - distributed inference
+
+Esses componentes permanecem na arquitetura/roadmap, mas NÃO podem bloquear a
+prova da Fase 1.
+
+
+Sequência de prova
+~~~~~~~~~~~~~~~~~~
+
+PHASE 1A:
+    modelo denso pequeno/de referência
+
+PHASE 1B:
+    um bloco real de arquitetura grande/Kimi
+
+PHASE 1C:
+    aproximadamente 8–10 blocos representativos
+
+PHASE 1D:
+    conjunto always-active/trunk completo quando viável
+
+PHASE 1E:
+    segundo modelo denso de família diferente usando o mesmo core
+
+
+Critério de sucesso da Fase 1
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    1. converter modelo/checkpoint para RIFT-IR M0;
+
+    2. compilar pesos para RIFT Container M0;
+
+    3. carregar via mmap;
+
+    4. executar BF16 de referência;
+
+    5. executar pelo menos INT4 e INT2;
+
+    6. executar BASE + bitplane refinement;
+
+    7. comparar numericamente contra referência;
+
+    8. medir bytes reduzidos/movimentados;
+
+    9. medir cumulative drift;
+
+   10. manter QualityFloor experimental definido;
+
+   11. demonstrar o pipeline em duas famílias/arquiteturas sem alterar o core.
+
+Se esses 11 itens forem cumpridos:
+
+    as três hipóteses fundamentais estão demonstradas:
+
+        Universal IR funciona.
+        Progressive Precision funciona.
+        Quality-constrained compilation funciona.
+
+
+FASE 2 - Dense Universal
+------------------------
+
+Adicionar pelo menos:
+
+    - Llama adapter
+    - Qwen dense adapter
+    - Gemma adapter
+
+Meta:
+
+    provar que RIFT não depende de MoE/Kimi.
+
+
+FASE 3 - MoE Universal
+----------------------
+
+    - CONDITIONALLY_ACTIVE scheduler
+    - expert residency
+    - predictor
+    - prefetch
+    - Qwen MoE
+    - Kimi MoE
+    - outros MoE
+
+
+FASE 4 - Residuals avançados
+----------------------------
+
+    - low-rank refinement
+    - sparse refinement
+    - outlier refinement
+    - automatic representation search
+
+
+FASE 5 - Expert Folding
+-----------------------
+
+    - clustering de experts
+    - shared bases
+    - residual expert
+    - benchmark de I/O
+    - quality validation
+
+
+FASE 6 - RIFT-State
+-------------------
+
+    - KV codec
+    - TurboQuant experiment
+    - MLA
+    - KDA
+    - recurrent/DeltaNet state
+
+
+FASE 7 - Hardware HAL
+---------------------
+
+    - AVX2
+    - AVX512
+    - CUDA
+    - HIP
+    - Metal
+    - Vulkan
+    - T-MAC backend
+    - BitNet backend
+
+
+FASE 8 - Autotuner
+------------------
+
+    - hardware detection
+    - microbenchmarks
+    - placement solver
+    - prefill plan
+    - decode plan
+
+
+FASE 8B - Vector Intelligence / TurboVec
+----------------------------------------
+
+Pré-requisitos:
+
+    - core mínimo comprovado;
+    - benchmark runner funcional;
+    - planner/autotuner funcional;
+    - métricas de retrieval definidas.
+
+Entregáveis:
+
+    RIFT-Graph Intelligence:
+        - Graph Signature v1;
+        - Plan Record v1;
+        - TurboVec graph index;
+        - positive/negative plan cache;
+        - benchmark-gated candidate reuse.
+
+    RIFT-RAG:
+        - RIFT Vector API;
+        - TurboVec backend;
+        - index persistence/versioning;
+        - Retrieval Quality Contract;
+        - SAFE/BALANCED/MINMEM profiles.
+
+Regra:
+
+    esta fase não retroage para bloquear RIFT_PHASE1_MINIMAL.
+
+
+FASE 9 - Production
+-------------------
+
+    - CLI
+    - Python API
+    - C/C++ API
+    - server API
+    - model repository
+    - reproducible benchmark suite
+    - RIFT Quality Certificates
+
+
+30. CLI PROPOSTA
+================
+
+Importar:
+
+    rift import <model>
+
+Compilar:
+
+    rift compile <model> --profile balanced
+
+Inspecionar:
+
+    rift inspect <model.rift>
+
+Benchmark:
+
+    rift bench <model.rift>
+
+Executar:
+
+    rift run <model.rift>
+
+Auto:
+
+    rift run <model>
+
+O modo auto pode:
+
+    importar
+    detectar hardware
+    escolher profile
+    gerar/obter plano
+    executar
+
+
+31. API PROPOSTA
+================
+
+C/C++:
+
+    rift_model_load()
+    rift_profile_select()
+    rift_plan_create()
+    rift_context_create()
+    rift_prefill()
+    rift_decode()
+    rift_model_free()
+
+Python:
+
+    model = rift.load(...)
+    plan = rift.autotune(model)
+    ctx = model.context(plan=plan)
+
+    ctx.prefill(...)
+    ctx.generate(...)
+
+
+32. CRITÉRIO PARA NOVA ARQUITETURA
+==================================
+
+Para suportar um novo modelo:
+
+    1. identificar operações
+    2. mapear para RIFT-IR
+    3. criar CUSTOM OP apenas se necessário
+    4. definir state semantics
+    5. executar quality suite
+
+O núcleo não deve ser alterado se o RIFT-IR já representar as operações.
+
+
+33. CRITÉRIO DE SUCESSO UNIVERSAL
+=================================
+
+RIFT será considerado universal quando:
+
+    1. suportar modelos densos e MoE usando o mesmo core
+
+    2. suportar no mínimo:
+        Kimi
+        Qwen
+        Gemma
+        Llama
+
+    3. adicionar uma nova arquitetura principalmente por adapter
+
+    4. executar em CPU-only
+
+    5. executar em CPU+GPU
+
+    6. possuir pelo menos dois backends de hardware
+
+    7. gerar perfis de qualidade certificados
+
+    8. mostrar ganhos reais de Pareto contra baselines
+
+
+34. CRITÉRIO DE "MELHOR TECNOLOGIA"
+===================================
+
+Não declarar RIFT como superior por apenas uma métrica.
+
+O objetivo é dominar ou ampliar a fronteira de Pareto entre:
+
+    qualidade
+    RAM
+    VRAM
+    disk
+    bandwidth
+    TTFT
+    prefill
+    decode
+    energia
+
+Exemplo:
+
+    outra engine:
+        qualidade 100
+        RAM 32 GB
+        decode 5 tok/s
+
+    RIFT:
+        qualidade 99.8
+        RAM 16 GB
+        decode 7 tok/s
+
+pode representar um ganho real.
+
+Mas:
+
+    RIFT:
+        qualidade 85
+        RAM 8 GB
+        decode 10 tok/s
+
+não deve ser apresentado como preservação da inteligência original.
+
+
+35. DIFERENCIAL CENTRAL DO RIFT
+===============================
+
+O RIFT não é somente:
+
+    quantizador
+
+nem:
+
+    runtime
+
+nem:
+
+    formato
+
+nem:
+
+    offloader
+
+Ele combina:
+
+    Semantic Model Compiler
+            +
+    Universal IR
+            +
+    Progressive Weight Representation
+            +
+    State Compression
+            +
+    Hardware Autotuning
+            +
+    Tiered Memory Virtualization
+            +
+    Heterogeneous Execution
+            +
+    Formal Quality Contracts
+
+
+36. DEFINIÇÃO OFICIAL
+=====================
+
+RIFT-LM é um compilador e runtime universal de inferência para modelos
+open-weight que transforma pesos, estados e operações em representações
+progressivas específicas para o hardware disponível, minimizando movimentação
+de dados, memória e computação sob um contrato formal e mensurável de
+preservação de qualidade.
+
+
+37. REGRA FINAL DO PROJETO
+==========================
+
+A tecnologia deve sempre perseguir o melhor desempenho fisicamente possível
+no computador disponível.
+
+Ela nunca deve depender de promessas irreais.
+
+Para modelos extremamente grandes, limites de:
+
+    RAM bandwidth
+    VRAM bandwidth
+    PCIe bandwidth
+    SSD bandwidth
+
+continuam existindo.
+
+O diferencial do RIFT será reduzir agressivamente a quantidade de bytes que
+realmente precisam atravessar esses limites, manter os dados no tier correto,
+usar a representação mais eficiente que preserve qualidade e executar cada
+operação no dispositivo mais adequado.
+
+
+38. PRÓXIMA IMPLEMENTAÇÃO RECOMENDADA
+=====================================
+
+Versão 0.3.2 define:
+
+    PHASE 1 IMPLEMENTATION FREEZE
+
+Durante a Fase 1, o time deve priorizar código executável e medição.
+
+Não é permitido expandir o core apenas para satisfazer componentes planejados
+para fases futuras.
+
+
+38.1 Ordem exata de implementação
+---------------------------------
+
+    1. Safetensors Reader mínimo.
+
+    2. RIFT-IR M0:
+        Model
+        Tensor
+        Operation
+        8 opcodes básicos
+        JSON debug serializer.
+
+    3. RIFT Container M0:
+        Header
+        Tensor Table
+        Page Table
+        Payload
+        checksum.
+
+    4. Writer/Reader:
+        offsets file-relative
+        mmap read-only
+        bounds checking
+        checksum validation.
+
+    5. BF16 passthrough:
+        round-trip bit-exact.
+
+    6. INT4 codec:
+        encode
+        decode
+        reference matmul.
+
+    7. INT2 codec:
+        encode
+        decode
+        reference matmul.
+
+    8. Tile:
+        selecionar UM tamanho inicial fixo.
+        Exemplo experimental:
+            128 x 256
+        O tamanho será revisado após benchmarks.
+
+    9. BASE + BITPLANE:
+        writer
+        reader
+        reconstruction
+        fused/reference path.
+
+   10. L0 Structural Scan.
+
+   11. L1 Activation Calibration.
+
+   12. Sensitivity Pre-Screener.
+
+   13. Representative Layer Sampling.
+
+   14. Quality Harness:
+        local
+        checkpoint
+        end-to-end.
+
+   15. Cumulative Drift Tracker.
+
+   16. Modelo denso pequeno:
+        pipeline completo.
+
+   17. Bloco grande/Kimi:
+        pipeline completo.
+
+   18. 8–10 blocos representativos:
+        medir propagação de drift.
+
+   19. Segundo modelo/família:
+        usar mesmo RIFT-IR M0 e Container M0.
+
+   20. Consolidar resultados.
+
+
+38.1.1 Contratos obrigatórios antes do primeiro arquivo interoperável
+---------------------------------------------------------------------
+
+Antes de considerar o Writer/Reader M0 interoperável:
+
+    [ ] Header M0 = exatamente 128 bytes;
+
+    [ ] testes de offsets passam em C++ e/ou Rust;
+
+    [ ] serialization é little-endian explícita;
+
+    [ ] reserved fields são zerados;
+
+    [ ] header checksum possui algoritmo congelado;
+
+    [ ] golden file mínimo existe;
+
+    [ ] Rust/C++ ou duas implementações independentes conseguem ler o mesmo
+        golden file quando ambas existirem;
+
+    [ ] JSON IR utiliza:
+            execution_model = TOPOLOGICAL_ARRAY_V1;
+
+    [ ] operations[] preserva ordem topológica;
+
+    [ ] loader rejeita DAG inválido;
+
+    [ ] operation IDs não são usados como ordem implícita.
+
+
+38.1.2 Golden Files
+-------------------
+
+Criar fixtures oficiais pequenas:
+
+    tests/golden/header_m0.rift
+    tests/golden/container_m0_one_tensor.rift
+    tests/golden/ir_m0_linear.json
+
+Cada fixture deve possuir:
+
+    - bytes esperados ou hash;
+    - descrição dos offsets;
+    - resultado esperado do parser;
+    - casos inválidos correspondentes.
+
+Casos inválidos mínimos:
+
+    bad_magic
+    bad_version
+    truncated_header
+    offset_overflow
+    range_out_of_file
+    bad_checksum
+    duplicate_op_id
+    duplicate_tensor_id
+    forward_dependency
+    cycle
+    unknown_opcode
+
+
+38.2 Métricas obrigatórias
+--------------------------
+
+Toda prova deve registrar:
+
+Qualidade:
+
+    cosine
+    NRMSE
+    top-k quando aplicável
+    perplexity delta
+    cumulative drift
+    catastrophic failures
+
+Tamanho:
+
+    bytes original
+    bytes RIFT
+    bits efetivos/peso
+
+Memória:
+
+    peak RSS
+    mapped bytes
+    resident bytes
+
+I/O:
+
+    bytes lidos
+    page faults
+    major page faults quando mensurável
+
+Performance:
+
+    load time
+    TTFT quando houver geração completa
+    prefill tok/s
+    decode tok/s
+    kernel latency
+
+
+38.3 O que NÃO implementar ainda
+--------------------------------
+
+Mesmo que já esteja bem especificado:
+
+    - Expert Folding;
+    - Predictor;
+    - RIFT-State compression;
+    - low-rank production kernel;
+    - sparse/outlier production;
+    - GPU scheduler;
+    - Autotuner;
+    - backend matrix completa;
+    - multimodal.
+
+Prototipar isoladamente é permitido.
+
+Integrar ao caminho principal antes do critério de sucesso da Fase 1:
+
+    NÃO.
+
+
+38.4 Saída esperada da Fase 1
+-----------------------------
+
+Artefatos mínimos:
+
+    rift-ir.schema / documentação equivalente
+    rift-ir JSON serializer
+    rift-container-m0 writer
+    rift-container-m0 reader
+    mmap reader
+    codec BF16
+    codec INT4
+    codec INT2
+    bitplane codec
+    calibration sampler
+    sensitivity pre-screener
+    quality harness
+    drift tracker
+    benchmark runner
+
+Demonstração:
+
+    Modelo A:
+        uma família densa
+
+    Modelo B:
+        outra família ou subconjunto Kimi compatível
+
+usando:
+
+    o mesmo core de compilador/container.
+
+
+38.5 Regra de encerramento
+--------------------------
+
+A Fase 1 NÃO termina porque todos os componentes futuros foram implementados.
+
+Ela termina quando:
+
+    Universal IR
+    +
+    Progressive Precision
+    +
+    Quality Contract
+
+forem demonstrados experimentalmente em mais de uma arquitetura.
+
+
+
+39. POLÍTICA DE DESENVOLVIMENTO
+===============================
+
+Cada otimização deve passar por quatro perguntas:
+
+    1. reduz memória ou movimentação?
+
+    2. aumenta desempenho real?
+
+    3. mantém o QualityFloor?
+
+    4. é universal ou fica isolada como plugin/adapter?
+
+Se uma otimização for específica de um modelo:
+
+    ela pode existir,
+
+mas deve ficar fora do núcleo universal.
+
+
+40. CHANGELOG
+=============
+
+40.1 v0.3 -> v0.3.1
+--------------------
+
+A. Container mmap-native
+    - alinhamento explícito;
+    - zero-copy addressability em CPU quando aplicável;
+    - offsets file-relative;
+    - lazy paging;
+    - read-ahead/prefault opcional;
+    - sem promessa incorreta de zero page faults.
+
+B. Logical Page vs Physical Extent
+    - semântica/qualidade separadas do layout físico;
+    - várias Logical Pages podem compartilhar um extent;
+    - menos fragmentação e desperdício de alinhamento.
+
+C. Low-Rank residual fused
+    - Y = X*Q(W) + (X*U)*V^T;
+    - proibição de materializar U*V^T no caminho otimizado;
+    - API HAL dedicada proposta.
+
+D. Sensitivity Pre-Screener
+    - forward-only por padrão;
+    - estatísticas de pesos/ativações;
+    - elimina candidatos ruins antes da busca completa;
+    - gradiente permanece opcional.
+
+E. Fallback guiado por sensibilidade
+    - blocos sensíveis podem iniciar em INT3+refinement/MXFP4;
+    - pre-screen não substitui quality gate;
+    - validação end-to-end permanece autoridade final.
+
+
+40.2 v0.3.1 -> v0.3.2
+----------------------
+
+Objetivo:
+
+    impedir over-engineering e congelar um caminho mínimo implementável.
+
+A. RIFT_PHASE1_MINIMAL
+    - escopo IN/OUT explícito;
+    - componentes futuros não podem bloquear Fase 1.
+
+B. RIFT-IR M0
+    - schema mínimo concreto;
+    - Model/Tensor/Operation;
+    - conjunto mínimo de opcodes;
+    - JSON separado permitido para debugging.
+
+C. RIFT Container M0
+    - Header + Tensor Table + Page Table + Payload;
+    - Container completo adiado até prova funcional;
+    - mmap/read-only mantido como requisito.
+
+D. Calibration Sampling Protocol v1
+    - L0 Structural Scan;
+    - L1 Activation Calibration;
+    - L2 End-to-End;
+    - defaults iniciais de prompts/tokens;
+    - Representative Layer Sampling;
+    - Layer Signature Clustering.
+
+E. Cumulative Drift Budget
+    - checkpoints ao longo da profundidade;
+    - orçamento global de drift;
+    - rollback de precisão quando drift composto exceder budget.
+
+F. Quality Defaults Experimentais
+    - limites iniciais operacionais;
+    - mean/median/p95/p99/max;
+    - catastrophic failures == 0;
+    - reprodutibilidade obrigatória.
+
+G. Critério de Fase 1
+    - provar Universal IR;
+    - provar Progressive Precision;
+    - provar Quality-constrained compilation;
+    - demonstrar em duas arquiteturas/famílias com o mesmo core.
+
+
+40.3 v0.3.2 -> v0.3.3
+----------------------
+
+Nome:
+
+    Binary & IR Contract Freeze
+
+Objetivo:
+
+    congelar contratos de baixo nível necessários para iniciar implementação
+    C++/Rust sem divergência de ABI ou ambiguidade de execução.
+
+A. Header M0 fixo
+    - tamanho canônico de 128 bytes;
+    - offsets byte-a-byte definidos;
+    - little-endian obrigatório;
+    - u64 naturalmente alinhados;
+    - reserved0/reserved1 adicionados;
+    - formato não depende de packed ABI.
+
+B. Serialização
+    - Writer escreve inteiros little-endian explicitamente;
+    - Reader valida bounds/overflow antes do acesso;
+    - structs de linguagem são representações, não autoridade do formato.
+
+C. Header checksum
+    - regra canônica com campo checksum zerado durante cálculo;
+    - algoritmo deve ser versionado/congelado antes de interoperabilidade.
+
+D. RIFT-IR JSON execution contract
+    - execution_model = TOPOLOGICAL_ARRAY_V1;
+    - operations[] é a ordem canônica de execução;
+    - Operation.id é identidade estável, não posição;
+    - JSON object key ordering é irrelevante.
+
+E. Loader validation
+    - IDs únicos;
+    - referências válidas;
+    - dependências topologicamente anteriores;
+    - ciclos proibidos em M0;
+    - attrs não criam dependências implícitas.
+
+F. Golden files
+    - fixtures binárias/JSON obrigatórias;
+    - casos positivos e negativos;
+    - base para interoperabilidade Rust/C++.
+
+
+40.4 v0.3.3 -> v0.3.4
+----------------------
+
+Nome:
+
+    TurboVec Integration Contract
+
+Objetivo:
+
+    formalizar o uso do TurboVec no ecossistema RIFT sem transformar busca
+    vetorial aproximada em autoridade sobre execução/correção.
+
+A. RIFT-Graph Intelligence
+    - Graph Signature;
+    - Plan Record;
+    - busca top-k de planos/subgrafos semelhantes;
+    - positive/negative plan cache;
+    - benchmark obrigatório antes de aceitar plano;
+    - DAG permanece canônico e determinístico.
+
+B. RIFT-RAG
+    - Vector Backend API;
+    - TurboVec como backend preferencial inicial;
+    - embeddings/índices compactos;
+    - Retrieval Quality Contract;
+    - perfis SAFE/BALANCED/MINMEM;
+    - métricas Recall@K/MRR/nDCG/latência/memória.
+
+C. Separação de namespaces
+    - document embeddings != graph signatures;
+    - índices separados e versionados.
+
+D. Falha segura
+    - core funciona sem TurboVec;
+    - planner convencional continua disponível;
+    - índice incompatível gera rebuild/fallback.
+
+E. Phase 1 Freeze preservado
+    - TurboVec continua fora de RIFT_PHASE1_MINIMAL;
+    - nenhuma nova dependência bloqueia H1/H2/H3.
+
+
+
+40.5 v0.3.4 -> v0.3.5
+----------------------
+
+Nome:
+
+    Pre-Code Contract Freeze
+
+Objetivo:
+
+    eliminar as últimas ambiguidades operacionais antes do início do código
+    da Fase 1.
+
+A. Checksum congelado
+    - XXH3-64;
+    - seed 0;
+    - u64 little-endian;
+    - campo checksum zerado durante cálculo;
+    - golden vector oficial definido.
+
+B. Experimentalidade explícita
+    - thresholds da Fase 1 não são contrato de produto;
+    - apenas L2 pode sustentar perfil certificado.
+
+C. Kimi Adapter — Fase 1 Scope
+    - definição operacional de ALWAYS_ACTIVE;
+    - routed experts definidos como CONDITIONALLY_ACTIVE;
+    - isolamento via config + graph/module mapping + Safetensors index;
+    - manifest obrigatório;
+    - unknown tensor gera falha em modo estrito;
+    - sequência K1/K2/K3 definida.
+
+D. Golden Files como gate HARD
+    - fixtures positivas e negativas obrigatórias;
+    - B0 não aprova sem reproduzir golden checksum/bytes;
+    - Golden Files são autoridade externa de interoperabilidade.
+
+E. M0 Change Control
+    - RIFT_M0_CHANGE_REQUEST obrigatório;
+    - nenhum opcode/campo novo por previsão;
+    - evidência experimental obrigatória;
+    - alterações binárias exigem análise de version bump.
+
+
+
+41. STATUS
+==========
+
+Versão 0.3.5:
+
+    - arquitetura universal preservada;
+    - Phase 1 Implementation Freeze preservado;
+    - Binary & IR Contract Freeze preservado;
+    - TurboVec Integration Contract preservado;
+    - checksum M0 congelado em XXH3-64 seed 0;
+    - golden checksum vector definido;
+    - experimentalidade dos thresholds declarada no topo da Fase 1;
+    - Kimi trunk definido operacionalmente pelo adapter como ALWAYS_ACTIVE;
+    - escopo Kimi K1/K2/K3 definido;
+    - isolamento de checkpoint Kimi definido;
+    - manifest de classificação Kimi definido;
+    - unknown tensors tratados como erro em modo estrito;
+    - Golden Files transformados em gate HARD de B0;
+    - casos positivos/negativos mínimos definidos;
+    - RIFT_M0_CHANGE_REQUEST definido;
+    - expansão silenciosa do M0 proibida;
+    - version bump exigido quando semântica binária mudar.
+
+Estado da arquitetura:
+
+    UNIVERSAL CORE:
+        FROZEN para Fase 1.
+
+Estado do contrato binário:
+
+    HEADER M0:
+        FROZEN.
+
+    CHECKSUM:
+        XXH3-64 / seed 0:
+        FROZEN.
+
+Estado do contrato IR:
+
+    TOPOLOGICAL_ARRAY_V1:
+        FROZEN.
+
+Estado do escopo Phase 1:
+
+    RIFT_PHASE1_MINIMAL:
+        FROZEN.
+
+Estado do adapter Kimi Phase 1:
+
+    K1/K2/K3 SCOPE:
+        SPECIFIED.
+
+Estado de TurboVec:
+
+    OPTIONAL EXTENSION:
+        SPECIFIED / OUTSIDE PHASE 1.
+
+Estado da implementação:
+
+    READY TO START B0.
+
+Próximo marco:
+
+    CHECKPOINT B0 — Binary/IR Foundation
+
+e nenhuma expansão do M0 deve ocorrer antes de evidência experimental.
+
+
+42. DECISÃO DE ENGENHARIA DA v0.3.3
+===================================
+
+A v0.3.3 congela os contratos binário e de execução M0.
+
+Ela NÃO amplia o produto.
+
+Ela reduz ambiguidades que poderiam fazer duas implementações corretas em
+Rust/C++ produzirem arquivos ou grafos incompatíveis.
+
+A partir desta versão:
+
+    1. o formato Header M0 é definido pelos bytes, não pela struct;
+
+    2. structs C++/Rust devem provar compatibilidade por testes;
+
+    3. o Writer deve serializar little-endian explicitamente;
+
+    4. o Reader deve validar antes de confiar em qualquer offset;
+
+    5. operations[] é a ordem topológica canônica do RIFT-IR M0;
+
+    6. Operation.id é identidade e nunca substitui a ordem do array;
+
+    7. ciclos/control flow ficam fora do execution model M0;
+
+    8. golden files são parte do contrato, não apenas testes auxiliares.
+
+As três hipóteses centrais da Fase 1 permanecem inalteradas:
+
+    H1 — Universal IR
+
+    H2 — Progressive Precision
+
+    H3 — Quality-Constrained Compilation
+
+A v0.3.3 apenas garante que a prova dessas hipóteses possa ser implementada com
+contratos determinísticos e interoperáveis.
+
+
+43. PRIMEIRO CHECKPOINT DE IMPLEMENTAÇÃO
+========================================
+
+Antes de implementar INT4/INT2, concluir:
+
+    CHECKPOINT B0 — Binary/IR Foundation
+
+
+43.1 Entregáveis obrigatórios
+-----------------------------
+
+    1. rift_ir_m0 schema;
+
+    2. JSON serializer determinístico para arrays;
+
+    3. JSON loader + DAG validator;
+
+    4. RiftHeaderM0 Writer;
+
+    5. RiftHeaderM0 Reader;
+
+    6. implementação XXH3-64 seed 0 ou binding validado;
+
+    7. testes de offsets/tamanho;
+
+    8. testes little-endian;
+
+    9. bounds/overflow tests;
+
+   10. mmap read-only de Container M0 vazio/one-tensor;
+
+   11. TODOS os Golden Files obrigatórios da seção 43.2.
+
+
+43.2 Golden Files obrigatórios
+------------------------------
+
+Arquivos positivos mínimos:
+
+    tests/golden/header_m0_empty.rift
+    tests/golden/container_m0_one_tensor.rift
+    tests/golden/ir_m0_linear.json
+
+O header_m0_empty.rift deve reproduzir:
+
+    XXH3-64 = 0x8DB3A70FC08A38F3
+
+conforme seção 8.9.1.6.4.
+
+
+Casos negativos obrigatórios:
+
+    tests/golden/invalid/bad_magic.rift
+    tests/golden/invalid/bad_version.rift
+    tests/golden/invalid/truncated_header.rift
+    tests/golden/invalid/bad_checksum.rift
+    tests/golden/invalid/offset_overflow.rift
+    tests/golden/invalid/range_out_of_file.rift
+
+    tests/golden/invalid/duplicate_op_id.json
+    tests/golden/invalid/duplicate_tensor_id.json
+    tests/golden/invalid/forward_dependency.json
+    tests/golden/invalid/cycle.json
+    tests/golden/invalid/unknown_opcode.json
+
+
+43.3 Metadados dos Golden Files
+-------------------------------
+
+Cada fixture deve possuir:
+
+    - resultado esperado;
+    - hash externo de fixture;
+    - descrição dos campos;
+    - versão do Container/IR;
+    - código de erro esperado para caso inválido.
+
+Recomendação:
+
+    tests/golden/manifest.json
+
+para centralizar:
+
+    path
+    sha256
+    expected_result
+    expected_error
+
+
+43.4 Critério HARD de aprovação do B0
+-------------------------------------
+
+B0 só é APROVADO se:
+
+    [ ] Header M0 possui exatamente 128 bytes;
+
+    [ ] golden XXH3-64 reproduz 0x8DB3A70FC08A38F3;
+
+    [ ] Writer gera bytes idênticos ao Golden Header;
+
+    [ ] Reader aceita todos os Golden Files válidos;
+
+    [ ] Reader rejeita todos os Golden Files inválidos com erro esperado;
+
+    [ ] DAG validator aceita ir_m0_linear.json;
+
+    [ ] DAG validator rejeita todos os IRs inválidos;
+
+    [ ] nenhum teste de bounds/overflow falha;
+
+    [ ] mmap one-tensor funciona;
+
+    [ ] não existe divergência conhecida entre layout especificado e bytes
+        gravados.
+
+
+43.5 Regra de bloqueio
+----------------------
+
+Enquanto B0 != APPROVED:
+
+    NÃO iniciar integração de:
+
+        INT4
+        INT2
+        BASE+BITPLANE
+        Kimi adapter completo
+        TurboVec
+        Autotuner
+
+Após B0:
+
+    iniciar:
+
+        BF16 passthrough
+            ->
+        INT4
+            ->
+        INT2
+            ->
+        BASE+BITPLANE.
+
+
+43.6 Interoperabilidade
+-----------------------
+
+Quando existirem duas implementações independentes, por exemplo:
+
+    Rust
+    C++
+
+B0 deve incluir:
+
+    Rust writes -> C++ reads
+    C++ writes  -> Rust reads
+
+com os mesmos Golden Files.
+
+Até a segunda implementação existir:
+
+    Golden Files são a autoridade externa comum.
+
+
+44. DECISÃO DE ENGENHARIA DA v0.3.4
+===================================
+
+A v0.3.4 resolve a relação do RIFT com TurboVec.
+
+Decisão:
+
+    TurboVec será usado onde o problema é naturalmente vetorial:
+
+        RETRIEVAL
+        SIMILARITY SEARCH
+        CANDIDATE REUSE
+        ACCESS PREDICTION
+
+Ele NÃO será forçado em problemas onde algoritmos determinísticos são
+superiores:
+
+        DAG validation
+        topological order
+        dependency correctness
+        tensor decoding
+        numerical Quality Gates
+
+Resultado:
+
+    RIFT obtém os benefícios de índices vetoriais compactos e rápidos sem
+    transformar aproximação em fonte de erro estrutural.
+
+
+45. HIPÓTESES ADICIONAIS PARA TURBOVEC
+======================================
+
+Além de H1/H2/H3, fases futuras podem testar:
+
+    H4 — Graph Plan Reuse:
+        Graph Signatures + TurboVec reduzem tempo de autotuning/compilação sem
+        piorar o plano final.
+
+    H5 — Compact Local RAG:
+        TurboVec permite retrieval local com menor RAM/latência mantendo
+        Retrieval Quality dentro do perfil escolhido.
+
+H4 e H5:
+
+    NÃO pertencem ao critério de encerramento da Fase 1.
+
+
+46. CRITÉRIO DE SUCESSO DO RIFT-GRAPH INTELLIGENCE
+==================================================
+
+Só considerar a tecnologia vantajosa se, no mesmo workload/hardware:
+
+    compilation_time_with_index
+        <
+    compilation_time_without_index
+
+e:
+
+    final_plan_performance_with_index
+        >=
+    final_plan_performance_without_index
+        - tolerance
+
+com:
+
+    QualityFloor idêntico.
+
+
+47. CRITÉRIO DE SUCESSO DO RIFT-RAG
+===================================
+
+Comparar TurboVec contra backend de referência no mesmo corpus.
+
+Medir:
+
+    RAM
+    disk
+    build time
+    query p50/p95/p99
+    Recall@K
+    MRR
+    nDCG@K
+
+Uma redução de memória/latência só é aceita quando o Retrieval Quality Profile
+selecionado for respeitado.
+
+
+48. DECISÃO DE ENGENHARIA DA v0.3.5
+===================================
+
+A v0.3.5 é o freeze recomendado imediatamente antes de codar.
+
+Ela não adiciona uma nova tecnologia ao RIFT.
+
+Ela transforma decisões antes implícitas em contratos testáveis:
+
+    - checksum tem um único resultado;
+    - qualidade experimental está claramente rotulada;
+    - "Kimi trunk" tem definição operacional;
+    - B0 possui critérios binários de aprovação;
+    - M0 não pode crescer por conveniência.
+
+
+49. REGRA DE NÃO-EXPANSÃO ANTES DE B0
+=====================================
+
+Antes de B0 = APPROVED:
+
+Permitido:
+
+    - corrigir erro factual na especificação;
+    - corrigir bug no Writer/Reader;
+    - adicionar teste;
+    - adicionar Golden File inválido;
+    - melhorar diagnóstico sem alterar contrato.
+
+Não permitido sem RIFT_M0_CHANGE_REQUEST:
+
+    - novo opcode;
+    - novo campo persistido;
+    - novo significado de reserved;
+    - novo codec no caminho crítico;
+    - novo backend obrigatório;
+    - nova dependência estrutural.
+
+
+50. PRIMEIRA ORDEM DE CÓDIGO APÓS v0.3.5
+========================================
+
+A implementação deve iniciar nesta ordem:
+
+    B0.1
+        Header M0 constants + XXH3-64 golden test
+
+    B0.2
+        Header Writer
+
+    B0.3
+        Header Reader + bounds validation
+
+    B0.4
+        RIFT-IR M0 JSON structs/schema
+
+    B0.5
+        DAG validator
+
+    B0.6
+        Golden Files positivos/negativos
+
+    B0.7
+        Container one-tensor + mmap
+
+    B0 APPROVAL
+
+Somente depois:
+
+    BF16 passthrough
+        ->
+    INT4
+        ->
+    INT2
+        ->
+    BASE + BITPLANE
+        ->
+    Kimi K1
+        ->
+    Kimi K2
+        ->
+    Kimi K3.
+
+
+51. CHECKSUM GOLDEN CONSTANTS
+=============================
+
+Para implementação:
+
+    RIFT_MAGIC_BYTES              = 52 49 46 54
+    RIFT_CONTAINER_VERSION_M0     = 0x0001
+    RIFT_PROFILE_M0               = 0x0000
+    RIFT_HEADER_M0_SIZE           = 128
+    RIFT_HEADER_CHECKSUM_OFFSET   = 0x40
+    RIFT_HEADER_CHECKSUM_SIZE     = 8
+    RIFT_CHECKSUM_ALGORITHM       = XXH3_64
+    RIFT_CHECKSUM_SEED            = 0
+
+Golden empty header:
+
+    expected_checksum_u64 =
+        0x8DB3A70FC08A38F3
+
+    expected_checksum_bytes_le =
+        F3 38 8A C0 0F A7 B3 8D
+
+
+FIM DA ESPECIFICAÇÃO
+====================

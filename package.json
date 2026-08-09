@@ -1,0 +1,9 @@
+{
+  "name": "rift-lm-test-observatory",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RIFT-LM benchmark dashboard for Vercel",
+  "scripts": {
+    "dev": "python3 -m http.server 3000"
+  }
+}

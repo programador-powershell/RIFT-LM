@@ -1,0 +1,15 @@
+.git
+.github
+__pycache__
+*.pyc
+*.log
+.DS_Store
+node_modules
+tests
+scripts
+*.py
+*.pyc
+*.txt
+README.md
+.env
+.env.*
