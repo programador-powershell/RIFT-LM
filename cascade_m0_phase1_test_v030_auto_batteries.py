@@ -454,7 +454,7 @@ def pct_lower(base: float | None, candidate: float | None) -> float | None:
 
 
 class BatteryRecorder:
-    def __init__(self, out_dir: Path, *, model_id: str):
+    def __init__(self, out_dir: Path, *, model_id: str, publish_mode: str = "off", results_endpoint: str | None = None):
         self.out_dir = out_dir
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.batteries_dir = out_dir / "batteries"
@@ -462,6 +462,8 @@ class BatteryRecorder:
         self.json_path = out_dir / "cascade_test_batteries.json"
         self.csv_path = out_dir / "cascade_test_batteries.csv"
         self.model_id = model_id
+        self.publish_mode = publish_mode
+        self.results_endpoint = results_endpoint
         self.run_id = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-" + uuid.uuid4().hex[:8]
         self.records: list[dict[str, Any]] = []
 
@@ -532,6 +534,18 @@ class BatteryRecorder:
             for item in self.records:
                 writer.writerow({key: item.get(key) for key in writer.fieldnames})
         print(f"[BATTERY] {battery_id}: gravada automaticamente -> {single}")
+        # Publica imediatamente no site (não espera o fim de todas as baterias)
+        try:
+            publish_to_vercel(
+                path=self.json_path,
+                mode=self.publish_mode,
+                endpoint=self.results_endpoint,
+                records=list(self.records),
+                quiet=False,
+            )
+        except ResultsPublishError as exc:
+            print(f"[PUBLISH] AVISO (incremental): {exc}")
+
         return record
 
 
@@ -555,54 +569,49 @@ def read_setting(name: str) -> str | None:
         return None
 
 
-def publish_to_vercel(path: Path, *, mode: str, endpoint: str | None) -> None:
+def publish_to_vercel(path: Path | None = None, *, mode: str, endpoint: str | None, records: list | None = None, quiet: bool = False) -> None:
     if mode == "off":
-        print("[PUBLISH] Publicação remota desativada (--publish off).")
+        if not quiet:
+            print("[PUBLISH] Publicação remota desativada (--publish off).")
         return
     endpoint = (endpoint or read_setting("RIFT_RESULTS_ENDPOINT") or "").strip()
     token = read_setting("RIFT_INGEST_TOKEN")
-    if not endpoint or not token:
-        missing = []
-        if not endpoint:
-            missing.append("RIFT_RESULTS_ENDPOINT")
-        if not token:
-            missing.append("RIFT_INGEST_TOKEN")
+    missing = []
+    if not endpoint:
+        missing.append("RIFT_RESULTS_ENDPOINT")
+    if not token:
+        missing.append("RIFT_INGEST_TOKEN")
+    if missing:
         message = "Configure " + " e ".join(missing)
-        if mode == "required" or running_in_colab():
+        if mode == "required" and not quiet:
             raise ResultsPublishError(message)
-        print(f"[PUBLISH] AVISO: {message}; resultado mantido localmente.")
+        if not quiet:
+            print(f"[PUBLISH] AVISO: {message}; resultados preservados localmente.")
         return
-    parsed = urlparse(endpoint)
-    if parsed.scheme != "https" or not parsed.netloc:
-        raise ResultsPublishError("RIFT_RESULTS_ENDPOINT precisa ser uma URL HTTPS")
-    records = json.loads(path.read_text(encoding="utf-8"))
-    body = json.dumps({"records": records}, ensure_ascii=False).encode("utf-8")
+    if not endpoint.startswith("https://") or len(token) < 32:
+        raise ResultsPublishError("Endpoint precisa ser HTTPS e token deve ter ao menos 32 caracteres")
+    if records is None:
+        if path is None:
+            raise ResultsPublishError("path ou records é obrigatório")
+        records = json.loads(path.read_text(encoding="utf-8"))
     request = Request(
-        endpoint,
-        data=body,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "User-Agent": "cascade-colab-publisher/0.3",
-        },
-        method="POST",
+        endpoint, data=json.dumps({"records": records}).encode("utf-8"), method="POST",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json",
+                 "User-Agent": "cascade-colab-publisher/0.3"},
     )
     try:
-        with urlopen(request, timeout=60) as response:
+        with urlopen(request, timeout=90) as response:
             result = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
-        raise ResultsPublishError(f"Vercel retornou HTTP {exc.code}") from exc
+        body = exc.read().decode("utf-8", errors="replace")[:500]
+        raise ResultsPublishError(f"Vercel respondeu HTTP {exc.code}: {body}") from exc
     except URLError as exc:
-        raise ResultsPublishError(f"Falha ao conectar com a Vercel: {exc.reason}") from exc
-    if not result.get("ok") or not isinstance(result.get("publication"), dict):
-        raise ResultsPublishError(str(result.get("error") or "Resposta inválida da Vercel"))
-    publication = result["publication"]
-    print(
-        f"[PUBLISH] {publication['records']} registro(s) aceito(s) pela Vercel e "
-        f"publicado(s) em {publication['repository']}:{publication['branch']}/{publication['path']}"
-    )
+        raise ResultsPublishError(f"Falha de rede ao publicar: {exc.reason}") from exc
+    publication = result.get("publication", {})
+    print(f"[PUBLISH] {len(records)} registro(s) aceito(s); snapshot publicado com {publication.get('records', '?')} registro(s).")
     if publication.get("commit_url"):
         print(f"[PUBLISH] Commit: {publication['commit_url']}")
+
 
 
 def run_phase1(args: argparse.Namespace) -> Path:
@@ -723,7 +732,7 @@ def run_phase1(args: argparse.Namespace) -> Path:
     candidate_ram = factor_bytes + input_bytes + output_bytes
     quality_pass = q_gated["cosine"] >= 0.995 and q_gated["nrmse"] <= 0.05 and drift_mean <= 0.05
 
-    recorder = BatteryRecorder(out_dir, model_id=model_id)
+    recorder = BatteryRecorder(out_dir, model_id=model_id, publish_mode=args.publish, results_endpoint=args.results_endpoint)
     recorder.record(
         battery_id="B0_CASCADE_BINARY_IR_FOUNDATION",
         status="PASS",

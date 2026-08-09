@@ -1900,6 +1900,20 @@ class BatteryRecorder:
             f"[BATTERY] {battery_id}: gravada automaticamente -> "
             f"{self.batteries_dir / single_name}"
         )
+        # Publica imediatamente no site (não espera o fim de todas as baterias)
+        try:
+            endpoint = _read_setting("RIFT_RESULTS_ENDPOINT")
+            token = _read_setting("RIFT_INGEST_TOKEN")
+            if endpoint and token and len(token) >= 32:
+                publish_battery_history_to_vercel(
+                    self.json_path,
+                    endpoint=endpoint,
+                    ingest_token=token,
+                )
+        except ResultsPublishError as exc:
+            print(f"[PUBLISH] AVISO (incremental): {exc}")
+        except Exception as exc:
+            print(f"[PUBLISH] AVISO (incremental): {exc}")
         return record
 
 

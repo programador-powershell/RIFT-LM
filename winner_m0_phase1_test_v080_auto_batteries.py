@@ -276,11 +276,13 @@ def compile_and_test_winner(work_dir: Path, *, profile_dim: int) -> dict[str, An
 
 
 class BatteryRecorder:
-    def __init__(self, out_dir: Path, *, model_id: str):
+    def __init__(self, out_dir: Path, *, model_id: str, publish_mode: str = "off", results_endpoint: str | None = None):
         self.out_dir = out_dir
         self.batteries_dir = out_dir / "batteries"
         self.batteries_dir.mkdir(parents=True, exist_ok=True)
         self.model_id = model_id
+        self.publish_mode = publish_mode
+        self.results_endpoint = results_endpoint
         self.run_id = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-" + uuid.uuid4().hex[:8]
         self.timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         self.records: list[dict[str, Any]] = []
@@ -316,6 +318,17 @@ class BatteryRecorder:
         single = self.batteries_dir / f"{self.run_id}__{battery_id}.json"
         single.write_text(json.dumps(item, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         print(f"[BATTERY] {battery_id}: gravada automaticamente -> {single}")
+        # Publica imediatamente no site (não espera o fim de todas as baterias)
+        try:
+            publish_to_vercel(
+                path=self.json_path,
+                mode=self.publish_mode,
+                endpoint=self.results_endpoint,
+                records=list(self.records),
+                quiet=False,
+            )
+        except ResultsPublishError as exc:
+            print(f"[PUBLISH] AVISO (incremental): {exc}")
 
 
 def read_setting(name: str) -> str | None:
@@ -323,9 +336,10 @@ def read_setting(name: str) -> str | None:
     return value.strip() if value and value.strip() else None
 
 
-def publish_to_vercel(path: Path, *, mode: str, endpoint: str | None) -> None:
+def publish_to_vercel(path: Path | None = None, *, mode: str, endpoint: str | None, records: list[dict[str, Any]] | None = None, quiet: bool = False) -> None:
     if mode == "off":
-        print("[PUBLISH] Publicação remota desativada (--publish off).")
+        if not quiet:
+            print("[PUBLISH] Publicação remota desativada (--publish off).")
         return
     target = endpoint or read_setting("RIFT_RESULTS_ENDPOINT")
     token = read_setting("RIFT_INGEST_TOKEN")
@@ -336,13 +350,17 @@ def publish_to_vercel(path: Path, *, mode: str, endpoint: str | None) -> None:
         missing.append("RIFT_INGEST_TOKEN")
     if missing:
         message = "Configure " + " e ".join(missing)
-        if mode == "required":
+        if mode == "required" and not quiet:
             raise ResultsPublishError(message)
-        print(f"[PUBLISH] AVISO: {message}; resultados preservados localmente.")
+        if not quiet:
+            print(f"[PUBLISH] AVISO: {message}; resultados preservados localmente.")
         return
     if urlparse(target).scheme != "https" or len(token) < 32:
         raise ResultsPublishError("Endpoint precisa ser HTTPS e token deve ter ao menos 32 caracteres")
-    records = json.loads(path.read_text(encoding="utf-8"))
+    if records is None:
+        if path is None:
+            raise ResultsPublishError("path ou records é obrigatório")
+        records = json.loads(path.read_text(encoding="utf-8"))
     request = Request(
         target, data=json.dumps({"records": records}).encode("utf-8"), method="POST",
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json",
@@ -360,6 +378,7 @@ def publish_to_vercel(path: Path, *, mode: str, endpoint: str | None) -> None:
     print(f"[PUBLISH] {len(records)} registro(s) aceito(s); snapshot publicado com {publication.get('records', '?')} registro(s).")
     if publication.get("commit_url"):
         print(f"[PUBLISH] Commit: {publication['commit_url']}")
+
 
 
 def run_phase1(args: argparse.Namespace, native: dict[str, Any]) -> Path:
@@ -401,7 +420,7 @@ def run_phase1(args: argparse.Namespace, native: dict[str, Any]) -> Path:
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
-    recorder = BatteryRecorder(out_dir, model_id=model_id)
+    recorder = BatteryRecorder(out_dir, model_id=model_id, publish_mode=args.publish, results_endpoint=args.results_endpoint)
     numel = int(weight.numel())
     baseline_disk = numel * 4
     base_disk = (numel + 3) // 4 + int(weight.shape[0]) * 4

@@ -527,7 +527,13 @@ function updateCommand(){
   if(blockedReason){$("commandOutput").textContent="# Teste não gerado: modelo incompatível com a bateria Colab atual.";$("modelValidation").textContent=blockedReason;$("modelValidation").className="note bad";return}
   if(!/^(auto|[A-Za-z0-9_.-]+)$/.test(target)){$("commandOutput").textContent="# Informe 'auto' ou um nome de tensor válido.";$("modelValidation").textContent="Camada inválida; use apenas letras, números, ponto, hífen e sublinhado.";$("modelValidation").className="note bad";return}
   const trust=$("trustRemoteInput").checked,technologies=tech==="all"?["rift","cascade","aether","spectra","winner"]:[tech],commands=technologies.map(technology=>`!curl -fsSL "${launcherUrl(technology,model,target,trust)}" -o /content/${technology}_launcher.py && python /content/${technology}_launcher.py`);
-  $("commandOutput").textContent=[...colabSecretBootstrapLines(),"",...commands].join("\n");$("modelValidation").textContent=`Modelo normalizado: ${model}. A célula lê RIFT_INGEST_TOKEN no kernel e o transfere aos launchers sem exibir o valor.`;$("modelValidation").className="note good";
+  const tokenizerDeps=[
+    "# Instala dependências de tokenizer antes dos launchers (evita erro slow→fast em AutoTokenizer).",
+    "import subprocess, sys",
+    "print('[RIFT] Garantindo sentencepiece e tiktoken...')",
+    "subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', 'sentencepiece>=0.2.0', 'tiktoken>=0.7.0'])",
+  ];
+  $("commandOutput").textContent=[...colabSecretBootstrapLines(),"",...tokenizerDeps,"",...commands].join("\n");$("modelValidation").textContent=`Modelo normalizado: ${model}. A célula lê RIFT_INGEST_TOKEN no kernel e o transfere aos launchers sem exibir o valor. sentencepiece/tiktoken são instalados automaticamente.`;$("modelValidation").className="note good";
 }
 
 $("files").addEventListener("change",e=>loadFiles([...e.target.files]));$("reloadBtn").addEventListener("click",()=>{state.dataSource="published";state.publishedFingerprint=null;state.records=[];state.analysis=null;state.analysisError=null;state.ranking=[];loadPublishedData()});$("clearBtn").addEventListener("click",()=>{state.dataSource="cleared";state.records=[];state.analysis=null;state.analysisError=null;state.ranking=[];render();$("dataStatus").textContent="Dados removidos da visualização. Use Recarregar publicado para retomar o modo ao vivo.";$("dataStatus").className="sub"});["modelFilter","technologyFilter","batteryFilter"].forEach(id=>$(id).addEventListener("change",render));$("compareModel").addEventListener("change",renderCompare);$("analyzeBtn").addEventListener("click",()=>requestAIAnalysis(true));
