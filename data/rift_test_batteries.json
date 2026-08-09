@@ -3350,5 +3350,27 @@
     "baseline_disk_bytes": 41943040,
     "candidate_disk_bytes": 2637824,
     "comparison_role": null
+  },
+  {
+    "schema_version": 1,
+    "timestamp_utc": "2026-08-09T21:18:54Z",
+    "run_id": "20260809T211854Z-da183617",
+    "technology": "WINNER",
+    "model_id": "mlx-community/gemma-4-e4b-it-8bit",
+    "battery_id": "P1_LOAD_MODEL",
+    "status": "FAIL",
+    "measurement_scope": "model_load",
+    "quality": {
+      "full_local_gate_pass": false
+    },
+    "metrics": {
+      "error": "Não foi possível carregar o modelo (tokenizer OK).\nGemma 4 Unified exige transformers recente e costuma usar AutoModelForMultimodalLM. Modelos diffusers/vídeo puros não se aplicam.\nAutoModelForMultimodalLM: The model's quantization config from the arguments has no `quant_method` attribute. Make sure that the model has been correctly quantized\nAutoModelForCausalLM: The model's quantization config from the arguments has no `quant_method` attribute. Make sure that the model has been correctly quantized\nAutoModel: The model's quantization config from the arguments has no `quant_method` attribute. Make sure that the model has been correctly quantized"
+    },
+    "notes": "Falha ao carregar mlx-community/gemma-4-e4b-it-8bit. Modelos diffusers/vídeo (ex. MiniMax-H3) não são suportados por esta bateria CausalLM. Detalhe: Não foi possível carregar o modelo (tokenizer OK).\nGemma 4 Unified exige transformers recente e costuma usar AutoModelForMultimodalLM. Modelos diffusers/vídeo puros não se aplicam.\nAutoModelForMultimodalLM: The model's quantization config from the arguments has no `quant_method` attribute. Make sure that the model has been correctly quantized\nAutoModelForCausalLM: The model's quantization config from the arguments has no `quant_method` attribute. Make sure that the model has been correctly quantized\nAutoModel: The model's quantization config from the arguments has no `quant_method` attribute. Make sure that the model has been correctly quantized",
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "comparison_role": null
   }
 ]
