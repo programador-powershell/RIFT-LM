@@ -3843,33 +3843,33 @@
     "notes": "C2 baseline 27.90 tok/s on cuda. Sample Linear model.layers.0.self_attn.o_proj.weight cosine=0.9945 skip=0.688."
   },
   {
-    "timestamp_utc": "2026-08-10T00:00:14Z",
+    "timestamp_utc": "2026-08-10T00:00:16Z",
     "run_id": "20260809T235801Z",
     "technology": "CASCADE",
     "model_id": "Qwen/Qwen3-4B-Instruct-2507",
-    "battery_id": "B0_CASCADE_C0_BUNDLE",
-    "status": "PASS",
+    "battery_id": "P1_CASCADE_C0_F0_ONLY",
+    "status": "EXPERIMENTAL_PASS",
     "comparison_role": null,
     "baseline_ram_bytes": 42262528,
-    "candidate_ram_bytes": 6979648,
+    "candidate_ram_bytes": 6873088,
     "baseline_disk_bytes": 41943040,
-    "candidate_disk_bytes": 6981120,
-    "measurement_scope": "CASCADE-C0 Linear real path=BUNDLE; layer=model.layers.0.self_attn.q_proj.weight; INT4 F0 + low-rank F1; reference Python runtime",
+    "candidate_disk_bytes": 6553600,
+    "measurement_scope": "CASCADE-C0 Linear real path=F0_ONLY; layer=model.layers.0.self_attn.q_proj.weight; INT4 F0 + low-rank F1; reference Python runtime",
     "quality": {
-      "full_local_gate_pass": true,
+      "full_local_gate_pass": false,
       "output": {
-        "cosine": 1,
-        "nrmse": 0
+        "cosine": 0.9987998604774475,
+        "nrmse": 0.04907284202057931
       }
     },
     "metrics": {
       "operation": {
         "metric": "linear_latency",
         "baseline_median_ms": 10.191541001404403,
-        "candidate_median_ms": 10.191541001404403,
-        "speedup_x": 1,
+        "candidate_median_ms": 147.23561299979337,
+        "speedup_x": 0.06921926559587663,
         "rows_processed": 12,
-        "path": "BUNDLE"
+        "path": "F0_ONLY"
       },
       "cascade": {
         "out_features": 4096,
@@ -3882,35 +3882,11 @@
         "disk_reduction_pct": 83.35922241210938,
         "bundle_bytes": 6981120,
         "target_layer": "model.layers.0.self_attn.q_proj.weight",
-        "bundle": {
-          "path": "cascade_c0_test_output/model.cascade",
-          "file_size": 6981120,
-          "checksum": 1247869248,
-          "stages": [
-            {
-              "stage_id": 0,
-              "offset": 960,
-              "size": 6553841,
-              "type": "BASE_STAGE",
-              "codec": "INT4_GROUP"
-            },
-            {
-              "stage_id": 1,
-              "offset": 6554816,
-              "size": 426289,
-              "type": "RESIDUAL_LOWRANK",
-              "codec": "FP32_LOWRANK"
-            }
-          ],
-          "f0_bytes": 6553600,
-          "f1_bytes": 426048,
-          "baseline_bytes": 41943040,
-          "gate_percentile": 70,
-          "model_id": "Qwen/Qwen3-4B-Instruct-2507",
-          "target_layer": "model.layers.0.self_attn.q_proj.weight"
-        }
+        "F0_calls": 12,
+        "F1_calls": 0,
+        "F1_skip_rate": 1
       }
     },
-    "notes": "Bundle CSCD M0 escrito com Stage Pages F0 INT4 + F1 low-rank."
+    "notes": "Path B: somente F0 INT4. Ganho bruto de quantização."
   }
 ]
