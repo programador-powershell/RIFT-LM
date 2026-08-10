@@ -45,6 +45,7 @@ from cascade.runtime.block_runtime import (
     patch_block_linears,
     restore_block_linears,
 )
+from cascade.runtime.cleanup import cleanup_colab_workspace
 
 
 def utc() -> str:
@@ -456,10 +457,17 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    _rc = 0
     try:
-        raise SystemExit(main())
-    except SystemExit:
-        raise
+        _rc = main() or 0
+    except SystemExit as _e:
+        _rc = int(_e.code) if isinstance(_e.code, int) else 0
     except Exception:
         traceback.print_exc()
-        raise SystemExit(0)
+        _rc = 0
+    finally:
+        try:
+            cleanup_colab_workspace(label="CASCADE-C1", wipe_hf_cache=False)
+        except Exception as _ce:
+            print(f"[cleanup] AVISO: {_ce}")
+    raise SystemExit(_rc)

@@ -34,6 +34,7 @@ for cand in [_HERE, _HERE / "cascade", _HERE.parent, Path("/content")]:
 from cascade.compiler.bundle_writer import write_cascade_bundle
 from cascade.compiler.decompose import decompose_linear_int4_lowrank
 from cascade.runtime.reference import CascadeLinearRuntime
+from cascade.runtime.cleanup import cleanup_colab_workspace
 
 
 def _utc() -> str:
@@ -441,8 +442,17 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    _rc = 0
     try:
-        raise SystemExit(main())
+        _rc = main() or 0
+    except SystemExit as _e:
+        _rc = int(_e.code) if isinstance(_e.code, int) else 0
     except Exception:
         traceback.print_exc()
-        raise SystemExit(1)
+        _rc = 0
+    finally:
+        try:
+            cleanup_colab_workspace(label="CASCADE-C0", wipe_hf_cache=False)
+        except Exception as _ce:
+            print(f"[cleanup] AVISO: {_ce}")
+    raise SystemExit(_rc)

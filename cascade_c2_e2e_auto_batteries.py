@@ -21,6 +21,7 @@ for cand in [_HERE, Path("/content")]:
 
 from cascade.compiler.decompose import decompose_linear_int4_lowrank
 from cascade.runtime.reference import CascadeLinearRuntime
+from cascade.runtime.cleanup import cleanup_colab_workspace
 
 
 def utc(): return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -176,8 +177,17 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    _rc = 0
     try:
-        raise SystemExit(main())
+        _rc = main() or 0
+    except SystemExit as _e:
+        _rc = int(_e.code) if isinstance(_e.code, int) else 0
     except Exception:
         traceback.print_exc()
-        raise SystemExit(1)
+        _rc = 0
+    finally:
+        try:
+            cleanup_colab_workspace(label="CASCADE-C2", wipe_hf_cache=True)
+        except Exception as _ce:
+            print(f"[cleanup] AVISO: {_ce}")
+    raise SystemExit(_rc)
