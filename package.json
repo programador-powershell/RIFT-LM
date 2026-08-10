@@ -1,10 +1,10 @@
 {
   "name": "rift-cascade-aether-spectra-winner-test-observatory",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "description": "RIFT-LM, CASCADE, AETHER, SPECTRA and WINNER benchmark dashboard for Vercel",
   "scripts": {
     "dev": "node scripts/dev_server.mjs",
-    "test": "node scripts/dashboard_smoke.mjs"
+    "test": "node scripts/dashboard_smoke.mjs && node scripts/real_benchmark_smoke.mjs"
   }
 }

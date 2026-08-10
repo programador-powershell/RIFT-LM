@@ -13,23 +13,23 @@
     },
     {
       "source": "/rift/:model*",
-      "destination": "/api/test?technology=rift&model=:model*"
+      "destination": "/api/real-test?technology=rift&model=:model*"
     },
     {
       "source": "/cascade/:model*",
-      "destination": "/api/test?technology=cascade&model=:model*"
+      "destination": "/api/real-test?technology=cascade&model=:model*"
     },
     {
       "source": "/aether/:model*",
-      "destination": "/api/test?technology=aether&model=:model*"
+      "destination": "/api/real-test?technology=aether&model=:model*"
     },
     {
       "source": "/spectra/:model*",
-      "destination": "/api/test?technology=spectra&model=:model*"
+      "destination": "/api/real-test?technology=spectra&model=:model*"
     },
     {
       "source": "/winner/:model*",
-      "destination": "/api/test?technology=winner&model=:model*"
+      "destination": "/api/real-test?technology=winner&model=:model*"
     }
   ],
   "headers": [
