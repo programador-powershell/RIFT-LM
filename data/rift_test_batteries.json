@@ -3714,5 +3714,76 @@
       }
     },
     "notes": "C2 baseline 17.75 tok/s on cuda. Sample Linear model.layers.0.self_attn.q_proj.weight cosine=0.9952 skip=0.688."
+  },
+  {
+    "timestamp_utc": "2026-08-10T00:04:21Z",
+    "run_id": "20260810T000354Z",
+    "technology": "CASCADE",
+    "model_id": "Qwen/Qwen2.5-0.5B",
+    "battery_id": "B0_CASCADE_C0_BUNDLE",
+    "status": "PASS",
+    "comparison_role": null,
+    "baseline_ram_bytes": 3297280,
+    "candidate_ram_bytes": 616512,
+    "baseline_disk_bytes": 3211264,
+    "candidate_disk_bytes": 617984,
+    "measurement_scope": "CASCADE-C0 Linear real path=BUNDLE; layer=model.layers.0.self_attn.q_proj.weight; INT4 F0 + low-rank F1; reference Python runtime",
+    "quality": {
+      "full_local_gate_pass": true,
+      "output": {
+        "cosine": 1,
+        "nrmse": 0
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "linear_latency",
+        "baseline_median_ms": 0.595075000092038,
+        "candidate_median_ms": 0.595075000092038,
+        "speedup_x": 1,
+        "rows_processed": 12,
+        "path": "BUNDLE"
+      },
+      "cascade": {
+        "out_features": 896,
+        "in_features": 896,
+        "group_size": 32,
+        "rank": 16,
+        "f0_bytes": 501760,
+        "f1_bytes": 114752,
+        "baseline_bytes": 3211264,
+        "disk_reduction_pct": 80.80157844387756,
+        "bundle_bytes": 617984,
+        "target_layer": "model.layers.0.self_attn.q_proj.weight",
+        "bundle": {
+          "path": "cascade_c0_test_output/model.cascade",
+          "file_size": 617984,
+          "checksum": 2905413565,
+          "stages": [
+            {
+              "stage_id": 0,
+              "offset": 960,
+              "size": 501996,
+              "type": "BASE_STAGE",
+              "codec": "INT4_GROUP"
+            },
+            {
+              "stage_id": 1,
+              "offset": 502976,
+              "size": 114991,
+              "type": "RESIDUAL_LOWRANK",
+              "codec": "FP32_LOWRANK"
+            }
+          ],
+          "f0_bytes": 501760,
+          "f1_bytes": 114752,
+          "baseline_bytes": 3211264,
+          "gate_percentile": 70,
+          "model_id": "Qwen/Qwen2.5-0.5B",
+          "target_layer": "model.layers.0.self_attn.q_proj.weight"
+        }
+      }
+    },
+    "notes": "Bundle CSCD M0 escrito com Stage Pages F0 INT4 + F1 low-rank."
   }
 ]
