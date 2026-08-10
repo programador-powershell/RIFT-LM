@@ -418,223 +418,6 @@
     "notes": "BASE+REF 4-bit packed. Q4_LINEAR_TEST não é MXFP4. O path ainda materializa FP32 antes da GEMM."
   },
   {
-    "timestamp_utc": "2026-08-09T16:17:08Z",
-    "run_id": "20260809T161708Z-e62945c3",
-    "spec": "CASCADE v0.3",
-    "technology": "CASCADE",
-    "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
-    "battery_id": "B0_CASCADE_BINARY_IR_FOUNDATION",
-    "status": "PASS",
-    "comparison_role": null,
-    "baseline_tok_s": null,
-    "candidate_tok_s": null,
-    "baseline_ram_bytes": null,
-    "candidate_ram_bytes": null,
-    "baseline_disk_bytes": null,
-    "candidate_disk_bytes": null,
-    "gains": {
-      "tok_s_gain_pct": null,
-      "ram_reduction_pct": null,
-      "disk_reduction_pct": null,
-      "disk_compression_ratio_x": null,
-      "overall_gain_pct": null
-    },
-    "measurement_scope": "CASCADE Header/IR/Stage Pages/MMAP correctness; Tok/s, RAM e compressão não se aplicam.",
-    "quality": {
-      "full_local_gate_pass": true
-    },
-    "metrics": {
-      "bundle": {
-        "file_size": 394048,
-        "header_checksum": 12539282829413593000,
-        "ir_offset": 128,
-        "stage_table_offset": 384,
-        "gate_table_offset": 464,
-        "payload_offset": 576,
-        "stages": [
-          {
-            "stage_id": 0,
-            "offset": 576,
-            "size": 196684
-          },
-          {
-            "stage_id": 1,
-            "offset": 197312,
-            "size": 196684
-          }
-        ]
-      },
-      "negative_tests_passed": 11
-    },
-    "notes": "CSCD v0.3 test-local container; ABI de produção ainda não congelada."
-  },
-  {
-    "timestamp_utc": "2026-08-09T16:17:08Z",
-    "run_id": "20260809T161708Z-e62945c3",
-    "spec": "CASCADE v0.3",
-    "technology": "CASCADE",
-    "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
-    "battery_id": "P1_CASCADE_BASE_STAGE_F0",
-    "status": "EXPERIMENTAL_PASS",
-    "comparison_role": null,
-    "baseline_tok_s": null,
-    "candidate_tok_s": null,
-    "baseline_ram_bytes": 9609216,
-    "candidate_ram_bytes": 368716,
-    "baseline_disk_bytes": 9437184,
-    "candidate_disk_bytes": 196684,
-    "gains": {
-      "tok_s_gain_pct": null,
-      "ram_reduction_pct": 96.16289195705457,
-      "disk_reduction_pct": 97.91586134168837,
-      "disk_compression_ratio_x": 47.98145248215412,
-      "overall_gain_pct": 97.03937664937146
-    },
-    "measurement_scope": "Single Linear op; disk=FP32 raw vs F0 FP16 low-rank payload; RAM=working-set estimate; model Tok/s not measured.",
-    "quality": {
-      "full_local_gate_pass": null,
-      "output": {
-        "cosine": 0.9639843106269836,
-        "nrmse": 0.0055775330401957035
-      }
-    },
-    "metrics": {
-      "operation": {
-        "baseline_median_ms": 0.16058249998707197,
-        "candidate_median_ms": 0.09394500000325934,
-        "speedup_x": 1.709324604625054
-      }
-    },
-    "notes": "F0 sempre residente; resultado aproximado isolado."
-  },
-  {
-    "timestamp_utc": "2026-08-09T16:17:08Z",
-    "run_id": "20260809T161708Z-e62945c3",
-    "spec": "CASCADE v0.3",
-    "technology": "CASCADE",
-    "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
-    "battery_id": "P1_CASCADE_GATED_F0_PLUS_F1",
-    "status": "EXPERIMENTAL_FAIL",
-    "comparison_role": "primary",
-    "baseline_tok_s": null,
-    "candidate_tok_s": null,
-    "baseline_ram_bytes": 9609216,
-    "candidate_ram_bytes": 565400,
-    "baseline_disk_bytes": 9437184,
-    "candidate_disk_bytes": 394048,
-    "gains": {
-      "tok_s_gain_pct": null,
-      "ram_reduction_pct": 94.1160652440324,
-      "disk_reduction_pct": 95.82451714409721,
-      "disk_compression_ratio_x": 23.94932597044015,
-      "overall_gain_pct": 94.9702911940648
-    },
-    "measurement_scope": "Single Linear op; disk=arquivo CSCD real; RAM=working-set estimate; latency=Python/PyTorch reference path; model Tok/s not measured.",
-    "quality": {
-      "full_local_gate_pass": false,
-      "output": {
-        "cosine": 0.9711031317710876,
-        "nrmse": 0.0050050364807248116
-      },
-      "output_f0": {
-        "cosine": 0.9639843106269836,
-        "nrmse": 0.0055775330401957035
-      },
-      "output_f0_plus_f1_always": {
-        "cosine": 0.9735350012779236,
-        "nrmse": 0.004792752210050821
-      },
-      "cumulative_drift_mean": 0.38737425208091736,
-      "cumulative_drift_max": 0.6555991768836975
-    },
-    "metrics": {
-      "operation": {
-        "metric": "linear_latency",
-        "baseline_median_ms": 0.16058249998707197,
-        "candidate_median_ms": 0.24876100000881252,
-        "speedup_x": 0.645529242853113,
-        "rows_processed": 14
-      },
-      "cascade": {
-        "base_rank": 32,
-        "refinement_rank": 32,
-        "stage_activation_rate": 0.5,
-        "gate": "ACTIVATION_L2_PERCENTILE_V1",
-        "gate_percentile": 50,
-        "activation_source": "real_model_activation",
-        "fused_semantics_reference": true,
-        "fused_kernel_native": false,
-        "logical_bytes_addressed_per_vector": {
-          "baseline_dense_weight": 9437184,
-          "cascade_expected_stage_payload": 295026,
-          "IMPORTANT": "logical payload, not measured memory-bus traffic"
-        }
-      },
-      "bundle": {
-        "file_size": 394048,
-        "header_checksum": 12539282829413593000,
-        "ir_offset": 128,
-        "stage_table_offset": 384,
-        "gate_table_offset": 464,
-        "payload_offset": 576,
-        "stages": [
-          {
-            "stage_id": 0,
-            "offset": 576,
-            "size": 196684
-          },
-          {
-            "stage_id": 1,
-            "offset": 197312,
-            "size": 196684
-          }
-        ]
-      }
-    },
-    "notes": "Gate heurístico por ativação. Caminho de referência não é kernel fused; nenhum speedup nativo é reivindicado."
-  },
-  {
-    "timestamp_utc": "2026-08-09T16:17:08Z",
-    "run_id": "20260809T161708Z-e62945c3",
-    "spec": "CASCADE v0.3",
-    "technology": "CASCADE",
-    "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
-    "battery_id": "P1_CASCADE_PREDICTIVE_PREFETCH_SIM",
-    "status": "SIMULATED",
-    "comparison_role": null,
-    "baseline_tok_s": null,
-    "candidate_tok_s": null,
-    "baseline_ram_bytes": null,
-    "candidate_ram_bytes": null,
-    "baseline_disk_bytes": null,
-    "candidate_disk_bytes": null,
-    "gains": {
-      "tok_s_gain_pct": null,
-      "ram_reduction_pct": null,
-      "disk_reduction_pct": null,
-      "disk_compression_ratio_x": null,
-      "overall_gain_pct": null
-    },
-    "measurement_scope": "Lag-one simulation over gate decisions; no real asynchronous I/O latency measured.",
-    "quality": {
-      "full_local_gate_pass": null
-    },
-    "metrics": {
-      "prefetch": {
-        "precision": 0.6666666666666666,
-        "recall": 0.5714285714285714,
-        "required_pages": 7,
-        "predicted_pages": 6,
-        "true_positive_pages": 4,
-        "prefetched_bytes": 1180104,
-        "wasted_prefetch_bytes": 393368,
-        "missed_prefetch_bytes": 590052,
-        "IMPORTANT": "simulated page requests, not measured asynchronous I/O"
-      }
-    },
-    "notes": "Erro de prefetch afeta apenas custo estimado; esta bateria não implementa I/O assíncrono."
-  },
-  {
     "timestamp_utc": "2026-08-09T16:17:25Z",
     "run_id": "20260809T161725Z-7765bdc6",
     "spec": "AETHER-LM v1.0 reference",
@@ -1317,223 +1100,6 @@
       }
     },
     "notes": "BASE+REF 4-bit packed. Q4_LINEAR_TEST não é MXFP4. O path ainda materializa FP32 antes da GEMM."
-  },
-  {
-    "timestamp_utc": "2026-08-09T17:33:51Z",
-    "run_id": "20260809T173351Z-c1435ea0",
-    "spec": "CASCADE v0.3",
-    "technology": "CASCADE",
-    "model_id": "microsoft/Phi-3.5-mini-instruct",
-    "battery_id": "B0_CASCADE_BINARY_IR_FOUNDATION",
-    "status": "PASS",
-    "comparison_role": null,
-    "baseline_tok_s": null,
-    "candidate_tok_s": null,
-    "baseline_ram_bytes": null,
-    "candidate_ram_bytes": null,
-    "baseline_disk_bytes": null,
-    "candidate_disk_bytes": null,
-    "gains": {
-      "tok_s_gain_pct": null,
-      "ram_reduction_pct": null,
-      "disk_reduction_pct": null,
-      "disk_compression_ratio_x": null,
-      "overall_gain_pct": null
-    },
-    "measurement_scope": "CASCADE Header/IR/Stage Pages/MMAP correctness; Tok/s, RAM e compressão não se aplicam.",
-    "quality": {
-      "full_local_gate_pass": true
-    },
-    "metrics": {
-      "bundle": {
-        "file_size": 1573696,
-        "header_checksum": 5646642140605367000,
-        "ir_offset": 128,
-        "stage_table_offset": 384,
-        "gate_table_offset": 464,
-        "payload_offset": 576,
-        "stages": [
-          {
-            "stage_id": 0,
-            "offset": 576,
-            "size": 786508
-          },
-          {
-            "stage_id": 1,
-            "offset": 787136,
-            "size": 786508
-          }
-        ]
-      },
-      "negative_tests_passed": 11
-    },
-    "notes": "CSCD v0.3 test-local container; ABI de produção ainda não congelada."
-  },
-  {
-    "timestamp_utc": "2026-08-09T17:33:51Z",
-    "run_id": "20260809T173351Z-c1435ea0",
-    "spec": "CASCADE v0.3",
-    "technology": "CASCADE",
-    "model_id": "microsoft/Phi-3.5-mini-instruct",
-    "battery_id": "P1_CASCADE_BASE_STAGE_F0",
-    "status": "EXPERIMENTAL_PASS",
-    "comparison_role": null,
-    "baseline_tok_s": null,
-    "candidate_tok_s": null,
-    "baseline_ram_bytes": 113983488,
-    "candidate_ram_bytes": 1523788,
-    "baseline_disk_bytes": 113246208,
-    "candidate_disk_bytes": 786508,
-    "gains": {
-      "tok_s_gain_pct": null,
-      "ram_reduction_pct": 98.66315022751365,
-      "disk_reduction_pct": 99.3054884451407,
-      "disk_compression_ratio_x": 143.98608532907485,
-      "overall_gain_pct": 98.98431933632718
-    },
-    "measurement_scope": "Single Linear op; disk=FP32 raw vs F0 FP16 low-rank payload; RAM=working-set estimate; model Tok/s not measured.",
-    "quality": {
-      "full_local_gate_pass": null,
-      "output": {
-        "cosine": 0.9937359690666199,
-        "nrmse": 0.0038268547505140305
-      }
-    },
-    "metrics": {
-      "operation": {
-        "baseline_median_ms": 1.0331584999221377,
-        "candidate_median_ms": 0.10724399999162415,
-        "speedup_x": 9.63371843648902
-      }
-    },
-    "notes": "F0 sempre residente; resultado aproximado isolado."
-  },
-  {
-    "timestamp_utc": "2026-08-09T17:33:51Z",
-    "run_id": "20260809T173351Z-c1435ea0",
-    "spec": "CASCADE v0.3",
-    "technology": "CASCADE",
-    "model_id": "microsoft/Phi-3.5-mini-instruct",
-    "battery_id": "P1_CASCADE_GATED_F0_PLUS_F1",
-    "status": "EXPERIMENTAL_FAIL",
-    "comparison_role": "primary",
-    "baseline_tok_s": null,
-    "candidate_tok_s": null,
-    "baseline_ram_bytes": 113983488,
-    "candidate_ram_bytes": 2310296,
-    "baseline_disk_bytes": 113246208,
-    "candidate_disk_bytes": 1573696,
-    "gains": {
-      "tok_s_gain_pct": null,
-      "ram_reduction_pct": 97.97313098542834,
-      "disk_reduction_pct": 98.61037642867477,
-      "disk_compression_ratio_x": 71.96193419821871,
-      "overall_gain_pct": 98.29175370705156
-    },
-    "measurement_scope": "Single Linear op; disk=arquivo CSCD real; RAM=working-set estimate; latency=Python/PyTorch reference path; model Tok/s not measured.",
-    "quality": {
-      "full_local_gate_pass": false,
-      "output": {
-        "cosine": 0.9965978860855103,
-        "nrmse": 0.002822280628606677
-      },
-      "output_f0": {
-        "cosine": 0.9937359690666199,
-        "nrmse": 0.0038268547505140305
-      },
-      "output_f0_plus_f1_always": {
-        "cosine": 0.9973690509796143,
-        "nrmse": 0.0024823639541864395
-      },
-      "cumulative_drift_mean": 0.08090105652809143,
-      "cumulative_drift_max": 0.11293284595012665
-    },
-    "metrics": {
-      "operation": {
-        "metric": "linear_latency",
-        "baseline_median_ms": 1.0331584999221377,
-        "candidate_median_ms": 0.27256449999413235,
-        "speedup_x": 3.79051013592885,
-        "rows_processed": 15
-      },
-      "cascade": {
-        "base_rank": 32,
-        "refinement_rank": 32,
-        "stage_activation_rate": 0.5333333611488342,
-        "gate": "ACTIVATION_L2_PERCENTILE_V1",
-        "gate_percentile": 50,
-        "activation_source": "real_model_activation",
-        "fused_semantics_reference": true,
-        "fused_kernel_native": false,
-        "logical_bytes_addressed_per_vector": {
-          "baseline_dense_weight": 113246208,
-          "cascade_expected_stage_payload": 1205978.9552104473,
-          "IMPORTANT": "logical payload, not measured memory-bus traffic"
-        }
-      },
-      "bundle": {
-        "file_size": 1573696,
-        "header_checksum": 5646642140605367000,
-        "ir_offset": 128,
-        "stage_table_offset": 384,
-        "gate_table_offset": 464,
-        "payload_offset": 576,
-        "stages": [
-          {
-            "stage_id": 0,
-            "offset": 576,
-            "size": 786508
-          },
-          {
-            "stage_id": 1,
-            "offset": 787136,
-            "size": 786508
-          }
-        ]
-      }
-    },
-    "notes": "Gate heurístico por ativação. Caminho de referência não é kernel fused; nenhum speedup nativo é reivindicado."
-  },
-  {
-    "timestamp_utc": "2026-08-09T17:33:51Z",
-    "run_id": "20260809T173351Z-c1435ea0",
-    "spec": "CASCADE v0.3",
-    "technology": "CASCADE",
-    "model_id": "microsoft/Phi-3.5-mini-instruct",
-    "battery_id": "P1_CASCADE_PREDICTIVE_PREFETCH_SIM",
-    "status": "SIMULATED",
-    "comparison_role": null,
-    "baseline_tok_s": null,
-    "candidate_tok_s": null,
-    "baseline_ram_bytes": null,
-    "candidate_ram_bytes": null,
-    "baseline_disk_bytes": null,
-    "candidate_disk_bytes": null,
-    "gains": {
-      "tok_s_gain_pct": null,
-      "ram_reduction_pct": null,
-      "disk_reduction_pct": null,
-      "disk_compression_ratio_x": null,
-      "overall_gain_pct": null
-    },
-    "measurement_scope": "Lag-one simulation over gate decisions; no real asynchronous I/O latency measured.",
-    "quality": {
-      "full_local_gate_pass": null
-    },
-    "metrics": {
-      "prefetch": {
-        "precision": 0.5714285714285714,
-        "recall": 0.5,
-        "required_pages": 8,
-        "predicted_pages": 7,
-        "true_positive_pages": 4,
-        "prefetched_bytes": 5505556,
-        "wasted_prefetch_bytes": 2359524,
-        "missed_prefetch_bytes": 3146032,
-        "IMPORTANT": "simulated page requests, not measured asynchronous I/O"
-      }
-    },
-    "notes": "Erro de prefetch afeta apenas custo estimado; esta bateria não implementa I/O assíncrono."
   },
   {
     "timestamp_utc": "2026-08-09T17:34:46Z",
@@ -2220,223 +1786,6 @@
       }
     },
     "notes": "BASE+REF 4-bit packed. Q4_LINEAR_TEST não é MXFP4. O path ainda materializa FP32 antes da GEMM."
-  },
-  {
-    "timestamp_utc": "2026-08-09T21:03:38Z",
-    "run_id": "20260809T210338Z-14e1d30e",
-    "spec": "CASCADE v0.3",
-    "technology": "CASCADE",
-    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
-    "battery_id": "B0_CASCADE_BINARY_IR_FOUNDATION",
-    "status": "PASS",
-    "comparison_role": null,
-    "baseline_tok_s": null,
-    "candidate_tok_s": null,
-    "baseline_ram_bytes": null,
-    "candidate_ram_bytes": null,
-    "baseline_disk_bytes": null,
-    "candidate_disk_bytes": null,
-    "gains": {
-      "tok_s_gain_pct": null,
-      "ram_reduction_pct": null,
-      "disk_reduction_pct": null,
-      "disk_compression_ratio_x": null,
-      "overall_gain_pct": null
-    },
-    "measurement_scope": "CASCADE Header/IR/Stage Pages/MMAP correctness; Tok/s, RAM e compressão não se aplicam.",
-    "quality": {
-      "full_local_gate_pass": true
-    },
-    "metrics": {
-      "bundle": {
-        "file_size": 852800,
-        "header_checksum": 5658117962710114000,
-        "ir_offset": 128,
-        "stage_table_offset": 384,
-        "gate_table_offset": 464,
-        "payload_offset": 576,
-        "stages": [
-          {
-            "stage_id": 0,
-            "offset": 576,
-            "size": 426060
-          },
-          {
-            "stage_id": 1,
-            "offset": 426688,
-            "size": 426060
-          }
-        ]
-      },
-      "negative_tests_passed": 11
-    },
-    "notes": "CSCD v0.3 test-local container; ABI de produção ainda não congelada."
-  },
-  {
-    "timestamp_utc": "2026-08-09T21:03:40Z",
-    "run_id": "20260809T210338Z-14e1d30e",
-    "spec": "CASCADE v0.3",
-    "technology": "CASCADE",
-    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
-    "battery_id": "P1_CASCADE_BASE_STAGE_F0",
-    "status": "EXPERIMENTAL_FAIL",
-    "comparison_role": null,
-    "baseline_tok_s": null,
-    "candidate_tok_s": null,
-    "baseline_ram_bytes": 42315776,
-    "candidate_ram_bytes": 798796,
-    "baseline_disk_bytes": 41943040,
-    "candidate_disk_bytes": 426060,
-    "gains": {
-      "tok_s_gain_pct": null,
-      "ram_reduction_pct": 98.11229740889071,
-      "disk_reduction_pct": 98.98419380187988,
-      "disk_compression_ratio_x": 98.44397502699151,
-      "overall_gain_pct": 98.54824560538529
-    },
-    "measurement_scope": "Single Linear op; disk=FP32 raw vs F0 FP16 low-rank payload; RAM=working-set estimate; model Tok/s not measured.",
-    "quality": {
-      "full_local_gate_pass": null,
-      "output": {
-        "cosine": 0.9068016409873962,
-        "nrmse": 0.010501112788915634
-      }
-    },
-    "metrics": {
-      "operation": {
-        "baseline_median_ms": 0.40865749997465173,
-        "candidate_median_ms": 0.11179100010849652,
-        "speedup_x": 3.655549190704416
-      }
-    },
-    "notes": "F0 sempre residente; resultado aproximado isolado."
-  },
-  {
-    "timestamp_utc": "2026-08-09T21:03:41Z",
-    "run_id": "20260809T210338Z-14e1d30e",
-    "spec": "CASCADE v0.3",
-    "technology": "CASCADE",
-    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
-    "battery_id": "P1_CASCADE_GATED_F0_PLUS_F1",
-    "status": "EXPERIMENTAL_FAIL",
-    "comparison_role": "primary",
-    "baseline_tok_s": null,
-    "candidate_tok_s": null,
-    "baseline_ram_bytes": 42315776,
-    "candidate_ram_bytes": 1224856,
-    "baseline_disk_bytes": 41943040,
-    "candidate_disk_bytes": 852800,
-    "gains": {
-      "tok_s_gain_pct": null,
-      "ram_reduction_pct": 97.10543887934372,
-      "disk_reduction_pct": 97.96676635742188,
-      "disk_compression_ratio_x": 49.182739212007505,
-      "overall_gain_pct": 97.5361026183828
-    },
-    "measurement_scope": "Single Linear op; disk=arquivo CSCD real; RAM=working-set estimate; latency=Python/PyTorch reference path; model Tok/s not measured.",
-    "quality": {
-      "full_local_gate_pass": false,
-      "output": {
-        "cosine": 0.9099383354187012,
-        "nrmse": 0.010331378318369389
-      },
-      "output_f0": {
-        "cosine": 0.9068016409873962,
-        "nrmse": 0.010501112788915634
-      },
-      "output_f0_plus_f1_always": {
-        "cosine": 0.9119682908058167,
-        "nrmse": 0.01021970808506012
-      },
-      "cumulative_drift_mean": 0.43914395570755005,
-      "cumulative_drift_max": 0.5663007497787476
-    },
-    "metrics": {
-      "operation": {
-        "metric": "linear_latency",
-        "baseline_median_ms": 0.40865749997465173,
-        "candidate_median_ms": 0.2529984999455337,
-        "speedup_x": 1.615256612440899,
-        "rows_processed": 14
-      },
-      "cascade": {
-        "base_rank": 32,
-        "refinement_rank": 32,
-        "stage_activation_rate": 0.5,
-        "gate": "ACTIVATION_L2_PERCENTILE_V1",
-        "gate_percentile": 50,
-        "activation_source": "real_model_activation",
-        "fused_semantics_reference": true,
-        "fused_kernel_native": false,
-        "logical_bytes_addressed_per_vector": {
-          "baseline_dense_weight": 41943040,
-          "cascade_expected_stage_payload": 639090,
-          "IMPORTANT": "logical payload, not measured memory-bus traffic"
-        }
-      },
-      "bundle": {
-        "file_size": 852800,
-        "header_checksum": 5658117962710114000,
-        "ir_offset": 128,
-        "stage_table_offset": 384,
-        "gate_table_offset": 464,
-        "payload_offset": 576,
-        "stages": [
-          {
-            "stage_id": 0,
-            "offset": 576,
-            "size": 426060
-          },
-          {
-            "stage_id": 1,
-            "offset": 426688,
-            "size": 426060
-          }
-        ]
-      }
-    },
-    "notes": "Gate heurístico por ativação. Caminho de referência não é kernel fused; nenhum speedup nativo é reivindicado."
-  },
-  {
-    "timestamp_utc": "2026-08-09T21:03:43Z",
-    "run_id": "20260809T210338Z-14e1d30e",
-    "spec": "CASCADE v0.3",
-    "technology": "CASCADE",
-    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
-    "battery_id": "P1_CASCADE_PREDICTIVE_PREFETCH_SIM",
-    "status": "SIMULATED",
-    "comparison_role": null,
-    "baseline_tok_s": null,
-    "candidate_tok_s": null,
-    "baseline_ram_bytes": null,
-    "candidate_ram_bytes": null,
-    "baseline_disk_bytes": null,
-    "candidate_disk_bytes": null,
-    "gains": {
-      "tok_s_gain_pct": null,
-      "ram_reduction_pct": null,
-      "disk_reduction_pct": null,
-      "disk_compression_ratio_x": null,
-      "overall_gain_pct": null
-    },
-    "measurement_scope": "Lag-one simulation over gate decisions; no real asynchronous I/O latency measured.",
-    "quality": {
-      "full_local_gate_pass": null
-    },
-    "metrics": {
-      "prefetch": {
-        "precision": 0.6666666666666666,
-        "recall": 0.5714285714285714,
-        "required_pages": 7,
-        "predicted_pages": 6,
-        "true_positive_pages": 4,
-        "prefetched_bytes": 2556360,
-        "wasted_prefetch_bytes": 852120,
-        "missed_prefetch_bytes": 1278180,
-        "IMPORTANT": "simulated page requests, not measured asynchronous I/O"
-      }
-    },
-    "notes": "Erro de prefetch afeta apenas custo estimado; esta bateria não implementa I/O assíncrono."
   },
   {
     "timestamp_utc": "2026-08-09T21:04:43Z",
@@ -4230,5 +3579,230 @@
     "baseline_disk_bytes": 20971520,
     "candidate_disk_bytes": 1318912,
     "comparison_role": null
+  },
+  {
+    "timestamp_utc": "2026-08-09T23:57:51Z",
+    "run_id": "20260809T235712Z",
+    "technology": "CASCADE",
+    "model_id": "microsoft/Phi-3.5-mini-instruct",
+    "battery_id": "P1_CASCADE_C2_E2E_TOKS",
+    "status": "PASS",
+    "comparison_role": "primary",
+    "baseline_tok_s": 27.90234793121031,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 38535168,
+    "candidate_ram_bytes": 6807572,
+    "baseline_disk_bytes": 37748736,
+    "candidate_disk_bytes": 6291520,
+    "measurement_scope": "CASCADE-C2 e2e baseline tok/s + sample Linear CASCADE metrics",
+    "quality": {
+      "full_local_gate_pass": true,
+      "output": {
+        "cosine": 0.9945357441902161
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "e2e_tok_s",
+        "baseline_tok_s": 27.90234793121031,
+        "ttft_proxy_ms": 35.839277843763284,
+        "n_new": 32
+      },
+      "cascade": {
+        "out_features": 3072,
+        "in_features": 3072,
+        "group_size": 32,
+        "rank": 16,
+        "f0_bytes": 5898240,
+        "f1_bytes": 393280,
+        "baseline_bytes": 37748736,
+        "disk_reduction_pct": 83.33316379123264,
+        "sample_layer": "model.layers.0.self_attn.o_proj.weight",
+        "F1_skip_rate": 0.6875,
+        "path": "F0_GATE_F1",
+        "e2e_note": "tok/s is ORIGINAL model; candidate full-CASCADE generate is next iteration"
+      }
+    },
+    "notes": "C2 baseline 27.90 tok/s on cuda. Sample Linear model.layers.0.self_attn.o_proj.weight cosine=0.9945 skip=0.688."
+  },
+  {
+    "timestamp_utc": "2026-08-10T00:01:50Z",
+    "run_id": "20260810T000112Z",
+    "technology": "CASCADE",
+    "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+    "battery_id": "P1_CASCADE_C2_E2E_TOKS",
+    "status": "PASS",
+    "comparison_role": "primary",
+    "baseline_tok_s": 17.75748009015922,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 42795008,
+    "candidate_ram_bytes": 7538708,
+    "baseline_disk_bytes": 41943040,
+    "candidate_disk_bytes": 6979648,
+    "measurement_scope": "CASCADE-C2 e2e baseline tok/s + sample Linear CASCADE metrics",
+    "quality": {
+      "full_local_gate_pass": true,
+      "output": {
+        "cosine": 0.9953354001045227
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "e2e_tok_s",
+        "baseline_tok_s": 17.75748009015922,
+        "ttft_proxy_ms": 56.31429656250475,
+        "n_new": 32
+      },
+      "cascade": {
+        "out_features": 4096,
+        "in_features": 2560,
+        "group_size": 32,
+        "rank": 16,
+        "f0_bytes": 6553600,
+        "f1_bytes": 426048,
+        "baseline_bytes": 41943040,
+        "disk_reduction_pct": 83.35922241210938,
+        "sample_layer": "model.layers.0.self_attn.q_proj.weight",
+        "F1_skip_rate": 0.6875,
+        "path": "F0_GATE_F1",
+        "e2e_note": "tok/s is ORIGINAL model; candidate full-CASCADE generate is next iteration"
+      }
+    },
+    "notes": "C2 baseline 17.76 tok/s on cuda. Sample Linear model.layers.0.self_attn.q_proj.weight cosine=0.9953 skip=0.688."
+  },
+  {
+    "timestamp_utc": "2026-08-10T00:03:49Z",
+    "run_id": "20260810T000332Z",
+    "technology": "CASCADE",
+    "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+    "battery_id": "P1_CASCADE_C2_E2E_TOKS",
+    "status": "PASS",
+    "comparison_role": "primary",
+    "baseline_tok_s": 17.75298786058031,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 9830400,
+    "candidate_ram_bytes": 1929236,
+    "baseline_disk_bytes": 9437184,
+    "candidate_disk_bytes": 1671232,
+    "measurement_scope": "CASCADE-C2 e2e baseline tok/s + sample Linear CASCADE metrics",
+    "quality": {
+      "full_local_gate_pass": true,
+      "output": {
+        "cosine": 0.9952389001846313
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "e2e_tok_s",
+        "baseline_tok_s": 17.75298786058031,
+        "ttft_proxy_ms": 56.3285463750276,
+        "n_new": 32
+      },
+      "cascade": {
+        "out_features": 1536,
+        "in_features": 1536,
+        "group_size": 32,
+        "rank": 16,
+        "f0_bytes": 1474560,
+        "f1_bytes": 196672,
+        "baseline_bytes": 9437184,
+        "disk_reduction_pct": 82.29098849826389,
+        "sample_layer": "model.layers.0.self_attn.q_proj.weight",
+        "F1_skip_rate": 0.6875,
+        "path": "F0_GATE_F1",
+        "e2e_note": "tok/s is ORIGINAL model; candidate full-CASCADE generate is next iteration"
+      }
+    },
+    "notes": "C2 baseline 17.75 tok/s on cuda. Sample Linear model.layers.0.self_attn.q_proj.weight cosine=0.9952 skip=0.688."
+  },
+  {
+    "timestamp_utc": "2026-08-10T00:04:53Z",
+    "run_id": "20260810T000443Z",
+    "technology": "CASCADE",
+    "model_id": "Qwen/Qwen2.5-0.5B",
+    "battery_id": "P1_CASCADE_C2_E2E_TOKS",
+    "status": "PASS",
+    "comparison_role": "primary",
+    "baseline_tok_s": 33.54435728600012,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 3440640,
+    "candidate_ram_bytes": 766996,
+    "baseline_disk_bytes": 3211264,
+    "candidate_disk_bytes": 616512,
+    "measurement_scope": "CASCADE-C2 e2e baseline tok/s + sample Linear CASCADE metrics",
+    "quality": {
+      "full_local_gate_pass": true,
+      "output": {
+        "cosine": 0.9940326809883118
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "e2e_tok_s",
+        "baseline_tok_s": 33.54435728600012,
+        "ttft_proxy_ms": 29.811273218740553,
+        "n_new": 32
+      },
+      "cascade": {
+        "out_features": 896,
+        "in_features": 896,
+        "group_size": 32,
+        "rank": 16,
+        "f0_bytes": 501760,
+        "f1_bytes": 114752,
+        "baseline_bytes": 3211264,
+        "disk_reduction_pct": 80.80157844387756,
+        "sample_layer": "model.layers.0.self_attn.q_proj.weight",
+        "F1_skip_rate": 0.6875,
+        "path": "F0_GATE_F1",
+        "e2e_note": "tok/s is ORIGINAL model; candidate full-CASCADE generate is next iteration"
+      }
+    },
+    "notes": "C2 baseline 33.54 tok/s on cuda. Sample Linear model.layers.0.self_attn.q_proj.weight cosine=0.9940 skip=0.688."
+  },
+  {
+    "timestamp_utc": "2026-08-10T00:12:58Z",
+    "run_id": "20260810T001029Z",
+    "technology": "CASCADE",
+    "model_id": "google/gemma-4-E4B-it",
+    "battery_id": "P1_CASCADE_C2_E2E_TOKS",
+    "status": "PASS",
+    "comparison_role": "primary",
+    "baseline_tok_s": 0.583763204256886,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 2555904,
+    "candidate_ram_bytes": 595988,
+    "baseline_disk_bytes": 2359296,
+    "candidate_disk_bytes": 467008,
+    "measurement_scope": "CASCADE-C2 e2e baseline tok/s + sample Linear CASCADE metrics",
+    "quality": {
+      "full_local_gate_pass": true,
+      "output": {
+        "cosine": 0.9940221309661865
+      }
+    },
+    "metrics": {
+      "operation": {
+        "metric": "e2e_tok_s",
+        "baseline_tok_s": 0.583763204256886,
+        "ttft_proxy_ms": 1713.0233504062176,
+        "n_new": 32
+      },
+      "cascade": {
+        "out_features": 768,
+        "in_features": 768,
+        "group_size": 32,
+        "rank": 16,
+        "f0_bytes": 368640,
+        "f1_bytes": 98368,
+        "baseline_bytes": 2359296,
+        "disk_reduction_pct": 80.20562065972221,
+        "sample_layer": "model.vision_tower.encoder.layers.0.self_attn.q_proj.linear.weight",
+        "F1_skip_rate": 0.6875,
+        "path": "F0_GATE_F1",
+        "e2e_note": "tok/s is ORIGINAL model; candidate full-CASCADE generate is next iteration"
+      }
+    },
+    "notes": "C2 baseline 0.58 tok/s on cuda. Sample Linear model.vision_tower.encoder.layers.0.self_attn.q_proj.linear.weight cosine=0.9940 skip=0.688."
   }
 ]
