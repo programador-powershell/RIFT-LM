@@ -4,6 +4,14 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/",
+      "destination": "/dashboard.html"
+    },
+    {
+      "source": "/legacy",
+      "destination": "/index.html"
+    },
+    {
       "source": "/rift/:model*",
       "destination": "/api/test?technology=rift&model=:model*"
     },
@@ -30,7 +38,7 @@
       "headers": [
         {
           "key": "Cache-Control",
-          "value": "public, max-age=0, s-maxage=10, stale-while-revalidate=30"
+          "value": "public, max-age=0, s-maxage=30, stale-while-revalidate=120"
         },
         {
           "key": "X-Content-Type-Options",

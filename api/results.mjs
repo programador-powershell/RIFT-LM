@@ -1,7 +1,12 @@
 import { timingSafeEqual } from "node:crypto";
 
 const MAX_BODY_BYTES = 1024 * 1024;
+const MAX_CONTEXT_BYTES = 16 * 1024;
+const MAX_RECORDS = 25000;
 const GITHUB_API_VERSION = "2022-11-28";
+const TECHNOLOGIES = new Set(["RIFT", "CASCADE", "AETHER", "SPECTRA", "WINNER"]);
+const MODEL_ID_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const COMPARISON_GROUP_RE = /^[A-Za-z0-9_.:-]{8,128}$/;
 
 class ApiError extends Error {
   constructor(message, status = 500) {
@@ -47,7 +52,7 @@ function normalizeRepository(value) {
     .replace(/^git@github\.com:/i, "")
     .replace(/\.git$/i, "")
     .replace(/\/$/, "");
-  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
+  if (!MODEL_ID_RE.test(repository)) {
     throw new ApiError("RIFT_GITHUB_REPOSITORY invalido", 500);
   }
   return repository;
@@ -62,55 +67,136 @@ function normalizeTargetPath(value) {
   return targetPath;
 }
 
+function inferTechnology(record) {
+  const explicit = String(record.technology || "").trim().toUpperCase();
+  if (explicit) return TECHNOLOGIES.has(explicit) ? explicit : null;
+  const hint = `${record.battery_id || ""} ${record.spec || ""}`.toUpperCase();
+  if (hint.includes("WINNER")) return "WINNER";
+  if (hint.includes("SPECTRA")) return "SPECTRA";
+  if (hint.includes("AETHER")) return "AETHER";
+  if (hint.includes("CASCADE")) return "CASCADE";
+  if (hint.includes("RIFT")) return "RIFT";
+  return null;
+}
+
+function finiteMetric(value, field, index, source) {
+  if (value === null || value === undefined) return;
+  if (!Number.isFinite(Number(value))) {
+    throw new ApiError(`${source}.${field} invalido no indice ${index}`, 400);
+  }
+}
+
+function normalizeRecord(record, index, source) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) {
+    throw new ApiError(`${source} contem registro invalido no indice ${index}`, 400);
+  }
+
+  const runId = String(record.run_id || "").trim();
+  const batteryId = String(record.battery_id || "").trim();
+  if (!runId || !batteryId) {
+    throw new ApiError(`${source} exige run_id e battery_id no indice ${index}`, 400);
+  }
+  if (runId.length > 160 || batteryId.length > 180) {
+    throw new ApiError(`${source} possui identificador excessivamente longo no indice ${index}`, 400);
+  }
+
+  const modelId = String(record.model_id || record.model || "").trim();
+  if (modelId && !MODEL_ID_RE.test(modelId)) {
+    throw new ApiError(`${source}.model_id invalido no indice ${index}`, 400);
+  }
+
+  const technology = inferTechnology(record);
+  if (!technology) {
+    throw new ApiError(`${source}.technology invalida/ausente no indice ${index}`, 400);
+  }
+
+  if (record.timestamp_utc) {
+    const timestamp = Date.parse(String(record.timestamp_utc));
+    if (!Number.isFinite(timestamp)) {
+      throw new ApiError(`${source}.timestamp_utc invalido no indice ${index}`, 400);
+    }
+  }
+
+  for (const field of [
+    "baseline_tok_s", "candidate_tok_s", "rift_tok_s", "cascade_tok_s",
+    "aether_tok_s", "spectra_tok_s", "winner_tok_s",
+    "baseline_ram_bytes", "candidate_ram_bytes", "rift_ram_bytes", "cascade_ram_bytes",
+    "aether_ram_bytes", "spectra_ram_bytes", "winner_ram_bytes",
+    "baseline_disk_bytes", "candidate_disk_bytes", "rift_disk_bytes", "cascade_disk_bytes",
+    "aether_disk_bytes", "spectra_disk_bytes", "winner_disk_bytes",
+  ]) {
+    finiteMetric(record[field], field, index, source);
+  }
+
+  const comparisonGroup = record.comparison_group_id == null
+    ? null
+    : String(record.comparison_group_id).trim();
+  if (comparisonGroup && !COMPARISON_GROUP_RE.test(comparisonGroup)) {
+    throw new ApiError(`${source}.comparison_group_id invalido no indice ${index}`, 400);
+  }
+
+  if (record.comparison_context != null) {
+    if (typeof record.comparison_context !== "object" || Array.isArray(record.comparison_context)) {
+      throw new ApiError(`${source}.comparison_context precisa ser objeto no indice ${index}`, 400);
+    }
+    if (Buffer.byteLength(JSON.stringify(record.comparison_context), "utf8") > MAX_CONTEXT_BYTES) {
+      throw new ApiError(`${source}.comparison_context excede 16 KiB no indice ${index}`, 400);
+    }
+  }
+
+  const schemaVersion = Number(record.schema_version ?? 1);
+  if (!Number.isInteger(schemaVersion) || schemaVersion < 1 || schemaVersion > 1000) {
+    throw new ApiError(`${source}.schema_version invalido no indice ${index}`, 400);
+  }
+
+  const normalized = {
+    ...record,
+    schema_version: schemaVersion,
+    technology,
+    ...(modelId ? { model_id: modelId } : {}),
+  };
+  if (comparisonGroup) normalized.comparison_group_id = comparisonGroup;
+  return normalized;
+}
+
 function validateHistory(value, source) {
   if (!Array.isArray(value)) {
     throw new ApiError(`${source} precisa ser um array JSON`, 400);
   }
-  for (const [index, record] of value.entries()) {
-    if (!record || typeof record !== "object" || Array.isArray(record)) {
-      throw new ApiError(`${source} contem registro invalido no indice ${index}`, 400);
-    }
-    if (!String(record.run_id || "").trim() || !String(record.battery_id || "").trim()) {
-      throw new ApiError(
-        `${source} exige run_id e battery_id no indice ${index}`,
-        400,
-      );
-    }
+  if (value.length > MAX_RECORDS) {
+    throw new ApiError(`${source} excede o limite de ${MAX_RECORDS} registros`, 413);
   }
-  return value;
+  return value.map((record, index) => normalizeRecord(record, index, source));
 }
 
-function snapshotKey(record) {
-  const model = String(record.model_id || record.model || "").trim().toLowerCase();
-  const explicit = String(record.technology || "").trim().toUpperCase();
-  const hint = `${record.battery_id || ""} ${record.spec || ""}`.toUpperCase();
-  const technology = explicit ||
-    (hint.includes("WINNER") ? "WINNER" : hint.includes("SPECTRA") ? "SPECTRA" :
-      hint.includes("AETHER") ? "AETHER" : hint.includes("CASCADE") ? "CASCADE" : "RIFT");
-  return model ? `${model}\u0000${technology}` : null;
+function recordKey(record) {
+  return [
+    String(record.run_id || ""),
+    String(record.technology || inferTechnology(record) || ""),
+    String(record.battery_id || ""),
+  ].join("\u0000");
 }
 
 function mergeHistories(remote, incoming) {
-  // Every publisher sends a complete run snapshot for one model/technology.
-  // Remove that previous snapshot before inserting the optimized/new run, so
-  // reruns update the dashboard instead of accumulating duplicate cards.
-  const replacedSnapshots = new Set(incoming.map(snapshotKey).filter(Boolean));
+  // Append-only by run. A repeated upload of the exact same run/battery is an
+  // idempotent upsert, but a new run never deletes the previous one. The UI is
+  // free to show only the newest snapshot while the raw history stays auditable.
   const records = new Map();
-  for (const record of remote) {
-    const key = snapshotKey(record);
-    if (!key || !replacedSnapshots.has(key)) {
-      records.set(`${record.run_id}\u0000${record.battery_id}`, record);
-    }
-  }
-  for (const record of incoming) {
-    const key = snapshotKey(record) || String(record.run_id);
-    records.set(`${key}\u0000${record.battery_id}`, record);
-  }
-  return [...records.values()].sort((left, right) => {
-    const leftKey = `${left.timestamp_utc || ""}\u0000${left.run_id}\u0000${left.battery_id}`;
-    const rightKey = `${right.timestamp_utc || ""}\u0000${right.run_id}\u0000${right.battery_id}`;
+  for (const record of remote) records.set(recordKey(record), record);
+  for (const record of incoming) records.set(recordKey(record), record);
+
+  const merged = [...records.values()].sort((left, right) => {
+    const leftKey = `${left.timestamp_utc || ""}\u0000${left.run_id}\u0000${left.technology || ""}\u0000${left.battery_id}`;
+    const rightKey = `${right.timestamp_utc || ""}\u0000${right.run_id}\u0000${right.technology || ""}\u0000${right.battery_id}`;
     return leftKey.localeCompare(rightKey);
   });
+  if (merged.length > MAX_RECORDS) {
+    throw new ApiError(
+      `Historico atingiu ${merged.length} registros; arquive execucoes antigas antes de publicar`,
+      507,
+    );
+  }
+  return merged;
 }
 
 async function githubRequest(url, token, options = {}) {
@@ -122,7 +208,7 @@ async function githubRequest(url, token, options = {}) {
       headers: {
         Accept: "application/vnd.github+json",
         Authorization: `Bearer ${token}`,
-        "User-Agent": "rift-cascade-aether-spectra-winner-vercel-ingest/0.8",
+        "User-Agent": "rift-cascade-aether-spectra-winner-vercel-ingest/0.9",
         "X-GitHub-Api-Version": GITHUB_API_VERSION,
         ...(options.body ? { "Content-Type": "application/json" } : {}),
         ...options.headers,
@@ -232,6 +318,8 @@ async function publishToGitHub(incoming) {
         branch,
         path: targetPath,
         records: merged.length,
+        incoming_records: incoming.length,
+        history_mode: "append-only",
         commit_sha: result.commit?.sha || null,
         commit_url: result.commit?.html_url || null,
       };
@@ -277,9 +365,12 @@ export default {
 };
 
 export const _test = {
+  inferTechnology,
   mergeHistories,
+  normalizeRecord,
   normalizeRepository,
   normalizeTargetPath,
+  recordKey,
   secretsMatch,
   validateHistory,
 };

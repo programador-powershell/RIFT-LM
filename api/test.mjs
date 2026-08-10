@@ -1,6 +1,7 @@
 const REPOSITORY = "programador-powershell/RIFT-LM";
 const DEFAULT_REF = "main";
 const RESULTS_ENDPOINT = "https://rift-lm.vercel.app/api/results";
+const BENCHMARK_PROTOCOL = "LINEAR_REFERENCE_V2";
 const TOKENIZER_DEPENDENCIES = {
   transformers: "transformers>=4.52.0",
   accelerate: "accelerate>=0.33.0",
@@ -221,15 +222,25 @@ function buildLauncher({
   return `#!/usr/bin/env python3
 # Launcher gerado por ${origin} para ${definition.label}.
 # O benchmark usa GPU do Colab; a Vercel apenas entrega este inicializador.
-import os
+import hashlib
+import importlib.metadata
 import json
+import os
+import platform
 import shutil
 import subprocess
 import sys
+import urllib.request
 from urllib.request import Request, urlopen
 
 SCRIPT_URL = ${JSON.stringify(scriptUrl)}
+RESULTS_ENDPOINT = ${JSON.stringify(RESULTS_ENDPOINT)}
 MODEL_ID = ${JSON.stringify(model.modelId)}
+TECHNOLOGY = ${JSON.stringify(definition.label)}
+TARGET_LAYER_REQUEST = ${JSON.stringify(targetLayer)}
+DEVICE_REQUEST = ${JSON.stringify(device)}
+SOURCE_REF = ${JSON.stringify(ref)}
+BENCHMARK_PROTOCOL = ${JSON.stringify(BENCHMARK_PROTOCOL)}
 ARGS = ${JSON.stringify(argumentsList)}
 WARNINGS = ${JSON.stringify(warnings)}
 COMPATIBILITY = json.loads(r'''${JSON.stringify(compatibility)}''')
@@ -256,6 +267,29 @@ def available_gpu_memory_bytes():
         return max(values, default=0) * 1024 * 1024
     except (FileNotFoundError, ValueError, subprocess.SubprocessError):
         return 0
+
+def gpu_descriptor():
+    try:
+        output = subprocess.check_output(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.total,driver_version",
+                "--format=csv,noheader,nounits",
+            ],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+        rows = [line.strip() for line in output.splitlines() if line.strip()]
+        return rows[0] if rows else None
+    except (FileNotFoundError, ValueError, subprocess.SubprocessError):
+        return None
+
+def package_version(name):
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
 
 def enforce_compatibility():
     if COMPATIBILITY.get("colabSupported", True):
@@ -288,24 +322,117 @@ def enforce_publish_settings():
         print("[LAUNCHER] ERRO: RIFT_INGEST_TOKEN precisa ter pelo menos 32 caracteres.")
         raise SystemExit(2)
 
-def ensure_tokenizer_dependencies():
-    packages = list(TOKENIZER_DEPENDENCIES.values())
-    print("[LAUNCHER] Garantindo transformers + accelerate + tokenizers + sentencepiece + tiktoken...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "-U", *packages])
-    for module in TOKENIZER_DEPENDENCIES:
-        __import__(module)
-    print("[LAUNCHER] Dependências ML prontas: transformers + accelerate + tokenizers + sentencepiece + tiktoken")
+def report_dependency_state():
+    available = []
+    missing = []
+    for module, package in TOKENIZER_DEPENDENCIES.items():
+        try:
+            __import__(module)
+            available.append(module)
+        except Exception:
+            missing.append(package)
+    if available:
+        print("[LAUNCHER] Dependências já presentes:", ", ".join(available))
+    if missing:
+        print("[LAUNCHER] Dependências ausentes serão instaladas pela própria bateria:", ", ".join(missing))
+    # O launcher não executa pip -U. A bateria continua sendo a autoridade
+    # sobre suas dependências, evitando uma instalação duplicada por execução.
 
-os.environ.setdefault("RIFT_RESULTS_ENDPOINT", ${JSON.stringify(RESULTS_ENDPOINT)})
-os.environ.setdefault("RIFT_SOURCE_REF", ${JSON.stringify(ref)})
+def build_comparison_context(record=None):
+    record = record if isinstance(record, dict) else {}
+    resolved_layer = record.get("target_layer") or record.get("tensor")
+    context = {
+        "protocol": BENCHMARK_PROTOCOL,
+        "model_id": MODEL_ID,
+        "target_layer_request": TARGET_LAYER_REQUEST,
+        "device_request": DEVICE_REQUEST,
+        "gpu": gpu_descriptor(),
+        "platform": platform.platform(),
+        "machine": platform.machine(),
+        "python": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "torch": package_version("torch"),
+        "transformers": package_version("transformers"),
+        "source_ref": SOURCE_REF,
+        "context_resolution": "RESOLVED" if resolved_layer else "REQUEST_LEVEL",
+    }
+    if resolved_layer:
+        context["target_layer_resolved"] = str(resolved_layer)
+    # source_ref é auditável, mas não entra no fingerprint: uma otimização de
+    # uma tecnologia pode ser retestada contra o mesmo protocolo sem invalidar
+    # o grupo apenas porque houve novo commit do código.
+    fingerprint_context = {key: value for key, value in context.items() if key != "source_ref"}
+    canonical = json.dumps(fingerprint_context, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    group_id = "cmp-" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:24]
+    return context, group_id
+
+def implementation_descriptor(record):
+    battery = str(record.get("battery_id") or "").upper()
+    status = str(record.get("status") or "").upper()
+    if status == "SIMULATED" or "_SIM" in battery or "PREFETCH_SIM" in battery or "PIO_POLICY_SIM" in battery:
+        return {"scope": "policy_or_reference_simulation", "kind": "SIMULATED", "native": False, "simulated": True}
+    if TECHNOLOGY == "WINNER" and ("CPP" in battery or "NATIVE" in battery or "SELF_TEST" in battery):
+        return {"scope": "native_cpp_selftest", "kind": "NATIVE", "native": True, "simulated": False}
+    return {"scope": "single_linear_reference", "kind": "REFERENCE", "native": False, "simulated": False}
+
+def install_result_enricher():
+    original_request = urllib.request.Request
+
+    def enriched_request(url, data=None, headers={}, origin_req_host=None, unverifiable=False, method=None):
+        target = str(getattr(url, "full_url", url))
+        if data is not None and target.rstrip("/") == RESULTS_ENDPOINT.rstrip("/"):
+            try:
+                payload = json.loads(bytes(data).decode("utf-8"))
+                records = payload.get("records") if isinstance(payload, dict) else payload
+                if isinstance(records, list):
+                    for record in records:
+                        if not isinstance(record, dict):
+                            continue
+                        existing_context = record.get("comparison_context")
+                        has_resolved_context = (
+                            isinstance(existing_context, dict)
+                            and existing_context.get("context_resolution") == "RESOLVED"
+                            and record.get("comparison_group_id")
+                        )
+                        if not has_resolved_context:
+                            context, comparison_group_id = build_comparison_context(record)
+                            record["comparison_group_id"] = comparison_group_id
+                            record["comparison_context"] = context
+                        else:
+                            comparison_group_id = str(record["comparison_group_id"])
+                            context = existing_context
+                        os.environ["RIFT_COMPARISON_GROUP_ID"] = comparison_group_id
+                        os.environ["RIFT_COMPARISON_CONTEXT_JSON"] = json.dumps(context, separators=(",", ":"))
+                        record.setdefault("schema_version", 1)
+                        record.setdefault("technology", TECHNOLOGY)
+                        record.setdefault("benchmark_protocol", BENCHMARK_PROTOCOL)
+                        record.setdefault("implementation", implementation_descriptor(record))
+                    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            except Exception as exc:
+                print("[LAUNCHER] AVISO: não foi possível enriquecer o payload de benchmark:", exc)
+        return original_request(
+            url,
+            data=data,
+            headers=headers,
+            origin_req_host=origin_req_host,
+            unverifiable=unverifiable,
+            method=method,
+        )
+
+    urllib.request.Request = enriched_request
+
+os.environ.setdefault("RIFT_RESULTS_ENDPOINT", RESULTS_ENDPOINT)
+os.environ.setdefault("RIFT_SOURCE_REF", SOURCE_REF)
+os.environ["RIFT_BENCHMARK_PROTOCOL"] = BENCHMARK_PROTOCOL
 print("[LAUNCHER] Tecnologia: ${definition.label} | Modelo:", MODEL_ID)
 for warning in WARNINGS:
     print("[LAUNCHER] AVISO:", warning)
 enforce_compatibility()
 enforce_publish_settings()
-ensure_tokenizer_dependencies()
+report_dependency_state()
+install_result_enricher()
+print("[LAUNCHER] Fingerprint de comparação será finalizado no momento da publicação.")
 print("[LAUNCHER] Baixando bateria versionada:", SCRIPT_URL)
-request = Request(SCRIPT_URL, headers={"User-Agent": "rift-test-launcher/1.0"})
+request = Request(SCRIPT_URL, headers={"User-Agent": "rift-test-launcher/1.2"})
 source = urlopen(request, timeout=60).read()
 sys.argv = [SCRIPT_URL, *ARGS]
 exec(compile(source, SCRIPT_URL, "exec"), {"__name__": "__main__", "__file__": SCRIPT_URL})
@@ -364,6 +491,7 @@ export default {
 };
 
 export const _test = {
+  BENCHMARK_PROTOCOL,
   buildLauncher,
   normalizeDevice,
   normalizeModel,

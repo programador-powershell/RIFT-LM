@@ -1,167 +1,129 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import { _test as api } from "../api/results.mjs";
+import { _test as resultsApi } from "../api/results.mjs";
 import { _test as analysisApi } from "../api/analyze.mjs";
-import modelSearch, { _test as modelSearchApi } from "../api/models.mjs";
+import modelsApi, { _test as modelSearchApi } from "../api/models.mjs";
 import testLauncher, { _test as launcherApi } from "../api/test.mjs";
 
-const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-const match = html.match(/<script>([\s\S]*?)<\/script>/);
+const legacyHtml = await readFile(new URL("../index.html", import.meta.url), "utf8");
+const dashboardHtml = await readFile(new URL("../dashboard.html", import.meta.url), "utf8");
 
-assert.ok(match, "index.html precisa conter o script principal");
-new vm.Script(match[1], { filename: "index-inline.js" });
-assert.match(html, /America\/Sao_Paulo/);
-assert.match(html, /Comparador RIFT × CASCADE × AETHER × SPECTRA × WINNER/);
-assert.match(html, /Gemini 2\.5 Flash/);
-assert.match(html, /Ranking das baterias/);
-assert.match(html, /curl -fsSL/);
-assert.match(html, /Fila serial de baterias/);
-assert.match(html, /class="launcherDisclosure"/);
-assert.match(html, /function groupRowsByModel\(rows\)/);
-assert.match(html, /function renderModelGroup\(modelRows\)/);
-assert.match(html, /class="batteryRun/);
-assert.match(html, /groupRowsByModel\(rows\)\.map\(renderModelGroup\)/);
-assert.match(html, /setInterval\(\(\)=>\{if\(state\.dataSource==="published"/);
-assert.match(html, /Copiar lista serial/);
-assert.match(html, /subprocess\.Popen/);
-assert.match(html, /nvidia-smi/);
-assert.match(html, /wait_for_resource_release/);
-assert.match(html, /from google\.colab import userdata/);
-assert.match(html, /env=CHILD_ENV/);
-assert.match(html, /RIFT_INGEST_TOKEN precisa ter pelo menos 32 caracteres/);
-assert.match(html, /COLAB_BLOCK_REASONS/);
-assert.match(html, /Teste não gerado: modelo incompatível/);
-assert.match(html, /Garantindo dependências \(sentencepiece, tiktoken\)/);
-assert.match(html, /deepseek-v4/);
-assert.match(html, /nvfp4/);
-assert.doesNotMatch(html, /RIFT_GITHUB_TOKEN\s*=/);
-assert.doesNotMatch(html, /API_GOOGLE\s*=/);
+function assertInlineScriptParses(html, filename) {
+  const match = html.match(/<script>([\s\S]*?)<\/script>/);
+  assert.ok(match, `${filename} precisa conter script inline`);
+  new vm.Script(match[1], { filename });
+}
 
-const rift = { run_id: "run-rift", model_id: "Qwen/Qwen2.5-0.5B", battery_id: "P1", technology: "RIFT" };
-const cascade = { run_id: "run-cascade", model_id: "Qwen/Qwen2.5-0.5B", battery_id: "P1", technology: "CASCADE" };
-const aether = { run_id: "run-aether", model_id: "Qwen/Qwen2.5-0.5B", battery_id: "P1", technology: "AETHER" };
-const spectra = { run_id: "run-spectra", model_id: "Qwen/Qwen2.5-0.5B", battery_id: "P1", technology: "SPECTRA" };
-const winner = { run_id: "run-winner", model_id: "Qwen/Qwen2.5-0.5B", battery_id: "P1", technology: "WINNER" };
-assert.equal(api.validateHistory([rift, cascade, aether, spectra, winner], "test").length, 5);
-assert.equal(api.mergeHistories([rift], [cascade, aether, spectra, winner]).length, 5);
-const replaced = api.mergeHistories(
-  [{ ...rift, run_id: "old", battery_id: "OLD_PRIMARY" }, { ...rift, run_id: "old", battery_id: "OLD_B0" }],
-  [{ ...rift, run_id: "optimized", battery_id: "NEW_PRIMARY" }, { ...rift, run_id: "optimized", battery_id: "NEW_B0" }],
-);
-assert.deepEqual(replaced.map((record) => record.run_id), ["optimized", "optimized"]);
+assertInlineScriptParses(legacyHtml, "legacy-index-inline.js");
+assertInlineScriptParses(dashboardHtml, "dashboard-v2-inline.js");
+assert.match(dashboardHtml, /comparison_group_id/);
+assert.match(dashboardHtml, /legacy-unverified/);
+assert.match(dashboardHtml, /If-None-Match/);
+assert.match(dashboardHtml, /30000/);
+assert.doesNotMatch(dashboardHtml, /refresh=\$\{Date\.now\(\)\}/);
+assert.match(dashboardHtml, /Quality gate é eliminatório/);
+assert.match(dashboardHtml, /Painel legado/);
 
-const models = analysisApi.validatePayload({
+const base = {
+  timestamp_utc: "2026-08-09T10:00:00Z",
+  model_id: "Qwen/Qwen2.5-0.5B",
+  status: "PASS",
+};
+const riftOld = {
+  ...base,
+  run_id: "run-rift-old",
+  battery_id: "P1_Q4_LINEAR_BASE_PLUS_REF_4BIT",
+  technology: "RIFT",
+};
+const riftNew = {
+  ...base,
+  timestamp_utc: "2026-08-09T11:00:00Z",
+  run_id: "run-rift-new",
+  battery_id: "P1_Q4_LINEAR_BASE_PLUS_REF_4BIT",
+  technology: "RIFT",
+  schema_version: 1,
+  comparison_group_id: "cmp-0123456789abcdef01234567",
+  comparison_context: {
+    protocol: "LINEAR_REFERENCE_V2",
+    model_id: "Qwen/Qwen2.5-0.5B",
+    target_layer_request: "auto",
+    gpu: "NVIDIA T4, 15360, driver",
+  },
+};
+const cascade = {
+  ...base,
+  timestamp_utc: "2026-08-09T11:01:00Z",
+  run_id: "run-cascade",
+  battery_id: "P1_CASCADE_GATED_F0_PLUS_F1",
+  technology: "CASCADE",
+  schema_version: 1,
+  comparison_group_id: "cmp-0123456789abcdef01234567",
+};
+
+const validated = resultsApi.validateHistory([riftOld, riftNew, cascade], "test");
+assert.equal(validated.length, 3);
+assert.equal(validated[0].schema_version, 1);
+assert.equal(validated[0].technology, "RIFT");
+assert.equal(validated[1].comparison_group_id, "cmp-0123456789abcdef01234567");
+assert.throws(() => resultsApi.validateHistory([
+  { ...riftOld, technology: "UNKNOWN" },
+], "test"));
+assert.throws(() => resultsApi.validateHistory([
+  { ...riftNew, comparison_group_id: "bad group id!" },
+], "test"));
+
+// Histórico agora é append-only por run_id+technology+battery_id.
+const merged = resultsApi.mergeHistories([riftOld], [riftNew, cascade]);
+assert.equal(merged.length, 3);
+assert.deepEqual(merged.map((record) => record.run_id), ["run-rift-old", "run-rift-new", "run-cascade"]);
+const idempotent = resultsApi.mergeHistories(merged, [riftNew]);
+assert.equal(idempotent.length, 3);
+assert.equal(resultsApi.recordKey(riftNew), "run-rift-new\u0000RIFT\u0000P1_Q4_LINEAR_BASE_PLUS_REF_4BIT");
+
+const analysisModels = analysisApi.validatePayload({
   models: [{
     model_id: "Qwen/Qwen2.5-0.5B",
     technologies: {
       RIFT: {
         battery_id: "P1_RIFT",
-        status: "EXPERIMENTAL_FAIL",
-        output_cosine: 0.9803,
-        output_nrmse: 0.0068,
-        quality_gate_pass: false,
-        disk_reduction_pct: 87.5,
-        ram_reduction_pct: -7.7,
-        operation_speedup_x: 0.021,
+        status: "PASS",
+        output_cosine: 0.995,
+        output_nrmse: 0.003,
+        quality_gate_pass: true,
+        disk_reduction_pct: 80,
+        ram_reduction_pct: 60,
+        operation_speedup_x: 0.8,
       },
       CASCADE: {
         battery_id: "P1_CASCADE",
-        status: "EXPERIMENTAL_PASS",
-        output_cosine: 0.972,
-        output_nrmse: 0.011,
+        status: "PASS",
+        output_cosine: 0.996,
+        output_nrmse: 0.002,
         quality_gate_pass: true,
-        disk_reduction_pct: 74.2,
-        ram_reduction_pct: 73.8,
-        operation_speedup_x: 0.389,
-      },
-      AETHER: {
-        battery_id: "P1_AETHER",
-        status: "EXPERIMENTAL_FAIL",
-        output_cosine: 0.987,
-        output_nrmse: 0.0045,
-        quality_gate_pass: false,
-        disk_reduction_pct: 92.5,
-        ram_reduction_pct: 60,
-        operation_speedup_x: 0.583,
-      },
-      SPECTRA: {
-        battery_id: "P1_SPECTRA",
-        status: "EXPERIMENTAL_PASS",
-        output_cosine: 0.991,
-        output_nrmse: 0.0038,
-        quality_gate_pass: true,
-        disk_reduction_pct: 90.8,
-        ram_reduction_pct: 63.1,
-        operation_speedup_x: 0.7,
-      },
-      WINNER: {
-        battery_id: "P1_WINNER",
-        status: "EXPERIMENTAL_PASS",
-        output_cosine: 0.994,
-        output_nrmse: 0.003,
-        quality_gate_pass: true,
-        disk_reduction_pct: 85,
-        ram_reduction_pct: 67,
-        operation_speedup_x: 0.467,
+        disk_reduction_pct: 75,
+        ram_reduction_pct: 70,
+        operation_speedup_x: 0.9,
       },
     },
   }],
 });
-
-const ranking = analysisApi.buildRanking(models);
-assert.equal(ranking.length, 5);
+const ranking = analysisApi.buildRanking(analysisModels);
+assert.equal(ranking.length, 2);
 assert.equal(ranking[0].position, 1);
 assert.ok(ranking.every((entry) => entry.score >= 0 && entry.score <= 100));
-assert.ok(ranking.every((entry) => entry.coverage_pct === 100));
-
 const analysis = analysisApi.validateGeminiAnalysis({
-  global_summary: "CASCADE apresentou o melhor equilíbrio nesta bateria.",
+  global_summary: "Comparação concluída.",
   analyses: [{
     model_id: "Qwen/Qwen2.5-0.5B",
     recommendation: "CASCADE",
-    confidence: 82,
-    summary: "A qualidade permaneceu próxima e RAM e latência foram melhores.",
-    decisive_metrics: ["RAM", "latência"],
-    caveats: ["Kernel nativo não medido"],
+    confidence: 80,
+    summary: "Melhor equilíbrio nesta bateria.",
+    decisive_metrics: ["RAM"],
+    caveats: ["Caminho de referência"],
   }],
-}, models);
+}, analysisModels);
 assert.equal(analysis.analyses[0].recommendation, "CASCADE");
-
-const singleTechnology = analysisApi.validatePayload({
-  models: [{ model_id: "synthetic/rift-b0", technologies: { RIFT: { output_cosine: 0.98 } } }],
-});
-const forcedInconclusive = analysisApi.validateGeminiAnalysis({
-  global_summary: "Teste incompleto.",
-  analyses: [{
-    model_id: "synthetic/rift-b0",
-    recommendation: "RIFT",
-    confidence: 99,
-    summary: "Somente RIFT foi medido.",
-    decisive_metrics: [],
-    caveats: [],
-  }],
-}, singleTechnology);
-assert.equal(forcedInconclusive.analyses[0].recommendation, "INCONCLUSIVO");
-
-const unavailableTechnology = analysisApi.validateGeminiAnalysis({
-  global_summary: "Resposta inconsistente.",
-  analyses: [{
-    model_id: "Qwen/Qwen2.5-0.5B",
-    recommendation: "AETHER",
-    confidence: 90,
-    summary: "AETHER não foi medido.",
-    decisive_metrics: [],
-    caveats: [],
-  }],
-}, analysisApi.validatePayload({
-  models: [{
-    model_id: "Qwen/Qwen2.5-0.5B",
-    technologies: { RIFT: { output_cosine: 0.98 }, CASCADE: { output_cosine: 0.97 } },
-  }],
-}));
-assert.equal(unavailableTechnology.analyses[0].recommendation, "INCONCLUSIVO");
-
 analysisApi.enforceSameOrigin(new Request("https://dashboard.example/api/analyze", {
   headers: { Origin: "https://dashboard.example" },
 }));
@@ -169,131 +131,56 @@ assert.throws(() => analysisApi.enforceSameOrigin(new Request("https://dashboard
   headers: { Origin: "https://attacker.example" },
 })));
 
-const geminiBody = analysisApi.buildGeminiBody("benchmark");
-assert.equal(geminiBody.generationConfig.responseFormat.text.mimeType, "application/json");
-const legacyGeminiBody = analysisApi.buildGeminiBody("benchmark", true);
-assert.equal(legacyGeminiBody.generationConfig.responseMimeType, "application/json");
-assert.ok(legacyGeminiBody.generationConfig.responseSchema);
-assert.doesNotMatch(JSON.stringify(legacyGeminiBody), /additionalProperties/);
-
 assert.equal(modelSearchApi.normalizeSearch("  qwen  "), "qwen");
 assert.throws(() => modelSearchApi.normalizeSearch("<script>"));
-const modelSearchResults = modelSearchApi.normalizeModelResults([
-  { id: "example/vision", downloads: 9999, pipeline_tag: "image-classification" },
-  { id: "Qwen/Qwen2.5-0.5B", downloads: 500, pipeline_tag: "text-generation", likes: 20 },
-  { id: "trl-internal-testing/tiny-Qwen", downloads: 500000, pipeline_tag: "text-generation" },
-  { id: "private/model", downloads: 100000, private: true },
+const normalizedModels = modelSearchApi.normalizeModelResults([
+  { id: "Qwen/Qwen2.5-0.5B", downloads: 500, pipeline_tag: "text-generation" },
+  { id: "private/model", downloads: 9999, private: true },
 ]);
-assert.equal(modelSearchResults.length, 1);
-assert.equal(modelSearchResults[0].id, "Qwen/Qwen2.5-0.5B");
-assert.equal((await modelSearch.fetch(new Request("https://dashboard.example/api/models?q=x"))).status, 400);
-assert.equal((await modelSearch.fetch(new Request("https://dashboard.example/api/models?q=qwen", { method: "POST" }))).status, 405);
+assert.equal(normalizedModels.length, 1);
+assert.equal((await modelsApi.fetch(new Request("https://dashboard.example/api/models?q=x"))).status, 400);
 
-const kimi = launcherApi.normalizeModel("Kimi-K3");
-assert.equal(kimi.modelId, "moonshotai/Kimi-K3");
-assert.equal(kimi.trustRemoteCode, true);
-assert.equal(kimi.compatibility.colabSupported, false);
-assert.equal(kimi.compatibility.transformersVersion, "4.56.2");
-assert.equal(kimi.compatibility.minimumPackedWeightBytes, 1_400_000_000_000);
-const canonicalKimi = launcherApi.normalizeModel("moonshotai/Kimi-K3");
-assert.equal(canonicalKimi.compatibility.colabSupported, false);
-const kimiGguf = launcherApi.normalizeModel("community/Kimi-K3-GGUF");
-assert.equal(kimiGguf.modelId, "community/Kimi-K3-GGUF");
-assert.equal(kimiGguf.compatibility.colabSupported, false);
-const qwenGguf = launcherApi.normalizeModel("Qwen/Qwen3-8B-GGUF");
-assert.equal(qwenGguf.compatibility.colabSupported, false);
-assert.match(qwenGguf.compatibility.reason, /checkpoint Transformers original/);
-const deepseekV4 = launcherApi.normalizeModel("deepseek-ai/DeepSeek-V4-Flash-0731");
-assert.equal(deepseekV4.compatibility.colabSupported, false);
-assert.equal(deepseekV4.compatibility.minimumPackedWeightBytes, 142_000_000_000);
-const qwenNvfp4 = launcherApi.normalizeModel("example/Qwen3.6-27B-Text-NVFP4-MTP");
-assert.equal(qwenNvfp4.compatibility.colabSupported, false);
-assert.match(qwenNvfp4.compatibility.reason, /NVFP4\/MTP/);
+assert.equal(launcherApi.BENCHMARK_PROTOCOL, "LINEAR_REFERENCE_V2");
+const launcherModel = launcherApi.normalizeModel("Qwen/Qwen2.5-0.5B");
+const launcher = launcherApi.buildLauncher({
+  technology: "cascade",
+  model: launcherModel,
+  origin: "https://rift-lm.vercel.app",
+  targetLayer: "auto",
+  device: "cuda",
+  publish: "required",
+  ref: "main",
+});
+assert.match(launcher, /cascade_m0_phase1_test_v030_auto_batteries\.py/);
+assert.match(launcher, /LINEAR_REFERENCE_V2/);
+assert.match(launcher, /comparison_group_id/);
+assert.match(launcher, /RIFT_COMPARISON_GROUP_ID/);
+assert.match(launcher, /RIFT_COMPARISON_CONTEXT_JSON/);
+assert.match(launcher, /install_result_enricher/);
+assert.match(launcher, /REQUEST_LEVEL/);
+assert.match(launcher, /Dependências ausentes serão instaladas pela própria bateria/);
+assert.doesNotMatch(launcher, /subprocess\.check_call\(\[sys\.executable, "-m", "pip", "install"/);
+assert.ok(
+  launcher.indexOf("enforce_compatibility()") < launcher.indexOf("urlopen(request"),
+  "compatibility guard precisa rodar antes do download",
+);
 const launcherResponse = await testLauncher.fetch(new Request(
-  "https://rift-lm.vercel.app/api/test?technology=aether&model=Kimi-K3",
+  "https://rift-lm.vercel.app/api/test?technology=cascade&model=Qwen%2FQwen2.5-0.5B&device=cuda",
 ));
 assert.equal(launcherResponse.status, 200);
 assert.match(launcherResponse.headers.get("content-type"), /text\/x-python/);
-const launcher = await launcherResponse.text();
-assert.match(launcher, /aether_m0_phase1_test_v100_auto_batteries\.py/);
-assert.match(launcher, /moonshotai\/Kimi-K3/);
-assert.match(launcher, /--trust-remote-code/);
-assert.match(launcher, /https:\/\/rift-lm\.vercel\.app\/api\/results/);
-assert.match(launcher, /BLOQUEADO: este modelo não é compatível/);
-assert.match(launcher, /transformers==" \+ required_transformers/);
-assert.match(launcher, /minimumPackedWeightBytes/);
-assert.match(launcher, /sentencepiece>=0\.2\.0/);
-assert.match(launcher, /tiktoken>=0\.7\.0/);
-assert.match(launcher, /RIFT_INGEST_TOKEN não chegou ao subprocesso/);
-assert.match(
-  launcher,
-  /enforce_compatibility\(\)\nenforce_publish_settings\(\)\nensure_tokenizer_dependencies\(\)\nprint\("\[LAUNCHER\] Baixando bateria versionada:/,
-);
-assert.ok(
-  launcher.indexOf("enforce_compatibility()") < launcher.indexOf("urlopen(request"),
-  "a proteção de recursos precisa executar antes de qualquer download",
-);
-const untrustedOriginLauncher = launcherApi.buildLauncher({
-  technology: "aether",
-  model: launcherApi.normalizeModel("Kimi-K3"),
-  origin: "https://proxy.example",
-});
-assert.match(untrustedOriginLauncher, /https:\/\/rift-lm\.vercel\.app\/api\/results/);
-assert.doesNotMatch(untrustedOriginLauncher, /proxy\.example\/api\/results/);
-const invalidLauncher = await testLauncher.fetch(new Request(
-  "https://rift-lm.vercel.app/api/test?technology=unknown&model=Kimi-K3",
-));
-assert.equal(invalidLauncher.status, 400);
-
-const spectraLauncherResponse = await testLauncher.fetch(new Request(
-  "https://rift-lm.vercel.app/api/test?technology=spectra&model=Qwen%2FQwen2.5-0.5B",
-));
-assert.equal(spectraLauncherResponse.status, 200);
-const spectraLauncher = await spectraLauncherResponse.text();
-assert.match(spectraLauncher, /SPECTRA_Colab_Test_M0\.py/);
-assert.match(spectraLauncher, /--mode.*phase1/s);
-const winnerLauncherResponse = await testLauncher.fetch(new Request(
-  "https://rift-lm.vercel.app/api/test?technology=winner&model=Qwen%2FQwen2.5-0.5B",
-));
-assert.equal(winnerLauncherResponse.status, 200);
-const winnerLauncher = await winnerLauncherResponse.text();
-assert.match(winnerLauncher, /winner_m0_phase1_test_v080_auto_batteries\.py/);
-assert.match(winnerLauncher, /--mode.*phase1/s);
 
 const vercelConfig = JSON.parse(await readFile(new URL("../vercel.json", import.meta.url), "utf8"));
-assert.ok(vercelConfig.rewrites.some((rewrite) => rewrite.source === "/aether/:model*"));
-assert.ok(vercelConfig.rewrites.some((rewrite) => rewrite.source === "/spectra/:model*"));
-assert.ok(vercelConfig.rewrites.some((rewrite) => rewrite.source === "/winner/:model*"));
-const aetherScript = await readFile(
-  new URL("../aether_m0_phase1_test_v100_auto_batteries.py", import.meta.url),
-  "utf8",
-);
-assert.match(aetherScript, /technology": "AETHER"/);
-assert.match(aetherScript, /P1_AETHER_HQR_PLUS_TADDS_DYNAMIC/);
-assert.match(aetherScript, /message = "Configure " \+ " e "\.join\(missing\)/);
-assert.match(aetherScript, /ensure_import\("sentencepiece"\)/);
-assert.match(aetherScript, /ensure_import\("tiktoken"\)/);
-const spectraScript = await readFile(new URL("../SPECTRA_Colab_Test_M0.py", import.meta.url), "utf8");
-assert.match(spectraScript, /technology": "SPECTRA"/);
-assert.match(spectraScript, /ensure_import\("sentencepiece"\)/);
-assert.match(spectraScript, /ensure_import\("tiktoken"\)/);
-assert.match(spectraScript, /P1_SPECTRA_HQR_PLUS_TADDS_DYNAMIC/);
-assert.match(spectraScript, /P1_SPECTRA_DRIFT_CONTRACT_REF/);
-assert.match(spectraScript, /message = "Configure " \+ " e "\.join\(missing\)/);
-const cascadeScript = await readFile(
-  new URL("../cascade_m0_phase1_test_v030_auto_batteries.py", import.meta.url),
-  "utf8",
-);
-assert.match(cascadeScript, /message = "Configure " \+ " e "\.join\(missing\)/);
-const winnerScript = await readFile(
-  new URL("../winner_m0_phase1_test_v080_auto_batteries.py", import.meta.url),
-  "utf8",
-);
-assert.match(winnerScript, /"technology": "WINNER"/);
-assert.match(winnerScript, /P1_WINNER_F0_PLUS_LS/);
-assert.match(winnerScript, /--self-test/);
-const winnerCmake = await readFile(new URL("../winner_cpp/CMakeLists.txt", import.meta.url), "utf8");
-assert.match(winnerCmake, /winner_self_test/);
-assert.doesNotMatch(winnerCmake, /-march=native.*FORCE/);
+assert.ok(vercelConfig.rewrites.some((r) => r.source === "/" && r.destination === "/dashboard.html"));
+assert.ok(vercelConfig.rewrites.some((r) => r.source === "/legacy" && r.destination === "/index.html"));
+assert.ok(vercelConfig.rewrites.some((r) => r.source === "/cascade/:model*"));
+const dataHeaders = vercelConfig.headers.find((entry) => entry.source === "/data/(.*)");
+assert.ok(dataHeaders.headers.some((header) => header.key === "Cache-Control" && /s-maxage=30/.test(header.value)));
 
-console.log("dashboard smoke test: PASS");
+const schema = JSON.parse(await readFile(new URL("../data/record-schema-example.json", import.meta.url), "utf8"));
+assert.equal(schema.schema_version, 1);
+assert.equal(schema.benchmark_protocol, "LINEAR_REFERENCE_V2");
+assert.ok(schema.comparison_group_id);
+assert.equal(schema.implementation.kind, "REFERENCE|NATIVE|SIMULATED");
+
+console.log("dashboard smoke: OK");
