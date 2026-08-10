@@ -510,6 +510,8 @@ def comparison_context(model_id: str, target_layer: str | None, device: str, ite
     canonical = json.dumps(fingerprint, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return context, "cmp-" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:24]
 
+NON_BINARY_ARTIFACT_SUFFIXES = {".json", ".csv", ".txt", ".log", ".py", ".md", ".yaml", ".yml"}
+
 def verify_candidate_disk(record: dict[str, Any], artifacts: list[dict[str, Any]]) -> dict[str, Any]:
     value = record.get("candidate_disk_bytes")
     if value is None:
@@ -521,14 +523,22 @@ def verify_candidate_disk(record: dict[str, Any], artifacts: list[dict[str, Any]
         candidate = int(value) if value is not None else None
     except Exception:
         candidate = None
-    exact = [row["path"] for row in artifacts if candidate is not None and row["bytes"] == candidate]
+    binary_artifacts = [
+        row for row in artifacts
+        if Path(str(row.get("path") or "")).suffix.lower() not in NON_BINARY_ARTIFACT_SUFFIXES
+    ]
+    exact = [
+        row["path"] for row in binary_artifacts
+        if candidate is not None and row["bytes"] == candidate
+    ]
     return {
         "candidate_reported_bytes": candidate,
         "candidate_exact_file_match": bool(exact),
         "matching_files": exact[:8],
         "artifact_count": len(artifacts),
+        "binary_artifact_count": len(binary_artifacts),
         "artifact_total_bytes": int(sum(row["bytes"] for row in artifacts)),
-        "measurement_method": "os_stat_and_sha256_manifest_v1",
+        "measurement_method": "binary_os_stat_and_sha256_manifest_v2",
     }
 
 def sanitize_records(records, *, technology, model_id, target_layer, device, iterations, warmup,
