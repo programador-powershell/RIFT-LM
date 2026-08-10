@@ -3716,33 +3716,32 @@
     "notes": "C2 baseline 17.75 tok/s on cuda. Sample Linear model.layers.0.self_attn.q_proj.weight cosine=0.9952 skip=0.688."
   },
   {
-    "timestamp_utc": "2026-08-10T00:04:25Z",
-    "run_id": "20260810T000354Z",
+    "timestamp_utc": "2026-08-10T00:04:53Z",
+    "run_id": "20260810T000443Z",
     "technology": "CASCADE",
     "model_id": "Qwen/Qwen2.5-0.5B",
-    "battery_id": "P1_CASCADE_GATED_F0_PLUS_F1",
+    "battery_id": "P1_CASCADE_C2_E2E_TOKS",
     "status": "PASS",
     "comparison_role": "primary",
-    "baseline_ram_bytes": 3297280,
-    "candidate_ram_bytes": 626027,
+    "baseline_tok_s": 33.54435728600012,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": 3440640,
+    "candidate_ram_bytes": 766996,
     "baseline_disk_bytes": 3211264,
     "candidate_disk_bytes": 616512,
-    "measurement_scope": "CASCADE-C0 Linear real path=F0_GATE_F1; layer=model.layers.0.self_attn.q_proj.weight; INT4 F0 + low-rank F1; reference Python runtime",
+    "measurement_scope": "CASCADE-C2 e2e baseline tok/s + sample Linear CASCADE metrics",
     "quality": {
       "full_local_gate_pass": true,
       "output": {
-        "cosine": 0.9997075796127319,
-        "nrmse": 0.02424826301459664
+        "cosine": 0.9940326809883118
       }
     },
     "metrics": {
       "operation": {
-        "metric": "linear_latency",
-        "baseline_median_ms": 0.595075000092038,
-        "candidate_median_ms": 7.658540998818353,
-        "speedup_x": 0.07770083103085208,
-        "rows_processed": 12,
-        "path": "F0_GATE_F1"
+        "metric": "e2e_tok_s",
+        "baseline_tok_s": 33.54435728600012,
+        "ttft_proxy_ms": 29.811273218740553,
+        "n_new": 32
       },
       "cascade": {
         "out_features": 896,
@@ -3753,28 +3752,12 @@
         "f1_bytes": 114752,
         "baseline_bytes": 3211264,
         "disk_reduction_pct": 80.80157844387756,
-        "bundle_bytes": 617984,
-        "target_layer": "model.layers.0.self_attn.q_proj.weight",
-        "F0_calls": 12,
-        "F1_calls": 4,
-        "F1_skip_rate": 0.6666666666666667,
-        "avg_stages_per_token": 1.3333333333333333,
-        "gate": {
-          "threshold": 0.5056317448616028,
-          "activation_rate": 0.3333333432674408,
-          "score_mean": 0.48949262499809265,
-          "score_std": 0.13091790676116943,
-          "features": {
-            "rms": 0.10205120593309402,
-            "max_abs": 1.1415609121322632,
-            "variance": 0.010741778649389744,
-            "l2": 0.10205120593309402
-          },
-          "gate": "ACTIVATION_SCORE_PERCENTILE_V0",
-          "percentile": 70
-        }
+        "sample_layer": "model.layers.0.self_attn.q_proj.weight",
+        "F1_skip_rate": 0.6875,
+        "path": "F0_GATE_F1",
+        "e2e_note": "tok/s is ORIGINAL model; candidate full-CASCADE generate is next iteration"
       }
     },
-    "notes": "Path D: CASCADE real. F1_skip_rate=0.667 gate_rate=0.333. RAM=working-set esperado F0+rate*F1."
+    "notes": "C2 baseline 33.54 tok/s on cuda. Sample Linear model.layers.0.self_attn.q_proj.weight cosine=0.9940 skip=0.688."
   }
 ]
