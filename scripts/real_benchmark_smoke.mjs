@@ -21,7 +21,8 @@ assert.match(launcher, /--iterations/);
 assert.match(launcher, /50/);
 assert.match(launcher, /--warmup/);
 assert.match(launcher, /RIFT_INGEST_TOKEN/);
-assert.doesNotMatch(launcher, /rows\/s.*Tok\/s/i);
+assert.match(launcher, /Não publica RAM estimada/);
+assert.doesNotMatch(launcher, /baseline_tok_s\s*=|candidate_tok_s\s*=/i);
 
 const req = new Request(
   "https://example.test/api/real-test?technology=rift&model=Qwen%2FQwen2.5-0.5B&iterations=75&warmup=12",
