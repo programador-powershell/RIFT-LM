@@ -1,13 +1,36 @@
 {
-  "description": "Formato preferencial para uma bateria comparável RIFT, CASCADE, AETHER, SPECTRA ou WINNER. Valores abaixo são apenas estrutura de exemplo.",
+  "description": "Contrato preferencial v1 para baterias comparáveis RIFT, CASCADE, AETHER, SPECTRA ou WINNER. Valores são somente estrutura de exemplo.",
+  "schema_version": 1,
   "timestamp_utc": "2026-08-09T10:00:00Z",
   "run_id": "20260809T100000Z-exemplo",
   "spec": "RIFT-LM v0.3.5|CASCADE v0.3|AETHER-LM v1.0 reference|SPECTRA-LM v0.1 reference|WINNER.cpp v0.8 reference",
   "technology": "RIFT|CASCADE|AETHER|SPECTRA|WINNER",
-  "model_id": "NOME_DO_MODELO",
+  "model_id": "ORG/MODELO",
   "battery_id": "PHASE_1_K1",
+  "benchmark_protocol": "LINEAR_REFERENCE_V2",
   "comparison_role": "primary|null",
-  "status": "PASS|FAIL|EXPERIMENTAL",
+  "comparison_group_id": "cmp-xxxxxxxxxxxxxxxxxxxxxxxx",
+  "comparison_context": {
+    "protocol": "LINEAR_REFERENCE_V2",
+    "model_id": "ORG/MODELO",
+    "target_layer_request": "auto",
+    "device_request": "cuda",
+    "gpu": "NVIDIA T4, 15360, DRIVER",
+    "platform": "Linux-...",
+    "machine": "x86_64",
+    "python": "3.12",
+    "torch": "2.x",
+    "transformers": "4.x",
+    "source_ref": "git-sha-ou-main",
+    "context_resolution": "REQUEST_LEVEL"
+  },
+  "implementation": {
+    "scope": "single_linear_reference",
+    "kind": "REFERENCE|NATIVE|SIMULATED",
+    "native": false,
+    "simulated": false
+  },
+  "status": "PASS|FAIL|EXPERIMENTAL_PASS|EXPERIMENTAL_FAIL|SIMULATED",
   "baseline_tok_s": null,
   "candidate_tok_s": null,
   "baseline_ram_bytes": null,
@@ -20,5 +43,15 @@
       "cosine": null,
       "nrmse": null
     }
-  }
+  },
+  "metrics": {
+    "operation": {
+      "metric": "linear_latency",
+      "baseline_median_ms": null,
+      "candidate_median_ms": null,
+      "speedup_x": null
+    }
+  },
+  "measurement_scope": "Descreva exatamente o que a bateria mediu.",
+  "notes": "Tok/s só pode ser preenchido por benchmark de modelo; latência de uma Linear não é Tok/s. comparison_group_id deve coincidir para comparação direta de performance."
 }
