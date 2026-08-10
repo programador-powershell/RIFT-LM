@@ -33,9 +33,21 @@ class BlockCascadePlan:
 
 
 def find_transformer_blocks(model: nn.Module) -> List[Tuple[str, nn.Module]]:
-    """Localiza lista de blocks (layers / h / decoder layers)."""
-    candidates = []
-    for attr in ("model.layers", "transformer.h", "model.decoder.layers", "gpt_neox.layers", "model.model.layers"):
+    """Localiza lista de blocks (layers / h / decoder layers).
+
+    Cobre Qwen, Llama, Phi, Gemma, GPT-NeoX e fallback genérico.
+    """
+    candidates_attrs = (
+        "model.layers",
+        "model.model.layers",
+        "transformer.h",
+        "transformer.layers",
+        "model.decoder.layers",
+        "gpt_neox.layers",
+        "language_model.model.layers",
+        "model.language_model.layers",
+    )
+    for attr in candidates_attrs:
         mod = model
         ok = True
         for part in attr.split("."):
@@ -45,11 +57,20 @@ def find_transformer_blocks(model: nn.Module) -> List[Tuple[str, nn.Module]]:
             mod = getattr(mod, part)
         if ok and isinstance(mod, (nn.ModuleList, list)) and len(mod) > 0:
             return [(f"{attr}.{i}", mod[i]) for i in range(len(mod))]
-    # fallback: any ModuleList named layers
+    # fallback: ModuleList cujo nome termina com layers / h e tem Linear dentro
+    found = []
     for name, mod in model.named_modules():
-        if name.endswith("layers") and isinstance(mod, nn.ModuleList) and len(mod) > 0:
+        if not isinstance(mod, nn.ModuleList) or len(mod) == 0:
+            continue
+        leaf = name.split(".")[-1]
+        if leaf not in ("layers", "h", "blocks", "layer"):
+            continue
+        # confirma que o primeiro item tem Linear
+        has_linear = any(isinstance(m, nn.Linear) for m in mod[0].modules())
+        if has_linear:
             return [(f"{name}.{i}", mod[i]) for i in range(len(mod))]
-    return candidates
+        found.append(name)
+    return []
 
 
 def collect_linears(block: nn.Module, prefix: str = "") -> Dict[str, nn.Linear]:
