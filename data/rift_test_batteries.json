@@ -3761,33 +3761,33 @@
     "notes": "C2 baseline 33.54 tok/s on cuda. Sample Linear model.layers.0.self_attn.q_proj.weight cosine=0.9940 skip=0.688."
   },
   {
-    "timestamp_utc": "2026-08-10T00:08:40Z",
+    "timestamp_utc": "2026-08-10T00:08:41Z",
     "run_id": "20260810T000458Z",
     "technology": "CASCADE",
     "model_id": "google/gemma-4-E4B-it",
-    "battery_id": "P1_CASCADE_C0_F0_PLUS_F1_ALWAYS",
-    "status": "EXPERIMENTAL_PASS",
-    "comparison_role": null,
+    "battery_id": "P1_CASCADE_GATED_F0_PLUS_F1",
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": "primary",
     "baseline_ram_bytes": 2752512,
-    "candidate_ram_bytes": 860224,
+    "candidate_ram_bytes": 791059,
     "baseline_disk_bytes": 2359296,
     "candidate_disk_bytes": 467008,
-    "measurement_scope": "CASCADE-C0 Linear real path=F0_PLUS_F1_ALWAYS; layer=model.vision_tower.encoder.layers.0.self_attn.q_proj.linear.weight; INT4 F0 + low-rank F1; reference Python runtime",
+    "measurement_scope": "CASCADE-C0 Linear real path=F0_GATE_F1; layer=model.vision_tower.encoder.layers.0.self_attn.q_proj.linear.weight; INT4 F0 + low-rank F1; reference Python runtime",
     "quality": {
       "full_local_gate_pass": false,
       "output": {
-        "cosine": 0.9945704936981201,
-        "nrmse": 0.10483578725620456
+        "cosine": 0.9935367703437805,
+        "nrmse": 0.11454767757948928
       }
     },
     "metrics": {
       "operation": {
         "metric": "linear_latency",
         "baseline_median_ms": 0.800935000370373,
-        "candidate_median_ms": 5.990420999296475,
-        "speedup_x": 0.1337026229816629,
+        "candidate_median_ms": 6.869512999401195,
+        "speedup_x": 0.11659269011357709,
         "rows_processed": 64,
-        "path": "F0_PLUS_F1_ALWAYS"
+        "path": "F0_GATE_F1"
       },
       "cascade": {
         "out_features": 768,
@@ -3801,10 +3801,25 @@
         "bundle_bytes": 468544,
         "target_layer": "model.vision_tower.encoder.layers.0.self_attn.q_proj.linear.weight",
         "F0_calls": 64,
-        "F1_calls": 64,
-        "F1_skip_rate": 0
+        "F1_calls": 19,
+        "F1_skip_rate": 0.703125,
+        "avg_stages_per_token": 1.296875,
+        "gate": {
+          "threshold": 2.8676435947418213,
+          "activation_rate": 0.296875,
+          "score_mean": 2.8197922706604004,
+          "score_std": 0.10106977075338364,
+          "features": {
+            "rms": 0.9992771744728088,
+            "max_abs": 3.284952163696289,
+            "variance": 0.9978877305984497,
+            "l2": 0.9992771744728088
+          },
+          "gate": "ACTIVATION_SCORE_PERCENTILE_V0",
+          "percentile": 70
+        }
       }
     },
-    "notes": "Path C: F0+F1 always. Qualidade recuperada pelo residual."
+    "notes": "Path D: CASCADE real. F1_skip_rate=0.703 gate_rate=0.297. RAM=working-set esperado F0+rate*F1."
   }
 ]
