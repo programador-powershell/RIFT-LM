@@ -1,14 +1,8 @@
+import { rawBaseUrl, resolveRef, resolveRepo } from "./_lib/repo.mjs";
 import { _test as legacy } from "./test.mjs";
 
-const REPOSITORY = "programador-powershell/RIFT-LM";
-const DEFAULT_REF = "main";
 const RESULTS_ENDPOINT = "https://rift-lm.vercel.app/api/results";
 const RUNNER_PATH = "scripts/real_benchmark_runner.py";
-
-function deploymentRef() {
-  const sha = String(process.env.VERCEL_GIT_COMMIT_SHA || "").trim();
-  return /^[a-f0-9]{40}$/i.test(sha) ? sha : DEFAULT_REF;
-}
 
 function normalizePositiveInt(value, fallback, min, max) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -28,6 +22,7 @@ function requestParameters(request) {
   );
   const iterations = normalizePositiveInt(url.searchParams.get("iterations"), 50, 10, 500);
   const warmup = normalizePositiveInt(url.searchParams.get("warmup"), 10, 1, 100);
+  const winnerArch = legacy.normalizeWinnerArch(url.searchParams.get("arch"));
   return {
     technology,
     model,
@@ -37,6 +32,7 @@ function requestParameters(request) {
     trustRemoteCode,
     iterations,
     warmup,
+    winnerArch,
     origin: url.origin,
   };
 }
@@ -50,10 +46,15 @@ function buildLauncher({
   trustRemoteCode,
   iterations,
   warmup,
+  winnerArch = null,
   origin,
-  ref = deploymentRef(),
+  repo = resolveRepo(),
+  ref = resolveRef(),
 }) {
-  const runnerUrl = `https://raw.githubusercontent.com/${REPOSITORY}/${ref}/${RUNNER_PATH}`;
+  const runnerUrl = `${rawBaseUrl(repo, ref)}/${RUNNER_PATH}`;
+  const winnerArchLine = technology === "winner" && winnerArch
+    ? `os.environ["RIFT_WINNER_ARCH"] = ${JSON.stringify(winnerArch)}`
+    : "";
   const args = [
     "--technology", technology,
     "--model", model.modelId,
@@ -96,8 +97,11 @@ def import_colab_secrets():
 
 import_colab_secrets()
 os.environ.setdefault("RIFT_RESULTS_ENDPOINT", ${JSON.stringify(RESULTS_ENDPOINT)})
+# Repo/ref resolvidos no servidor (contrato §14.2): os scripts Python nunca
+# adivinham o repositório — leem estas envs exportadas pela célula gerada.
+os.environ.setdefault("RIFT_GITHUB_REPOSITORY", ${JSON.stringify(repo)})
 os.environ.setdefault("RIFT_SOURCE_REF", ${JSON.stringify(ref)})
-
+${winnerArchLine}
 print("[REAL-METRICS] baixando runner versionado:", RUNNER_URL)
 request = Request(RUNNER_URL, headers={"User-Agent": "rift-real-launcher/1.0"})
 source = urlopen(request, timeout=60).read()
@@ -143,7 +147,8 @@ export default {
 
 export const _test = {
   buildLauncher,
-  deploymentRef,
   normalizePositiveInt,
   requestParameters,
+  resolveRef,
+  resolveRepo,
 };

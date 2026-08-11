@@ -91,22 +91,35 @@ function validatePayload(value) {
     const cascade = normalizeTechnology(technologies.CASCADE, "CASCADE");
     const aether = normalizeTechnology(technologies.AETHER, "AETHER");
     const spectra = normalizeTechnology(technologies.SPECTRA, "SPECTRA");
+    const geyser = normalizeTechnology(technologies.GEYSER, "GEYSER");
     const winner = normalizeTechnology(technologies.WINNER, "WINNER");
-    if (!rift && !cascade && !aether && !spectra && !winner) {
+    if (!rift && !cascade && !aether && !spectra && !geyser && !winner) {
       throw new ApiError(`Modelo sem bateria principal: ${modelId}`, 400);
     }
     return {
       model_id: modelId,
-      technologies: { RIFT: rift, CASCADE: cascade, AETHER: aether, SPECTRA: spectra, WINNER: winner },
+      technologies: {
+        RIFT: rift,
+        CASCADE: cascade,
+        AETHER: aether,
+        SPECTRA: spectra,
+        GEYSER: geyser,
+        WINNER: winner,
+      },
     };
   });
 }
 
+// SCORE_WEIGHTS_V2 (contrato §25) — objetivo "computador convencional"
+// (4 núcleos, 8 GB RAM livre, sem GPU): RAM é a restrição dura (30), disco é
+// o recurso barato (10). Qualidade 40 (cosine 25 + nrmse 10 + gate 5) •
+// RAM 30 • velocidade 20 • disco 10. As fórmulas de normalização do §1 NÃO
+// mudam. Espelhado em api/results.mjs, index.html e winner_m0 Python.
 const SCORE_WEIGHTS = {
   output_cosine: 25,
-  output_nrmse: 15,
-  disk_reduction_pct: 20,
-  ram_reduction_pct: 15,
+  output_nrmse: 10,
+  disk_reduction_pct: 10,
+  ram_reduction_pct: 30,
   operation_speedup_x: 20,
   quality_gate_pass: 5,
 };
@@ -158,6 +171,7 @@ function buildRanking(models) {
       model.technologies.CASCADE,
       model.technologies.AETHER,
       model.technologies.SPECTRA,
+      model.technologies.GEYSER,
       model.technologies.WINNER,
     ]) {
       if (technology) ranking.push(scoreTechnology(model.model_id, technology));
@@ -183,7 +197,7 @@ const ANALYSIS_SCHEMA = {
         type: "object",
         properties: {
           model_id: { type: "string" },
-          recommendation: { type: "string", enum: ["RIFT", "CASCADE", "AETHER", "SPECTRA", "WINNER", "INCONCLUSIVO"] },
+          recommendation: { type: "string", enum: ["RIFT", "CASCADE", "AETHER", "SPECTRA", "GEYSER", "WINNER", "INCONCLUSIVO"] },
           confidence: { type: "integer", minimum: 0, maximum: 100 },
           summary: { type: "string", description: "Veredito em português do Brasil, máximo 300 caracteres." },
           decisive_metrics: { type: "array", maxItems: 3, items: { type: "string" } },
@@ -206,14 +220,15 @@ function buildPrompt(models, ranking) {
   return [
     "Voce e um analista de benchmarks de compressao e execucao de LLMs.",
     "Analise SOMENTE os dados JSON fornecidos; nao use reputacao externa do modelo.",
-    "Para cada model_id, recomende RIFT, CASCADE, AETHER, SPECTRA, WINNER ou INCONCLUSIVO.",
+    "Para cada model_id, recomende RIFT, CASCADE, AETHER, SPECTRA, GEYSER, WINNER ou INCONCLUSIVO.",
     "Compare somente tecnologias presentes. Se houver menos de duas, responda INCONCLUSIVO.",
     "Nunca recomende uma tecnologia sem bateria principal para o modelo.",
-    "Priorize quality gate, output cosine/NRMSE, depois disco, RAM e speedup da operacao.",
+    "Priorize conforme os pesos do ranking deterministico: Qualidade 40% (cosine 25 + nrmse 10 + gate 5) • RAM 30% • velocidade 20% • disco 10% — objetivo: rodar em PC convencional 4 núcleos/8GB/sem GPU.",
     "Latencia de Linear nao e Tok/s. Prefetch simulado e kernel nao nativo devem aparecer nas ressalvas quando aplicavel.",
     "A bateria AETHER atual usa base ternaria 2-bit, mas HQR-ANS, P-IO e SRFA ainda nao sao implementacoes nativas.",
     "A bateria SPECTRA atual mede Gate/TADDS e um proxy de drift de uma unica Linear; prefetch, fused kernel, compensacao de drift e speculative path nao sao nativos.",
     "A bateria WINNER compila um self-test C++ separado, mas a metrica principal da Linear real usa PyTorch; o runtime C++ ainda nao carrega esse tensor e nao possui kernel low-bit nativo para ele.",
+    "A bateria GEYSER atual mede fisica de banda e qualidade de codec (G1) sobre Linear real; o tok/s de G3 e simulado em Python e as projecoes BPAT sao projetadas, nao medidas.",
     "O ranking composto e uma referencia deterministica, nao substitui a interpretacao das metricas.",
     "Responda em portugues do Brasil no schema solicitado.",
     JSON.stringify({ models, deterministic_ranking: compactRanking }),
@@ -268,10 +283,10 @@ function validateGeminiAnalysis(value, models) {
   const analyses = models.map((model) => {
     const source = byModel.get(model.model_id);
     if (!source) throw new ApiError(`Gemini omitiu o modelo ${model.model_id}`, 502);
-    let recommendation = ["RIFT", "CASCADE", "AETHER", "SPECTRA", "WINNER", "INCONCLUSIVO"].includes(source.recommendation)
+    let recommendation = ["RIFT", "CASCADE", "AETHER", "SPECTRA", "GEYSER", "WINNER", "INCONCLUSIVO"].includes(source.recommendation)
       ? source.recommendation
       : "INCONCLUSIVO";
-    const available = ["RIFT", "CASCADE", "AETHER", "SPECTRA", "WINNER"].filter(
+    const available = ["RIFT", "CASCADE", "AETHER", "SPECTRA", "GEYSER", "WINNER"].filter(
       (technology) => Boolean(model.technologies[technology]),
     );
     if (available.length < 2 || (recommendation !== "INCONCLUSIVO" && !available.includes(recommendation))) {

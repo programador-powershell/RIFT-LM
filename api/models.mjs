@@ -4,6 +4,8 @@ const UPSTREAM_LIMIT = 30;
 const REQUEST_TIMEOUT_MS = 10000;
 /** Limite Colab: 110 GiB de pesos no hub (safetensors/bin). */
 const COLAB_MAX_BYTES = 110 * 1024 * 1024 * 1024;
+/** Mesmo formato de quant aceito pelo launcher GGUF (contrato §11). */
+const GGUF_QUANT_RE = /^[A-Za-z0-9_.-]{2,32}$/;
 
 class ApiError extends Error {
   constructor(message, status = 400) {
@@ -50,6 +52,11 @@ function normalizeModelResults(value) {
       pipeline_tag: typeof model.pipeline_tag === "string" ? model.pipeline_tag : null,
       library_name: typeof model.library_name === "string" ? model.library_name : null,
       gated: model.gated === true || model.gated === "auto" || model.gated === "manual",
+      // Nº de parâmetros quando o Hub já expõe metadata safetensors (aditivo;
+      // normalmente ausente na busca — null indica "não informado").
+      params: Number.isFinite(Number(model?.safetensors?.total))
+        ? Number(model.safetensors.total)
+        : null,
     }))
     .filter((model) => (
       /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(model.id)
@@ -103,11 +110,113 @@ async function searchModels(query) {
   return normalizeModelResults(await response.json());
 }
 
+/**
+ * Metadata de picker do Hub (aditivo, best-effort): likes, downloads, gated,
+ * pipeline_tag e nº de parâmetros quando presente na metadata safetensors.
+ * Falhas retornam null e nunca derrubam a resposta de detalhe.
+ */
+/** Codifica cada segmento do id preservando a barra literal (a API do Hub
+ * responde 400 para org%2Fnome no caminho — barra deve permanecer '/'). */
+function encodeModelPath(id) {
+  return String(id).split("/").map(encodeURIComponent).join("/");
+}
+
+async function modelPickerMetadata(modelId) {
+  const id = normalizeModelId(modelId);
+  if (!id) return null;
+  try {
+    const response = await fetch(`${HUGGING_FACE_MODELS_API}/${encodeModelPath(id)}`, {
+      headers: { Accept: "application/json", "User-Agent": "rift-model-queue/1.1" },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!response.ok) return null;
+    const info = await response.json();
+    if (!info || typeof info !== "object" || Array.isArray(info)) return null;
+    return {
+      likes: Number.isFinite(Number(info.likes)) ? Number(info.likes) : null,
+      downloads: Number.isFinite(Number(info.downloads)) ? Number(info.downloads) : null,
+      gated: info.gated === true || info.gated === "auto" || info.gated === "manual",
+      pipeline_tag: typeof info.pipeline_tag === "string" ? info.pipeline_tag : null,
+      params: Number.isFinite(Number(info?.safetensors?.total))
+        ? Number(info.safetensors.total)
+        : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function normalizeQuant(value) {
+  const quant = String(value || "").trim();
+  if (!quant) return null;
+  if (!GGUF_QUANT_RE.test(quant)) {
+    throw new ApiError(
+      "quant inválido; use de 2 a 32 caracteres [A-Za-z0-9_.-] (ex.: UD-Q2_K_XL)",
+    );
+  }
+  return quant;
+}
+
+/**
+ * Soma pesos da árvore de arquivos do repositório. Quando `quant` é informado
+ * E o repositório é GGUF (possui >=1 arquivo .gguf), SOMENTE os .gguf cujo
+ * caminho contém o tag do quant entram no gate de 110 GiB e nos campos de
+ * tamanho (aditivos: quant/quant_bytes/quant_files). Sem quant, sem .gguf ou
+ * sem arquivo correspondente ao quant, o comportamento padrão é preservado.
+ */
+function summarizeWeightTree(tree, quant = null) {
+  const weightRe = /\.(safetensors|bin|pt|ckpt|pth|gguf|npz|npz\.index)$/i;
+  const files = [];
+  for (const entry of tree) {
+    if (!entry || entry.type === "directory") continue;
+    const path = String(entry.path || entry.rfilename || "");
+    files.push({ path, size: Number(entry.size) || 0 });
+  }
+  const ggufFiles = files.filter((file) => /\.gguf$/i.test(file.path));
+  if (quant && ggufFiles.length) {
+    const quantLower = quant.toLowerCase();
+    const quantFiles = ggufFiles.filter((file) => file.path.toLowerCase().includes(quantLower));
+    if (quantFiles.length) {
+      const quantBytes = quantFiles.reduce((sum, file) => sum + file.size, 0);
+      return {
+        total: quantBytes,
+        weightFiles: quantFiles.length,
+        quantInfo: { quant, quant_bytes: quantBytes, quant_files: quantFiles.length },
+      };
+    }
+  }
+  let total = 0;
+  let weightFiles = 0;
+  for (const file of files) {
+    if (weightRe.test(file.path) || /model-\d+-of-\d+/i.test(file.path)) {
+      total += file.size;
+      weightFiles += 1;
+    }
+  }
+  // Se não achou pesos tipados, soma tudo (exceto README/docs)
+  if (weightFiles === 0) {
+    for (const file of files) {
+      const path = file.path.toLowerCase();
+      if (path.endsWith(".md") || path.endsWith(".txt") || path.endsWith(".json") && !path.includes("index")) continue;
+      total += file.size;
+    }
+  }
+  const quantInfo = quant && ggufFiles.length
+    ? {
+      quant,
+      quant_bytes: 0,
+      quant_files: 0,
+      quant_note: `Nenhum arquivo .gguf com o tag ${quant} foi encontrado; o tamanho padrão do repositório foi aplicado.`,
+    }
+    : null;
+  return { total, weightFiles, quantInfo };
+}
+
 /** Soma tamanhos de pesos no repositório (safetensors/bin/pt/ckpt). */
-async function modelWeightBytes(modelId) {
+async function modelWeightBytes(modelId, quant = null) {
   const id = normalizeModelId(modelId);
   if (!id) throw new ApiError("Model ID inválido");
-  const url = `https://huggingface.co/api/models/${encodeURIComponent(id)}/tree/main?recursive=true`;
+  const url = `https://huggingface.co/api/models/${encodeModelPath(id)}/tree/main?recursive=true`;
   let response;
   try {
     response = await fetch(url, {
@@ -131,28 +240,9 @@ async function modelWeightBytes(modelId) {
   if (!response.ok) throw new ApiError(`Hugging Face retornou HTTP ${response.status}`, 502);
   const tree = await response.json();
   if (!Array.isArray(tree)) throw new ApiError("Árvore de arquivos inválida do Hugging Face", 502);
-  const weightRe = /\.(safetensors|bin|pt|ckpt|pth|gguf|npz|npz\.index)$/i;
-  let total = 0;
-  let weightFiles = 0;
-  for (const entry of tree) {
-    if (!entry || entry.type === "directory") continue;
-    const path = String(entry.path || entry.rfilename || "");
-    const size = Number(entry.size) || 0;
-    if (weightRe.test(path) || /model-\d+-of-\d+/i.test(path)) {
-      total += size;
-      weightFiles += 1;
-    }
-  }
-  // Se não achou pesos tipados, soma tudo (exceto README/docs)
-  if (weightFiles === 0) {
-    for (const entry of tree) {
-      if (!entry || entry.type === "directory") continue;
-      const path = String(entry.path || entry.rfilename || "").toLowerCase();
-      if (path.endsWith(".md") || path.endsWith(".txt") || path.endsWith(".json") && !path.includes("index")) continue;
-      total += Number(entry.size) || 0;
-    }
-  }
+  const { total, weightFiles, quantInfo } = summarizeWeightTree(tree, quant);
   const size_gb = total / (1024 ** 3);
+  const quantApplied = Boolean(quantInfo && quantInfo.quant_files > 0);
   return {
     id,
     size_bytes: total,
@@ -161,8 +251,11 @@ async function modelWeightBytes(modelId) {
     too_large: total > COLAB_MAX_BYTES,
     max_gb: 110,
     gated_or_private: false,
+    ...(quantInfo ?? {}),
     note: total > COLAB_MAX_BYTES
-      ? `Pesos ~${size_gb.toFixed(1)} GiB excedem o limite de 110 GiB da bateria Colab.`
+      ? (quantApplied
+        ? `Arquivos do quant ${quantInfo.quant} ~${size_gb.toFixed(1)} GiB excedem o limite de 110 GiB da bateria Colab.`
+        : `Pesos ~${size_gb.toFixed(1)} GiB excedem o limite de 110 GiB da bateria Colab.`)
       : null,
   };
 }
@@ -179,10 +272,18 @@ export default {
       const params = new URL(request.url).searchParams;
       const modelId = params.get("id");
       if (modelId) {
-        const info = await modelWeightBytes(modelId);
+        // Consultas em paralelo: pesos (gate de 110 GiB) + metadata de picker.
+        // A metadata é aditiva e best-effort; só os pesos podem falhar a rota.
+        // Com &quant= e repositório GGUF, o gate considera apenas os arquivos
+        // do quant (contrato §11 — o Colab só baixa os arquivos do quant).
+        const quant = normalizeQuant(params.get("quant"));
+        const [info, picker] = await Promise.all([
+          modelWeightBytes(modelId, quant),
+          modelPickerMetadata(modelId),
+        ]);
         return request.method === "HEAD"
           ? new Response(null, { status: 200 })
-          : jsonResponse({ ok: true, ...info });
+          : jsonResponse({ ok: true, ...(picker ?? {}), ...info });
       }
       const query = normalizeSearch(params.get("q"));
       const models = await searchModels(query);
@@ -195,4 +296,12 @@ export default {
   },
 };
 
-export const _test = { normalizeModelResults, normalizeSearch, normalizeModelId, COLAB_MAX_BYTES };
+export const _test = {
+  normalizeModelResults,
+  normalizeSearch,
+  normalizeModelId,
+  normalizeQuant,
+  modelPickerMetadata,
+  summarizeWeightTree,
+  COLAB_MAX_BYTES,
+};
