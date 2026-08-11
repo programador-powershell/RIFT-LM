@@ -178,3 +178,57 @@ This V3 protocol intentionally does **not** claim:
 - end-to-end perplexity or generation equivalence unless a full-model candidate runtime exists.
 
 Those fields must remain absent/null rather than be inferred.
+
+## Adendo C3_METHODOLOGY_V1
+
+This addendum does not alter any rule above; it records the sanctioned path that satisfies them.
+
+C3 full-model records (`benchmark_protocol = "C3_METHODOLOGY_V1"`, battery
+`C3_<TECH>_FULLMODEL_E2E_TOKS`) are the **sanctioned source of candidate tok/s**: baseline and
+candidate are both measured from full-model `model.generate` under the same prompt, tokenization
+and generation settings, which is exactly the condition the Tok/s section requires before
+`baseline_tok_s`/`candidate_tok_s` may be non-null. Linear/block proxies remain confined to
+`metrics.operation.*` with the `_proxy` suffix and still must never enter comparison fields.
+
+The same records are the sanctioned source of **measured-RSS RAM**: top-level `*_ram_bytes` come
+only from per-phase `/proc/self/status` `VmRSS` sampling (~1 ms sampling thread, per-phase peak,
+method recorded in `metrics.memory.method`). Arithmetic estimates stay under
+`metrics.memory.estimated_*`; when nothing was measured the top-level value stays `null`.
+
+All other batteries remain bound by the null rules of this protocol unchanged. See
+`docs/C3_METHODOLOGY.md` and `docs/C3_CONTRACTS_V1.md` for the full C3 specification.
+
+## Adendo E2E_TOKS_V1
+
+Este adendo é APPEND-ONLY: nenhuma regra anterior deste protocolo é alterada. Ele registra o
+caminho sancionado pelo qual registros end-to-end passam a preencher `baseline_tok_s` /
+`candidate_tok_s` de nível superior (docs/C3_CONTRACTS_V1.md §12) — exatamente a condição que a
+seção "Tok/s" exige: baseline e candidato gerados pelo modelo COMPLETO sob o mesmo
+prompt/tokenização/configuração de geração.
+
+Baterias e2e sancionadas (as ÚNICAS autorizadas a preencher tok/s de topo):
+
+| battery_id | Escopo da medição |
+| --- | --- |
+| `P1_RIFT_E2E_TOKS`, `P1_AETHER_E2E_TOKS`, `P1_SPECTRA_E2E_TOKS`, `P1_WINNER_E2E_TOKS` | `model.generate` do modelo completo (greedy, ≥2 warmup, ≥3 medições, mediana); candidato = MESMO `generate` com todas as Linear dos blocos no runtime de referência Python do codec da tecnologia (W denso fora do caminho quente) |
+| `P1_CASCADE_C2_E2E_TOKS` | mesma técnica dos M0 acima: baseline E candidato medidos; candidato = todas as nn.Linear dos blocos patchadas com `CascadeLinearModule` (F0 INT4 + Gate·F1, low_mem off), patch transacional com restauração garantida |
+| `C3_<TECH>_FULLMODEL_E2E_TOKS` | passo 16 da metodologia C3 (já sancionado pelo Adendo C3_METHODOLOGY_V1 acima) |
+| `G3_GEYSER_BURST` | escopo Python: promove `vanilla_tok_s_py` → `baseline_tok_s` e `burst_tok_s_py` → `candidate_tok_s`, ambos wall-clock REAIS sob o mesmo protocolo greedy, com equivalência greedy verificada na própria bateria; "tok/s medido em Python — não representa kernel nativo" |
+| `P1_GGUF_E2E_TOKS` | escopo llama.cpp (decode real no T4, prompt fixo, ≥3 medições, mediana): `candidate_tok_s` medido; `baseline_tok_s = null` porque o baseline BF16 não é executável no T4 (nenhuma comparação é inventada) |
+
+Regras do adendo:
+
+- Todo registro sancionado DEVE gravar `metrics.e2e.measured = true`, com `metrics.e2e.scope`
+  declarando o escopo (ex.: `python_reference_wall_clock`, `python_reference_model_generate`).
+  Sem essa marca o registro permanece sujeito à regra de anulação da seção "Tok/s".
+- `scripts/real_benchmark_runner.py` deixa de anular `baseline_tok_s`/`candidate_tok_s` SOMENTE
+  quando `battery_id` termina em `_E2E_TOKS` E `metrics.e2e.measured === true` (baseline e
+  candidato passam adiante). Proxies, aliases de tok/s por tecnologia e todos os demais campos
+  continuam sendo anulados exatamente como antes. `G3_GEYSER_BURST` e `P1_GGUF_E2E_TOKS` não
+  transitam pelo runner (publicam direto pelos próprios launchers) — a exceção do runner cobre
+  apenas os ids `*_E2E_TOKS`.
+- O `measurement_scope` de cada registro sancionado declara o escopo honesto (runtime de
+  referência Python / Python wall-clock / llama.cpp), deixando explícito que NÃO representa
+  kernel nativo.
+- Proxies de Linear/bloco continuam confinados a `metrics.operation.*` com sufixo `_proxy` e
+  seguem PROIBIDOS nos campos de comparação de nível superior.

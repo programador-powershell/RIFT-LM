@@ -7,11 +7,15 @@
 //   curl -fsSL <url> -o /content/geyser_launcher.py && python /content/geyser_launcher.py
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { resolveRepo, resolveRef, rawBaseUrl } from "./_lib/repo.mjs";
 
 const LAUNCHER_FILENAME = "geyser_launcher.py";
-// Caminho no repositório (contrato §20) — precisa casar com o includeFiles de
-// api/geyser.mjs no vercel.json para o arquivo entrar no bundle do deploy.
+// Caminho no repositório (contrato §20). O .vercelignore exclui *.py do upload,
+// então o arquivo NÃO está no bundle do deploy — em produção o fallback busca o
+// launcher no GitHub raw, no repo/ref resolvidos (§14.1); a leitura local só
+// funciona em dev. Por isso vercel.json NÃO usa functions/includeFiles.
 const LAUNCHER_REPO_PATH = "engines/geyser/geyser_launcher.py";
+const RAW_FETCH_TIMEOUT_MS = 8000;
 const MODEL_ID_PLACEHOLDER = "__GEYSER_MODEL_ID__";
 // Mesmo formato org/modelo validado por normalizeModel (api/test.mjs) e
 // MODEL_ID_RE (api/results.mjs). A classe de caracteres exclui aspas, quebras
@@ -47,10 +51,8 @@ function normalizeModelId(value) {
 }
 
 async function readLauncherSource() {
-  // Mesma técnica do fallback de GET /api/results (arquivo empacotado no
-  // deploy): primeiro relativo ao módulo (URL literal, rastreável pelo file
-  // tracer da Vercel), depois relativo a process.cwd() (raiz do projeto no
-  // runtime da função).
+  // 1) Leitura local (dev server / clones locais). Em produção o *.py não está
+  // no bundle (.vercelignore), então estes candidatos falham e caímos no raw.
   const candidates = [
     new URL("../engines/geyser/geyser_launcher.py", import.meta.url),
     join(process.cwd(), "engines", "geyser", LAUNCHER_FILENAME),
@@ -62,7 +64,23 @@ async function readLauncherSource() {
       // Tenta o próximo caminho candidato.
     }
   }
-  throw new ApiError(`${LAUNCHER_FILENAME} indisponível no bundle do deploy`, 500);
+  // 2) Fallback de produção: GitHub raw no repo/ref resolvidos (repo-agnóstico,
+  // §14.1 — pin no SHA do deploy quando disponível).
+  const rawUrl = `${rawBaseUrl(resolveRepo(), resolveRef())}/${LAUNCHER_REPO_PATH}`;
+  try {
+    const response = await fetch(rawUrl, {
+      headers: { Accept: "text/plain" },
+      signal: AbortSignal.timeout(RAW_FETCH_TIMEOUT_MS),
+    });
+    if (response.ok) return await response.text();
+    throw new ApiError(
+      `${LAUNCHER_FILENAME} indisponível: GitHub raw respondeu HTTP ${response.status}`,
+      502,
+    );
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(`${LAUNCHER_FILENAME} indisponível (local e GitHub raw)`, 502);
+  }
 }
 
 function renderLauncher(source, modelId) {

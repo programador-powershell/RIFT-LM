@@ -1,17 +1,17 @@
 {
-  "description": "Contrato preferencial v1 para baterias comparáveis RIFT, CASCADE, AETHER, SPECTRA ou WINNER. Valores são somente estrutura de exemplo.",
-  "schema_version": 1,
+  "description": "Contrato preferencial v2 para baterias comparáveis RIFT, CASCADE, AETHER, SPECTRA ou WINNER. Valores são somente estrutura de exemplo.",
+  "schema_version": 2,
   "timestamp_utc": "2026-08-09T10:00:00Z",
   "run_id": "20260809T100000Z-exemplo",
   "spec": "RIFT-LM v0.3.5|CASCADE v0.3|AETHER-LM v1.0 reference|SPECTRA-LM v0.1 reference|WINNER.cpp v0.8 reference",
   "technology": "RIFT|CASCADE|AETHER|SPECTRA|WINNER",
   "model_id": "ORG/MODELO",
   "battery_id": "PHASE_1_K1",
-  "benchmark_protocol": "LINEAR_REFERENCE_V2",
+  "benchmark_protocol": "LINEAR_REAL_MEASURED_V3",
   "comparison_role": "primary|null",
   "comparison_group_id": "cmp-xxxxxxxxxxxxxxxxxxxxxxxx",
   "comparison_context": {
-    "protocol": "LINEAR_REFERENCE_V2",
+    "protocol": "LINEAR_REAL_MEASURED_V3",
     "model_id": "ORG/MODELO",
     "target_layer_request": "auto",
     "device_request": "cuda",
@@ -26,10 +26,11 @@
   },
   "implementation": {
     "scope": "single_linear_reference",
-    "kind": "REFERENCE|NATIVE|SIMULATED",
+    "kind": "REFERENCE_MEASURED|NATIVE_MEASURED|SIMULATED",
     "native": false,
     "simulated": false
   },
+  "eligible_for_primary_ranking": true,
   "status": "PASS|FAIL|EXPERIMENTAL_PASS|EXPERIMENTAL_FAIL|SIMULATED",
   "baseline_tok_s": null,
   "candidate_tok_s": null,
@@ -50,8 +51,19 @@
       "baseline_median_ms": null,
       "candidate_median_ms": null,
       "speedup_x": null
+    },
+    "memory": {
+      "method": "rss_sampling_vmrss|null",
+      "estimated_candidate_ram_bytes": null
     }
   },
+  "gains": {
+    "tok_s_gain_pct": null,
+    "ram_reduction_pct": null,
+    "disk_reduction_pct": null,
+    "disk_compression_ratio_x": null,
+    "overall_gain_pct": null
+  },
   "measurement_scope": "Descreva exatamente o que a bateria mediu.",
-  "notes": "Tok/s só pode ser preenchido por benchmark de modelo; latência de uma Linear não é Tok/s. comparison_group_id deve coincidir para comparação direta de performance."
+  "notes": "Tok/s só pode ser preenchido por benchmark de modelo completo (model.generate); latência de uma Linear não é Tok/s e proxies ficam em metrics.operation.* com sufixo _proxy. *_ram_bytes de nível superior só com RSS medido (metrics.memory.method); estimativas ficam em metrics.memory.estimated_*. comparison_group_id (cmp-<sha256[:24]> de protocol|model_id|device|torch) deve coincidir para comparação direta de performance. Série C3 usa benchmark_protocol C3_METHODOLOGY_V1."
 }

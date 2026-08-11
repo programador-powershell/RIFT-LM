@@ -1,7 +1,37 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { _test as realApi } from "../api/real-test.mjs";
+
+// Resolução de Python para a parte da suíte que compila/importa o runner:
+// tenta python3, depois python, depois py -3, validando que o binário é real
+// (--version precisa sair com código 0 e mencionar "Python"). Sem Python
+// disponível, a parte Python é PULADA com aviso claro e o processo sai com 0
+// (no CI ubuntu o python3 está sempre presente e a parte Python roda).
+function resolvePython() {
+  const candidates = [
+    { command: "python3", baseArgs: [] },
+    { command: "python", baseArgs: [] },
+    { command: "py", baseArgs: ["-3"] },
+  ];
+  for (const candidate of candidates) {
+    let probe;
+    try {
+      probe = spawnSync(candidate.command, [...candidate.baseArgs, "--version"], {
+        encoding: "utf8",
+        timeout: 30000,
+      });
+    } catch {
+      continue;
+    }
+    if (probe.error || probe.status !== 0) continue;
+    const output = `${probe.stdout || ""}${probe.stderr || ""}`;
+    if (!/Python\s+\d/.test(output)) continue;
+    return { ...candidate, version: output.trim() };
+  }
+  return null;
+}
 
 const launcher = realApi.buildLauncher({
   technology: "cascade",
@@ -56,7 +86,18 @@ for (const required of [
   assert.ok(runnerSource.includes(required), `runner sem marcador obrigatório: ${required}`);
 }
 
-const pyCompile = spawnSync("python3", ["-m", "py_compile", runnerPath.pathname], {
+const python = resolvePython();
+if (!python) {
+  console.log(
+    "real benchmark smoke: SKIP da parte Python (nenhum python3/python/py -3 disponível nesta máquina; o CI ubuntu executa com python3)",
+  );
+  console.log("real benchmark smoke: PASS (asserções JS concluídas)");
+  process.exit(0);
+}
+console.log(`real benchmark smoke: usando ${python.command}${python.baseArgs.length ? ` ${python.baseArgs.join(" ")}` : ""} (${python.version})`);
+
+const runnerFilePath = fileURLToPath(runnerPath);
+const pyCompile = spawnSync(python.command, [...python.baseArgs, "-m", "py_compile", runnerFilePath], {
   encoding: "utf8",
 });
 assert.equal(pyCompile.status, 0, pyCompile.stderr || pyCompile.stdout);
@@ -66,7 +107,7 @@ import importlib.util
 import tempfile
 from pathlib import Path
 
-path = ${JSON.stringify(new URL("./real_benchmark_runner.py", import.meta.url).pathname)}
+path = ${JSON.stringify(runnerFilePath)}
 spec = importlib.util.spec_from_file_location("real_runner", path)
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
@@ -154,7 +195,7 @@ with tempfile.TemporaryDirectory() as td:
 print("real benchmark smoke: PASS")
 `;
 
-const pyCheck = spawnSync("python3", ["-c", pythonCheck], { encoding: "utf8" });
+const pyCheck = spawnSync(python.command, [...python.baseArgs, "-c", pythonCheck], { encoding: "utf8" });
 assert.equal(pyCheck.status, 0, pyCheck.stderr || pyCheck.stdout);
 
 console.log("real benchmark smoke: PASS");

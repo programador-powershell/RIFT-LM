@@ -6,8 +6,14 @@ Runs an existing technology battery with publishing disabled, instruments its
 benchmark_ms() at runtime, removes estimated metrics from comparison fields,
 verifies physical storage where possible, and publishes sanitized records.
 
-No end-to-end Tok/s is fabricated. Until a technology exposes a full-model
-candidate runtime, Tok/s remains null.
+No end-to-end Tok/s is fabricated. Tok/s stays null for every record EXCEPT
+the sanctioned end-to-end batteries (Adendo E2E_TOKS_V1 of
+docs/REAL_BENCHMARK_PROTOCOL_V3.md): when `battery_id` ends with `_E2E_TOKS`
+AND the record carries `metrics.e2e.measured == true`, the measured
+`baseline_tok_s` and `candidate_tok_s` pass through unchanged (both come from
+full-model `model.generate` under the same protocol, measured by the battery
+itself). Proxies, technology tok/s aliases and every other record keep being
+nulled exactly as before.
 """
 from __future__ import annotations
 
@@ -30,43 +36,82 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-REPOSITORY = "programador-powershell/RIFT-LM"
+# Repo-agnóstico (docs/C3_CONTRACTS_V1.md §14.2): owner/repo e ref vêm do
+# ambiente (RIFT_GITHUB_REPOSITORY / RIFT_SOURCE_REF, exportados pelas células
+# geradas no servidor); o literal legado é APENAS o fallback documentado.
+LEGACY_REPOSITORY = "programador-powershell/RIFT-LM"
 DEFAULT_RESULTS_ENDPOINT = "https://rift-lm.vercel.app/api/results"
 BENCHMARK_PROTOCOL = "LINEAR_REAL_MEASURED_V3"
 SCHEMA_VERSION = 2
 
+def resolve_repository() -> str:
+    """owner/repo de RIFT_GITHUB_REPOSITORY com fallback legado (contrato §14.2).
+
+    Mesma validação de owner/repo usada na publicação GitHub do script RIFT
+    (engines/rift/rift_m0_phase1_test_v035_auto_batteries.py::_normalize_github_repository).
+    """
+    candidate = os.environ.get("RIFT_GITHUB_REPOSITORY", "").strip().rstrip("/")
+    if not candidate:
+        return LEGACY_REPOSITORY
+    if candidate.lower().endswith(".git"):
+        candidate = candidate[:-4]
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", candidate):
+        raise RuntimeError(
+            "RIFT_GITHUB_REPOSITORY inválido. Use o formato 'owner/repo'."
+        )
+    return candidate
+
+def resolve_source_ref(explicit: str | None = None) -> str:
+    """Ref de --source-ref/RIFT_SOURCE_REF (branch, tag ou SHA); default 'main'.
+
+    Aceita SHA de 40 hex (pin preferido, contrato §14.1) ou nomes de branch/tag
+    simples; rejeita qualquer coisa fora de [A-Za-z0-9._/-] ou com '..'.
+    """
+    ref = str(explicit or os.environ.get("RIFT_SOURCE_REF", "") or "").strip() or "main"
+    if ".." in ref or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,199}", ref):
+        raise RuntimeError("RIFT_SOURCE_REF inválido")
+    return ref
+
+def battery_script_url(script: str, source_ref: str) -> str:
+    """Único ponto do runner que monta URLs raw.githubusercontent (contrato §14)."""
+    return f"https://raw.githubusercontent.com/{resolve_repository()}/{source_ref}/{script}"
+
+# `script` é o CAMINHO NO REPO (árvore canônica do contrato §20: engines/<tech>/...),
+# usado para montar a URL raw de download. Localmente o script é gravado no
+# diretório de execução pelo BASENAME (par repo_path → local_path do §20;
+# o layout de execução estilo Colab não muda).
 TECHNOLOGIES = {
     "rift": {
         "label": "RIFT",
-        "script": "rift_m0_phase1_test_v035_auto_batteries.py",
+        "script": "engines/rift/rift_m0_phase1_test_v035_auto_batteries.py",
         "args": ["--mode", "phase1"],
         "primary": "P1_Q4_LINEAR_BASE_PLUS_REF_4BIT",
         "probe_labels": ["baseline", "base_predecoded", "full_predecoded", "base_reference", "candidate"],
     },
     "cascade": {
         "label": "CASCADE",
-        "script": "cascade_m0_phase1_test_v030_auto_batteries.py",
+        "script": "engines/cascade/cascade_m0_phase1_test_v030_auto_batteries.py",
         "args": [],
         "primary": "P1_CASCADE_GATED_F0_PLUS_F1",
         "probe_labels": ["baseline", "f0", "candidate"],
     },
     "aether": {
         "label": "AETHER",
-        "script": "aether_m0_phase1_test_v100_auto_batteries.py",
+        "script": "engines/aether/aether_m0_phase1_test_v100_auto_batteries.py",
         "args": ["--mode", "phase1"],
         "primary": "P1_AETHER_HQR_PLUS_TADDS_DYNAMIC",
         "probe_labels": ["baseline", "f0", "candidate"],
     },
     "spectra": {
         "label": "SPECTRA",
-        "script": "SPECTRA_Colab_Test_M0.py",
+        "script": "engines/spectra/SPECTRA_Colab_Test_M0.py",
         "args": ["--mode", "phase1"],
         "primary": "P1_SPECTRA_HQR_PLUS_TADDS_DYNAMIC",
         "probe_labels": ["baseline", "f0", "candidate"],
     },
     "winner": {
         "label": "WINNER",
-        "script": "winner_m0_phase1_test_v080_auto_batteries.py",
+        "script": "engines/winner/winner_m0_phase1_test_v080_auto_batteries.py",
         "args": ["--mode", "phase1"],
         "primary": "P1_WINNER_F0_PLUS_LS",
         "probe_labels": ["baseline", "f0", "candidate", "full"],
@@ -567,6 +612,13 @@ def sanitize_records(records, *, technology, model_id, target_layer, device, ite
             metrics = {}
             record["metrics"] = metrics
 
+        # Adendo E2E_TOKS_V1 (docs/REAL_BENCHMARK_PROTOCOL_V3.md): baterias
+        # sancionadas `*_E2E_TOKS` com metrics.e2e.measured=true medem
+        # baseline_tok_s E candidate_tok_s via model.generate do modelo
+        # completo sob o mesmo protocolo — esses dois campos passam adiante.
+        metrics_e2e = metrics.get("e2e") if isinstance(metrics.get("e2e"), dict) else {}
+        e2e_measured = bool(battery_id.endswith("_E2E_TOKS") and metrics_e2e.get("measured") is True)
+
         # Formula/estimated RAM never goes into top-level comparison fields.
         for key in ("baseline_ram_bytes", "candidate_ram_bytes", "rift_ram_bytes",
                     "cascade_ram_bytes", "aether_ram_bytes", "spectra_ram_bytes", "winner_ram_bytes"):
@@ -604,17 +656,32 @@ def sanitize_records(records, *, technology, model_id, target_layer, device, ite
         metrics["artifacts"] = {"files": artifacts[:100], "truncated": len(artifacts) > 100}
         metrics["benchmark_probe"] = {"baseline": baseline_probe, "candidate": candidate_probe}
         metrics["activation_provenance"] = {"real": real_activation, "source": activation_source}
-        metrics["end_to_end_generation"] = {
-            "measured": False,
-            "baseline_tok_s": None,
-            "candidate_tok_s": None,
-            "reason": "candidate technology does not yet expose a full-model generation runtime",
-        }
+        if e2e_measured:
+            metrics["end_to_end_generation"] = {
+                "measured": True,
+                "baseline_tok_s": record.get("baseline_tok_s"),
+                "candidate_tok_s": record.get("candidate_tok_s"),
+                "reason": (
+                    "sanctioned *_E2E_TOKS battery with metrics.e2e.measured=true "
+                    "(Adendo E2E_TOKS_V1): both values measured from full-model "
+                    "model.generate under the same protocol"
+                ),
+            }
+        else:
+            metrics["end_to_end_generation"] = {
+                "measured": False,
+                "baseline_tok_s": None,
+                "candidate_tok_s": None,
+                "reason": "candidate technology does not yet expose a full-model generation runtime",
+            }
 
         for key in ("baseline_tok_s", "candidate_tok_s", "rift_tok_s", "cascade_tok_s",
                     "aether_tok_s", "spectra_tok_s", "winner_tok_s"):
-            if key in record:
-                record[key] = None
+            if key not in record:
+                continue
+            if e2e_measured and key in ("baseline_tok_s", "candidate_tok_s"):
+                continue  # E2E_TOKS medido passa adiante; aliases seguem nulos
+            record[key] = None
 
         if simulated:
             record["comparison_role"] = "diagnostic"
@@ -657,12 +724,22 @@ def sanitize_records(records, *, technology, model_id, target_layer, device, ite
             gains["disk_compression_ratio_x"] = None
         gains["overall_gain_pct"] = gains.get("disk_reduction_pct")
 
-        record["measurement_scope"] = (
-            "REAL_MEASUREMENT_V3: Linear latency uses synchronized repeated trials; "
-            "CPU RSS and CUDA allocation peaks are observed; baseline disk bytes come "
-            "from Safetensors data_offsets when available; end-to-end Tok/s is not measured; "
-            "formula-based RAM is excluded."
-        )
+        if e2e_measured:
+            record["measurement_scope"] = (
+                "REAL_MEASUREMENT_V3 + E2E_TOKS_V1: Linear latency uses synchronized repeated trials; "
+                "CPU RSS and CUDA allocation peaks are observed; baseline disk bytes come "
+                "from Safetensors data_offsets when available; end-to-end Tok/s IS measured by the "
+                "battery (full-model model.generate, same protocol for baseline and candidate; "
+                "metrics.e2e.measured=true) and passes through unchanged; "
+                "formula-based RAM is excluded."
+            )
+        else:
+            record["measurement_scope"] = (
+                "REAL_MEASUREMENT_V3: Linear latency uses synchronized repeated trials; "
+                "CPU RSS and CUDA allocation peaks are observed; baseline disk bytes come "
+                "from Safetensors data_offsets when available; end-to-end Tok/s is not measured; "
+                "formula-based RAM is excluded."
+            )
         out.append(record)
     return out
 
@@ -688,8 +765,8 @@ def run(args: argparse.Namespace) -> int:
     tech = TECHNOLOGIES[technology]
     model_id = normalize_model_id(args.model)
     actual_device = resolve_device(args.device)
-    source_ref = args.source_ref or os.environ.get("RIFT_SOURCE_REF", "main")
-    script_url = f"https://raw.githubusercontent.com/{REPOSITORY}/{source_ref}/{tech['script']}"
+    source_ref = resolve_source_ref(args.source_ref)
+    script_url = battery_script_url(tech["script"], source_ref)
 
     workspace_root = Path("/content/rift_real_runs") if Path("/content").is_dir() else (Path.cwd() / ".rift_real_runs")
     workspace_root.mkdir(parents=True, exist_ok=True)
@@ -698,7 +775,9 @@ def run(args: argparse.Namespace) -> int:
         out_dir = tmp_path / "output"
         out_dir.mkdir()
         probe_log = tmp_path / "benchmark_probes.jsonl"
-        script_path = tmp_path / tech["script"]
+        # Par (repo_path → local_path) do contrato §20: baixa de engines/<tech>/…
+        # mas grava no diretório de execução pelo basename (layout Colab intacto).
+        script_path = tmp_path / Path(tech["script"]).name
 
         print(f"[REAL-METRICS] tecnologia={tech['label']} modelo={model_id} device={actual_device}")
         print(f"[REAL-METRICS] protocolo={BENCHMARK_PROTOCOL}")

@@ -3804,5 +3804,879 @@
       }
     },
     "notes": "C2 baseline 0.58 tok/s on cuda. Sample Linear model.vision_tower.encoder.layers.0.self_attn.q_proj.linear.weight cosine=0.9940 skip=0.688."
+  },
+  {
+    "schema_version": 2,
+    "timestamp_utc": "2026-08-10T17:12:52.994614+00:00",
+    "run_id": "geyser-20260810T171252-dc46ac42",
+    "spec": "GEYSER-LM v0.2.0",
+    "technology": "GEYSER",
+    "model_id": "Qwen/Qwen2.5-0.5B",
+    "battery_id": "B0_GEYSER_PHYSICS_BANDWIDTH",
+    "benchmark_protocol": "GEYSER_M0_G0_V1",
+    "comparison_group_id": "cmp-007804998c6c3a632bcd28ee",
+    "comparison_context": {
+      "protocol": "GEYSER_M0_G0_V1",
+      "device": "cpu",
+      "torch": "2.5.1+cu124",
+      "transformers": "4.46.3",
+      "python": "3.11.15"
+    },
+    "implementation": {
+      "kind": "REFERENCE_MEASURED",
+      "native": false,
+      "simulated": false
+    },
+    "eligible_for_primary_ranking": false,
+    "status": "PASS",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {},
+    "quality": {},
+    "metrics": {
+      "label": "MEDIDO (triad NumPy; banda efetiva vista pelo processo)",
+      "bandwidth_gbps": 11.04,
+      "probe_mb": 64,
+      "ceilings_tok_s": {
+        "fp32": 5.59,
+        "fp16": 11.18,
+        "int4g32_4.5b": 32.72,
+        "int2g64_2.5b": 44.52,
+        "ternario_2.25b": 46.63
+      },
+      "rule_50pct": "decode nativo deve atingir >=50% do teto; senao o gargalo e kernel (spec Sec. 1.3)"
+    },
+    "measurement_scope": "suite GEYSER M0/G0 v0.2.0 — métricas rotuladas MEDIDO/SIMULADO/PROJETADO em metrics",
+    "notes": ""
+  },
+  {
+    "schema_version": 2,
+    "timestamp_utc": "2026-08-10T17:12:54.529082+00:00",
+    "run_id": "geyser-20260810T171252-dc46ac42",
+    "spec": "GEYSER-LM v0.2.0",
+    "technology": "GEYSER",
+    "model_id": "Qwen/Qwen2.5-0.5B",
+    "battery_id": "G1_GEYSER_ZDC_LUT",
+    "benchmark_protocol": "GEYSER_M0_G0_V1",
+    "comparison_group_id": "cmp-007804998c6c3a632bcd28ee",
+    "comparison_context": {
+      "protocol": "GEYSER_M0_G0_V1",
+      "device": "cpu",
+      "torch": "2.5.1+cu124",
+      "transformers": "4.46.3",
+      "python": "3.11.15"
+    },
+    "implementation": {
+      "kind": "REFERENCE_MEASURED",
+      "native": false,
+      "simulated": false
+    },
+    "eligible_for_primary_ranking": true,
+    "status": "PASS",
+    "comparison_role": "primary",
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {},
+    "quality": {
+      "full_local_gate_pass": false,
+      "output": {
+        "cosine": 0.961617,
+        "nrmse": 0.290098
+      }
+    },
+    "metrics": {
+      "target_linear": "model.layers.12.mlp.gate_proj",
+      "shape": [
+        4864,
+        896
+      ],
+      "group": 64,
+      "int2g64": {
+        "bits_effective": 2.5,
+        "weight_cos": 0.939244,
+        "weight_nrmse": 0.343331,
+        "output_cos_real_acts": 0.961617,
+        "output_nrmse_real_acts": 0.290098
+      },
+      "ternario": {
+        "bits_effective": 2.25,
+        "weight_nrmse": 0.533522,
+        "output_cos_real_acts": 0.895556,
+        "nota": "PTQ ternario sem QAT degrada mais que INT2g64 — evidencia da nota de honestidade da spec Sec. 6.2"
+      },
+      "lut_kernel": {
+        "label": "corretude MEDIDA; velocidade Python = SIMULADO",
+        "rows_checked": 384,
+        "max_rel_err_vs_dense": 4.06179822611346e-8,
+        "exact_lt_1e-3": true,
+        "mults_per_group_dense": 64,
+        "mults_per_group_lut": 2,
+        "mult_reduction_x": 32,
+        "t_dense_gemv_ms_py": 0.174,
+        "t_lut_gemv_ms_py": 5.083
+      }
+    },
+    "measurement_scope": "suite GEYSER M0/G0 v0.2.0 — métricas rotuladas MEDIDO/SIMULADO/PROJETADO em metrics",
+    "notes": ""
+  },
+  {
+    "schema_version": 2,
+    "timestamp_utc": "2026-08-10T17:12:55.847385+00:00",
+    "run_id": "geyser-20260810T171252-dc46ac42",
+    "spec": "GEYSER-LM v0.2.0",
+    "technology": "GEYSER",
+    "model_id": "Qwen/Qwen2.5-0.5B",
+    "battery_id": "G2_GEYSER_RRS_SALIENCE",
+    "benchmark_protocol": "GEYSER_M0_G0_V1",
+    "comparison_group_id": "cmp-007804998c6c3a632bcd28ee",
+    "comparison_context": {
+      "protocol": "GEYSER_M0_G0_V1",
+      "device": "cpu",
+      "torch": "2.5.1+cu124",
+      "transformers": "4.46.3",
+      "python": "3.11.15"
+    },
+    "implementation": {
+      "kind": "REFERENCE_MEASURED",
+      "native": false,
+      "simulated": false
+    },
+    "eligible_for_primary_ranking": false,
+    "status": "PASS",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {},
+    "quality": {},
+    "metrics": {
+      "label": "MEDIDO sobre ativacoes reais do modelo",
+      "target_linear": "model.layers.12.mlp.gate_proj",
+      "calib_tokens": 512,
+      "quality_vs_rho": [
+        {
+          "rho": 0,
+          "salient_cols": 0,
+          "output_cos": 0.961617,
+          "output_nrmse": 0.290098
+        },
+        {
+          "rho": 0.05,
+          "salient_cols": 45,
+          "output_cos": 0.985973,
+          "output_nrmse": 0.166908
+        },
+        {
+          "rho": 0.15,
+          "salient_cols": 134,
+          "output_cos": 0.989016,
+          "output_nrmse": 0.147807
+        },
+        {
+          "rho": 0.3,
+          "salient_cols": 269,
+          "output_cos": 0.991713,
+          "output_nrmse": 0.128476
+        },
+        {
+          "rho": 1,
+          "salient_cols": 896,
+          "output_cos": 0.999988,
+          "output_nrmse": 0.004889
+        }
+      ],
+      "jaccard_top15_between_halves": 0.729,
+      "jaccard_top15_odd_even_tokens": 0.8873,
+      "jaccard_top15_thirds_min": 0.5952,
+      "h2_proxy": "Jaccard alto => working-set de canais salientes estavel dentro do contexto (hipotese H2 da spec)",
+      "calib_note": "calibracao = passagem unica homogenea (contrato do launcher). O gate H2 afirma estabilidade DENTRO do contexto: halves e o split dificil (deriva topica primeira/segunda metade); odd/even e o split facil (mesma distribuicao). Ambos reportados; o gate usa halves. Para robustez fora do texto padrao, o runner pode trocar GEYSER_CALIB_MAX e o texto por env.",
+      "miss_policy": "rho baixo = miss simulado: qualidade cede (cos cai de forma limitada), latencia nao"
+    },
+    "measurement_scope": "suite GEYSER M0/G0 v0.2.0 — métricas rotuladas MEDIDO/SIMULADO/PROJETADO em metrics",
+    "notes": ""
+  },
+  {
+    "schema_version": 2,
+    "timestamp_utc": "2026-08-10T17:14:12.796140+00:00",
+    "run_id": "geyser-20260810T171252-dc46ac42",
+    "spec": "GEYSER-LM v0.2.0",
+    "technology": "GEYSER",
+    "model_id": "Qwen/Qwen2.5-0.5B",
+    "battery_id": "G3_GEYSER_BURST",
+    "benchmark_protocol": "GEYSER_M0_G0_V1",
+    "comparison_group_id": "cmp-007804998c6c3a632bcd28ee",
+    "comparison_context": {
+      "protocol": "GEYSER_M0_G0_V1",
+      "device": "cpu",
+      "torch": "2.5.1+cu124",
+      "transformers": "4.46.3",
+      "python": "3.11.15"
+    },
+    "implementation": {
+      "kind": "REFERENCE_MEASURED",
+      "native": false,
+      "simulated": false
+    },
+    "eligible_for_primary_ranking": true,
+    "status": "PASS",
+    "comparison_role": "primary",
+    "baseline_tok_s": 17.086,
+    "candidate_tok_s": 5.814,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {},
+    "quality": {},
+    "metrics": {
+      "labels": {
+        "tau/aceitacao/equivalencia/amortizacao": "MEDIDO",
+        "tau_draft": "MEDIDO com draft proxy INT4g32 (qualidade alcancavel por ORB destilado — H1); o draft INT2 do formato quente esta em draft_probe_int2_hot",
+        "tok_s_python": "MEDIDO em Python (nao representa kernel nativo)",
+        "tok_s_projetado": "PROJETADO (BPAT; hipoteses H1/H4 da spec)"
+      },
+      "config": {
+        "K": 8,
+        "max_new": 48,
+        "prompt_tokens": 53,
+        "cache_path": true,
+        "draft": "clone INT4g32 (168 Linear) — proxy de qualidade para draft ORB (H1)"
+      },
+      "measured": {
+        "tau_tokens_per_sweep": 4.4167,
+        "tau_draft_source": "draft proxy INT4g32 (hipotese H1) — NAO e o formato quente INT2; ver draft_probe_int2_hot",
+        "tau_by_k": {
+          "1": 1.6667,
+          "2": 2.3333,
+          "3": 2.8333,
+          "4": 3.25,
+          "5": 3.6667,
+          "6": 4.0833,
+          "7": 4.25,
+          "8": 4.4167
+        },
+        "draft_accept_rate": 0.4271,
+        "draft_probe_int2_hot": {
+          "draft": "clone INT2g64 clip-MSE (formato quente real da v0.2.0)",
+          "tf_accept_rate": 0.0208,
+          "tau_est_geometrica_K": 1.021
+        },
+        "sweeps": 12,
+        "vanilla_tok_s_py": 17.086,
+        "burst_tok_s_py": 5.814,
+        "burst_vs_vanilla_py": 0.34,
+        "greedy_equivalence": true,
+        "t_forward_1tok_ms": 52.32,
+        "t_forward_Ktok_ms": 105.61,
+        "verify_amortization_x": 3.963
+      },
+      "projected_native": {
+        "bits_hot": 2.5,
+        "bytes_per_sweep_gb": 0.1118,
+        "draft_proxy_bits": 5,
+        "orb_ratio_assumido": 0.03,
+        "tok_s_int2_vanilla": 98.73,
+        "tok_s_int2_burst": 193.07,
+        "speedup_burst_x": 1.96,
+        "tok_s_int2_burst_se_draft_custa_como_proxy": 24.2,
+        "speedup_se_draft_custa_como_proxy_x": 0.25,
+        "nota_dupla_projecao": "limite otimista assume draft ORB a 3% da varredura (hipoteses H1/H4, nao demonstradas no M0); limite pessimista cobra o draft ao custo integral do proxy INT4g32 que gerou o tau (burst vira DESACELERACAO). O valor nativo real depende de H1 e ficara entre os dois."
+      },
+      "honest_note": "tau e medido com draft proxy INT4g32 — qualidade que um draft ORB destilado precisa atingir (H1); o draft INT2g64 do formato quente atual (probe em draft_probe_int2_hot) ainda nao sustenta aceitacao util. A projecao BPAT assume o custo de draft ORB (3% da varredura), NAO o custo do proxy. Em Python o draft custa igual ao alvo, entao burst_vs_vanilla_py <1x E ESPERADO; o que valida o pilar sao tau, a equivalencia greedy e a amortizacao t(K)/t(1).",
+      "e2e": {
+        "measured": true,
+        "scope": "python_reference_wall_clock"
+      }
+    },
+    "measurement_scope": "tok/s medido em Python (wall-clock, mesmo protocolo p/ vanilla e burst) — não representa kernel nativo; tau/amortização MEDIDOS com draft proxy INT4g32 (H1 condicional)",
+    "notes": ""
+  },
+  {
+    "schema_version": 2,
+    "timestamp_utc": "2026-08-10T17:14:12.801434+00:00",
+    "run_id": "geyser-20260810T171252-dc46ac42",
+    "spec": "GEYSER-LM v0.2.0",
+    "technology": "GEYSER",
+    "model_id": "Qwen/Qwen2.5-0.5B",
+    "battery_id": "G4_GEYSER_EQC",
+    "benchmark_protocol": "GEYSER_M0_G0_V1",
+    "comparison_group_id": "cmp-007804998c6c3a632bcd28ee",
+    "comparison_context": {
+      "protocol": "GEYSER_M0_G0_V1",
+      "device": "cpu",
+      "torch": "2.5.1+cu124",
+      "transformers": "4.46.3",
+      "python": "3.11.15"
+    },
+    "implementation": {
+      "kind": "SIMULATED",
+      "native": false,
+      "simulated": true
+    },
+    "eligible_for_primary_ranking": false,
+    "status": "PASS",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {},
+    "quality": {},
+    "metrics": {
+      "label": "controlador PI EXECUTADO sobre curvas medidas em G2/G3 (planta analitica BPAT)",
+      "target_tok_s": 249.18,
+      "quality_floor": 0.985,
+      "rho_min_para_piso": 0.05,
+      "tps_max_alcancavel": 415.29,
+      "trajectory": [
+        {
+          "iter": 0,
+          "K": 5.52,
+          "rho": 1,
+          "tok_s_est": 115.08,
+          "quality_est": 0.99999
+        },
+        {
+          "iter": 1,
+          "K": 5.45,
+          "rho": 1,
+          "tok_s_est": 270.54,
+          "quality_est": 0.99999
+        },
+        {
+          "iter": 2,
+          "K": 5.5,
+          "rho": 1,
+          "tok_s_est": 263.81,
+          "quality_est": 0.99999
+        },
+        {
+          "iter": 3,
+          "K": 5.59,
+          "rho": 1,
+          "tok_s_est": 260.28,
+          "quality_est": 0.99999
+        },
+        {
+          "iter": 4,
+          "K": 5.43,
+          "rho": 1,
+          "tok_s_est": 266.57,
+          "quality_est": 0.99999
+        },
+        {
+          "iter": 5,
+          "K": 5.48,
+          "rho": 1,
+          "tok_s_est": 257.55,
+          "quality_est": 0.99999
+        },
+        {
+          "iter": 6,
+          "K": 5.16,
+          "rho": 1,
+          "tok_s_est": 267.46,
+          "quality_est": 0.99999
+        },
+        {
+          "iter": 7,
+          "K": 4.73,
+          "rho": 1,
+          "tok_s_est": 268.1,
+          "quality_est": 0.99999
+        },
+        {
+          "iter": 8,
+          "K": 5.1,
+          "rho": 1,
+          "tok_s_est": 241.72,
+          "quality_est": 0.99999
+        },
+        {
+          "iter": 9,
+          "K": 5.18,
+          "rho": 1,
+          "tok_s_est": 251.15,
+          "quality_est": 0.99999
+        },
+        {
+          "iter": 10,
+          "K": 4.89,
+          "rho": 1,
+          "tok_s_est": 262.17,
+          "quality_est": 0.99999
+        },
+        {
+          "iter": 11,
+          "K": 4.85,
+          "rho": 1,
+          "tok_s_est": 252.55,
+          "quality_est": 0.99999
+        }
+      ],
+      "settled_within_12_iters": true,
+      "floor_respected": true,
+      "contract": "qualidade cede (rho desce ate rho_min), latencia nao; abaixo do piso o controlador para de ceder"
+    },
+    "measurement_scope": "suite GEYSER M0/G0 v0.2.0 — métricas rotuladas MEDIDO/SIMULADO/PROJETADO em metrics",
+    "notes": ""
+  },
+  {
+    "schema_version": 2,
+    "timestamp_utc": "2026-08-10T17:14:14.488720+00:00",
+    "run_id": "geyser-20260810T171252-dc46ac42",
+    "spec": "GEYSER-LM v0.2.0",
+    "technology": "GEYSER",
+    "model_id": "Qwen/Qwen2.5-0.5B",
+    "battery_id": "G5_GEYSER_ELASTIC_KV",
+    "benchmark_protocol": "GEYSER_M0_G0_V1",
+    "comparison_group_id": "cmp-007804998c6c3a632bcd28ee",
+    "comparison_context": {
+      "protocol": "GEYSER_M0_G0_V1",
+      "device": "cpu",
+      "torch": "2.5.1+cu124",
+      "transformers": "4.46.3",
+      "python": "3.11.15"
+    },
+    "implementation": {
+      "kind": "REFERENCE_MEASURED",
+      "native": false,
+      "simulated": false
+    },
+    "eligible_for_primary_ranking": false,
+    "status": "PASS",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {},
+    "quality": {},
+    "metrics": {
+      "label": "MEDIDO (KV real do prefixo; KIVI-classe real: tokens ancora + janela recente em FP16 residual, miolo 2-bit assimetrico em grupos; chave por canal ao longo da sequencia, valor por token ao longo de head_dim)",
+      "prefix_tokens": 53,
+      "config": {
+        "sink_tokens": 4,
+        "window_tokens": 8,
+        "group": 32,
+        "quantized_tokens": 41
+      },
+      "kv_bits_effective": {
+        "nota": "bits/elemento REAIS do prefixo medido, ponderando o residual FP16 (sink+janela) — nao apenas o miolo",
+        "keys": 6.377,
+        "values": 5.943
+      },
+      "kv_bits_quantized_region": {
+        "keys": 3.561,
+        "values": 3
+      },
+      "kv_bits_prefix_weighted_fp16_resid": 6.16,
+      "kv_bits_asymptotic_long_ctx": {
+        "keys": 3,
+        "values": 3
+      },
+      "first_step_kl": 0.002168,
+      "top1_agreement_12steps": 1,
+      "nota_medicao": "os tokens gerados durante os 12 passos entram no cache em FP (comportamento de janela corrente KIVI); o regime assintotico de contexto longo NAO e exercitado neste prefixo curto — os bits assintoticos sao formula, nao medicao (por isso ficam fora de 'measured' no gain report).",
+      "gate_g0": "top1 >= 0.90 (spec Sec. 19)"
+    },
+    "measurement_scope": "suite GEYSER M0/G0 v0.2.0 — métricas rotuladas MEDIDO/SIMULADO/PROJETADO em metrics",
+    "notes": ""
+  },
+  {
+    "schema_version": 2,
+    "timestamp_utc": "2026-08-10T17:14:14.488720+00:00",
+    "run_id": "cmp-66db48bd",
+    "spec": "compare_generations v1",
+    "technology": "AETHER",
+    "model_id": "Qwen/Qwen2.5-0.5B",
+    "battery_id": "CMP_AETHER_GENERATIONS",
+    "benchmark_protocol": "COMPARE_GENERATIONS_V1",
+    "comparison_group_id": "cmp-053a9f92db13a38333260571",
+    "comparison_context": {
+      "protocol": "COMPARE_GENERATIONS_V1",
+      "device": "cpu",
+      "torch": "2.5.1+cu124",
+      "transformers": "4.46.3",
+      "python": "3.11.15"
+    },
+    "implementation": {
+      "kind": "REFERENCE_MEASURED",
+      "native": false,
+      "simulated": false
+    },
+    "eligible_for_primary_ranking": false,
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {},
+    "quality": {
+      "full_local_gate_pass": false,
+      "output": {
+        "cosine": 0.909027,
+        "nrmse": null
+      }
+    },
+    "metrics": {
+      "compare": {
+        "top1_agreement": 0,
+        "mean_kl": 14.12489,
+        "ppl": 41542308,
+        "ppl_original": 49.105,
+        "ppl_ratio": 845989.3697179514,
+        "gen_sample": "\\\"\\🙂🙂\\\"\\🙂🙂\\\"\\🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂",
+        "bits_eff_blocos": 2.393,
+        "seconds": 15,
+        "linears_patched": 168,
+        "scheme_tensor": {
+          "base_sign_ternary": {
+            "output_cos": 0.786237,
+            "output_nrmse": 0.639518,
+            "weight_nrmse": 0.654596
+          },
+          "base_r16_sempre": {
+            "output_cos": 0.907395,
+            "output_nrmse": 0.420507,
+            "weight_nrmse": 0.629704,
+            "extra_bits": 0.3383
+          },
+          "tadds_ladder_rank": {
+            "0": {
+              "output_cos": 0.786237,
+              "output_nrmse": 0.639518,
+              "weight_nrmse": 0.654596,
+              "extra_bits": 0
+            },
+            "2": {
+              "output_cos": 0.881745,
+              "output_nrmse": 0.472393,
+              "weight_nrmse": 0.648852,
+              "extra_bits": 0.0423
+            },
+            "8": {
+              "output_cos": 0.8894,
+              "output_nrmse": 0.457537,
+              "weight_nrmse": 0.640097,
+              "extra_bits": 0.1692
+            },
+            "16": {
+              "output_cos": 0.909027,
+              "output_nrmse": 0.416875,
+              "weight_nrmse": 0.629792,
+              "extra_bits": 0.3383
+            }
+          },
+          "zero_fraction_sign": 0.000004,
+          "bits_ans_bound_medido": 1.0001,
+          "bits_alegado_arquivo": 0.85,
+          "nota": "sign() quase nao gera zeros => entropia ~1 bit/param; 0,85b exigiria ~82%+ de zeros e, mesmo assim, seria densidade de ARQUIVO (ANS nao e computavel no GEMV — F-A1). Seletor de rank por token e circular (F-A2); a ladder mede apenas o teto."
+        },
+        "ceilings": {
+          "label": "PROJETADO — teto = BW_medida / bytes_por_token (embeddings/lm_head @ INT8); burst multiplica pelo tau MEDIDO no G3",
+          "bw_gbps_medida": 11.04,
+          "tau_medido_g3": 4.4167,
+          "por_esquema_tok_s": {
+            "AETHER_2b_r16_sempre": 45.39,
+            "CASCADE_int4_r16_sempre": 29.25,
+            "RIFT_int2_r16": 41.57,
+            "GEYSER_int2_rrs15": 36.59,
+            "GEYSER_int2_rrs15_burst": 161.62
+          }
+        },
+        "ceilings_label": "PROJETADO"
+      }
+    },
+    "measurement_scope": "comparação e2e real com 168 Linear patchadas; PPL/top1/KL medidos; tetos são PROJETADOS",
+    "notes": "sign() quase nao gera zeros => entropia ~1 bit/param; 0,85b exigiria ~82%+ de zeros e, mesmo assim, seria densidade de ARQUIVO (ANS nao e computavel no GEMV — F-A1). Seletor de rank por token e circular (F-A2); a ladder mede apenas o teto."
+  },
+  {
+    "schema_version": 2,
+    "timestamp_utc": "2026-08-10T17:14:14.488720+00:00",
+    "run_id": "cmp-66db48bd",
+    "spec": "compare_generations v1",
+    "technology": "CASCADE",
+    "model_id": "Qwen/Qwen2.5-0.5B",
+    "battery_id": "CMP_CASCADE_GENERATIONS",
+    "benchmark_protocol": "COMPARE_GENERATIONS_V1",
+    "comparison_group_id": "cmp-053a9f92db13a38333260571",
+    "comparison_context": {
+      "protocol": "COMPARE_GENERATIONS_V1",
+      "device": "cpu",
+      "torch": "2.5.1+cu124",
+      "transformers": "4.46.3",
+      "python": "3.11.15"
+    },
+    "implementation": {
+      "kind": "REFERENCE_MEASURED",
+      "native": false,
+      "simulated": false
+    },
+    "eligible_for_primary_ranking": false,
+    "status": "PASS",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {},
+    "quality": {
+      "full_local_gate_pass": true,
+      "output": {
+        "cosine": 0.998609,
+        "nrmse": null
+      }
+    },
+    "metrics": {
+      "compare": {
+        "top1_agreement": 0.7422,
+        "mean_kl": 0.14805,
+        "ppl": 55.856,
+        "ppl_original": 49.105,
+        "ppl_ratio": 1.137480908257815,
+        "gen_sample": " A largura de banda de memória (GB) é um fator importante na velocidade de geração de um",
+        "bits_eff_blocos": 5.393,
+        "seconds": 17.2,
+        "linears_patched": 168,
+        "scheme_tensor": {
+          "F0_int4g32": {
+            "output_cos": 0.998529,
+            "output_nrmse": 0.054346,
+            "weight_nrmse": 0.081509,
+            "bits_base": 5
+          },
+          "F0_r16_sempre": {
+            "output_cos": 0.998609,
+            "output_nrmse": 0.052829,
+            "weight_nrmse": 0.079588,
+            "extra_bits": 0.3383
+          },
+          "gate_oracle": {
+            "f1_rate": 1,
+            "f1_skip_rate": 0,
+            "criterio": "cos >= 0.999 nao atingido nem com F1 sempre"
+          },
+          "nota": "mesmo com skip alto, TODOS os bytes de F0 sao lidos por token (F-C1): o gate corta custo adicional, nao o piso de banda."
+        },
+        "ceilings": {
+          "label": "PROJETADO — teto = BW_medida / bytes_por_token (embeddings/lm_head @ INT8); burst multiplica pelo tau MEDIDO no G3",
+          "bw_gbps_medida": 11.04,
+          "tau_medido_g3": 4.4167,
+          "por_esquema_tok_s": {
+            "AETHER_2b_r16_sempre": 45.39,
+            "CASCADE_int4_r16_sempre": 29.25,
+            "RIFT_int2_r16": 41.57,
+            "GEYSER_int2_rrs15": 36.59,
+            "GEYSER_int2_rrs15_burst": 161.62
+          }
+        },
+        "ceilings_label": "PROJETADO"
+      }
+    },
+    "measurement_scope": "comparação e2e real com 168 Linear patchadas; PPL/top1/KL medidos; tetos são PROJETADOS",
+    "notes": "mesmo com skip alto, TODOS os bytes de F0 sao lidos por token (F-C1): o gate corta custo adicional, nao o piso de banda."
+  },
+  {
+    "schema_version": 2,
+    "timestamp_utc": "2026-08-10T17:14:14.488720+00:00",
+    "run_id": "cmp-66db48bd",
+    "spec": "compare_generations v1",
+    "technology": "RIFT",
+    "model_id": "Qwen/Qwen2.5-0.5B",
+    "battery_id": "CMP_RIFT_GENERATIONS",
+    "benchmark_protocol": "COMPARE_GENERATIONS_V1",
+    "comparison_group_id": "cmp-053a9f92db13a38333260571",
+    "comparison_context": {
+      "protocol": "COMPARE_GENERATIONS_V1",
+      "device": "cpu",
+      "torch": "2.5.1+cu124",
+      "transformers": "4.46.3",
+      "python": "3.11.15"
+    },
+    "implementation": {
+      "kind": "REFERENCE_MEASURED",
+      "native": false,
+      "simulated": false
+    },
+    "eligible_for_primary_ranking": false,
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {},
+    "quality": {
+      "full_local_gate_pass": false,
+      "output": {
+        "cosine": 0.998529,
+        "nrmse": null
+      }
+    },
+    "metrics": {
+      "compare": {
+        "top1_agreement": 0.0391,
+        "mean_kl": 5.9986,
+        "ppl": 22031.928,
+        "ppl_original": 49.105,
+        "ppl_ratio": 448.6697484981163,
+        "gen_sample": " of restors to r and r re to r to r r r r r r r r r r r r",
+        "bits_eff_blocos": 2.893,
+        "seconds": 69.2,
+        "linears_patched": 168,
+        "scheme_tensor": {
+          "int2g64_base": {
+            "output_cos": 0.961617,
+            "output_nrmse": 0.290098,
+            "weight_nrmse": 0.343331,
+            "bits": 2.5
+          },
+          "int2g64_mais_r16": {
+            "output_cos": 0.97643,
+            "output_nrmse": 0.21601,
+            "weight_nrmse": 0.33475,
+            "bits": 2.8383
+          },
+          "int4g32": {
+            "output_cos": 0.998529,
+            "output_nrmse": 0.054346,
+            "weight_nrmse": 0.081509,
+            "bits": 5
+          },
+          "nota": "representacao progressiva ok, mas paging no caminho critico (F-R2) e nenhuma reducao de varreduras/token (F-R1)."
+        },
+        "ceilings": {
+          "label": "PROJETADO — teto = BW_medida / bytes_por_token (embeddings/lm_head @ INT8); burst multiplica pelo tau MEDIDO no G3",
+          "bw_gbps_medida": 11.04,
+          "tau_medido_g3": 4.4167,
+          "por_esquema_tok_s": {
+            "AETHER_2b_r16_sempre": 45.39,
+            "CASCADE_int4_r16_sempre": 29.25,
+            "RIFT_int2_r16": 41.57,
+            "GEYSER_int2_rrs15": 36.59,
+            "GEYSER_int2_rrs15_burst": 161.62
+          }
+        },
+        "ceilings_label": "PROJETADO"
+      }
+    },
+    "measurement_scope": "comparação e2e real com 168 Linear patchadas; PPL/top1/KL medidos; tetos são PROJETADOS",
+    "notes": "representacao progressiva ok, mas paging no caminho critico (F-R2) e nenhuma reducao de varreduras/token (F-R1)."
+  },
+  {
+    "schema_version": 2,
+    "timestamp_utc": "2026-08-10T17:14:14.488720+00:00",
+    "run_id": "cmp-66db48bd",
+    "spec": "compare_generations v1",
+    "technology": "GEYSER",
+    "model_id": "Qwen/Qwen2.5-0.5B",
+    "battery_id": "CMP_GEYSER_GENERATIONS",
+    "benchmark_protocol": "COMPARE_GENERATIONS_V1",
+    "comparison_group_id": "cmp-053a9f92db13a38333260571",
+    "comparison_context": {
+      "protocol": "COMPARE_GENERATIONS_V1",
+      "device": "cpu",
+      "torch": "2.5.1+cu124",
+      "transformers": "4.46.3",
+      "python": "3.11.15"
+    },
+    "implementation": {
+      "kind": "REFERENCE_MEASURED",
+      "native": false,
+      "simulated": false
+    },
+    "eligible_for_primary_ranking": false,
+    "status": "EXPERIMENTAL_FAIL",
+    "comparison_role": null,
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {},
+    "quality": {
+      "full_local_gate_pass": false,
+      "output": {
+        "cosine": 0.991713,
+        "nrmse": null
+      }
+    },
+    "metrics": {
+      "compare": {
+        "top1_agreement": 0.375,
+        "mean_kl": 1.2973,
+        "ppl": 171.703,
+        "ppl_original": 49.105,
+        "ppl_ratio": 3.496650035637919,
+        "gen_sample": " A velocidade de geracao de um modelo de linguagem rodando em uma CPU comum é o limite de veloc",
+        "bits_eff_blocos": 3.7,
+        "seconds": 67.1,
+        "linears_patched": 168,
+        "scheme_tensor": {
+          "rho_0.05": {
+            "output_cos": 0.985973,
+            "output_nrmse": 0.166908,
+            "weight_nrmse": 0.333213,
+            "salient_cols": 45,
+            "bits": 2.9
+          },
+          "rho_0.15": {
+            "output_cos": 0.989016,
+            "output_nrmse": 0.147807,
+            "weight_nrmse": 0.314787,
+            "salient_cols": 134,
+            "bits": 3.7
+          },
+          "rho_0.30": {
+            "output_cos": 0.991713,
+            "output_nrmse": 0.128476,
+            "weight_nrmse": 0.285526,
+            "salient_cols": 269,
+            "bits": 4.9
+          },
+          "nota": "residual INT8 apenas nas colunas salientes; em miss computa so com a base (qualidade cede, latencia nao)."
+        },
+        "ceilings": {
+          "label": "PROJETADO — teto = BW_medida / bytes_por_token (embeddings/lm_head @ INT8); burst multiplica pelo tau MEDIDO no G3",
+          "bw_gbps_medida": 11.04,
+          "tau_medido_g3": 4.4167,
+          "por_esquema_tok_s": {
+            "AETHER_2b_r16_sempre": 45.39,
+            "CASCADE_int4_r16_sempre": 29.25,
+            "RIFT_int2_r16": 41.57,
+            "GEYSER_int2_rrs15": 36.59,
+            "GEYSER_int2_rrs15_burst": 161.62
+          }
+        },
+        "ceilings_label": "PROJETADO"
+      }
+    },
+    "measurement_scope": "comparação e2e real com 168 Linear patchadas; PPL/top1/KL medidos; tetos são PROJETADOS",
+    "notes": "residual INT8 apenas nas colunas salientes; em miss computa so com a base (qualidade cede, latencia nao)."
   }
 ]

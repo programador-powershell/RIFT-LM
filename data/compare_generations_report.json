@@ -1,0 +1,176 @@
+{
+  "model": "Qwen/Qwen2.5-0.5B",
+  "target_linear": "model.layers.12.mlp.gate_proj",
+  "shape": [
+    4864,
+    896
+  ],
+  "labels": {
+    "qualidade/agreement/ppl": "MEDIDO",
+    "tetos_tok_s": "PROJETADO (lei de banda, BW medida na B0)"
+  },
+  "schemes_tensor": {
+    "AETHER": {
+      "base_sign_ternary": {
+        "output_cos": 0.786237,
+        "output_nrmse": 0.639518,
+        "weight_nrmse": 0.654596
+      },
+      "base_r16_sempre": {
+        "output_cos": 0.907395,
+        "output_nrmse": 0.420507,
+        "weight_nrmse": 0.629704,
+        "extra_bits": 0.3383
+      },
+      "tadds_ladder_rank": {
+        "0": {
+          "output_cos": 0.786237,
+          "output_nrmse": 0.639518,
+          "weight_nrmse": 0.654596,
+          "extra_bits": 0.0
+        },
+        "2": {
+          "output_cos": 0.881745,
+          "output_nrmse": 0.472393,
+          "weight_nrmse": 0.648852,
+          "extra_bits": 0.0423
+        },
+        "8": {
+          "output_cos": 0.8894,
+          "output_nrmse": 0.457537,
+          "weight_nrmse": 0.640097,
+          "extra_bits": 0.1692
+        },
+        "16": {
+          "output_cos": 0.909027,
+          "output_nrmse": 0.416875,
+          "weight_nrmse": 0.629792,
+          "extra_bits": 0.3383
+        }
+      },
+      "zero_fraction_sign": 4e-06,
+      "bits_ans_bound_medido": 1.0001,
+      "bits_alegado_arquivo": 0.85,
+      "nota": "sign() quase nao gera zeros => entropia ~1 bit/param; 0,85b exigiria ~82%+ de zeros e, mesmo assim, seria densidade de ARQUIVO (ANS nao e computavel no GEMV — F-A1). Seletor de rank por token e circular (F-A2); a ladder mede apenas o teto."
+    },
+    "CASCADE": {
+      "F0_int4g32": {
+        "output_cos": 0.998529,
+        "output_nrmse": 0.054346,
+        "weight_nrmse": 0.081509,
+        "bits_base": 5.0
+      },
+      "F0_r16_sempre": {
+        "output_cos": 0.998609,
+        "output_nrmse": 0.052829,
+        "weight_nrmse": 0.079588,
+        "extra_bits": 0.3383
+      },
+      "gate_oracle": {
+        "f1_rate": 1.0,
+        "f1_skip_rate": 0.0,
+        "criterio": "cos >= 0.999 nao atingido nem com F1 sempre"
+      },
+      "nota": "mesmo com skip alto, TODOS os bytes de F0 sao lidos por token (F-C1): o gate corta custo adicional, nao o piso de banda."
+    },
+    "RIFT": {
+      "int2g64_base": {
+        "output_cos": 0.961617,
+        "output_nrmse": 0.290098,
+        "weight_nrmse": 0.343331,
+        "bits": 2.5
+      },
+      "int2g64_mais_r16": {
+        "output_cos": 0.97643,
+        "output_nrmse": 0.21601,
+        "weight_nrmse": 0.33475,
+        "bits": 2.8383
+      },
+      "int4g32": {
+        "output_cos": 0.998529,
+        "output_nrmse": 0.054346,
+        "weight_nrmse": 0.081509,
+        "bits": 5.0
+      },
+      "nota": "representacao progressiva ok, mas paging no caminho critico (F-R2) e nenhuma reducao de varreduras/token (F-R1)."
+    },
+    "GEYSER": {
+      "rho_0.05": {
+        "output_cos": 0.985973,
+        "output_nrmse": 0.166908,
+        "weight_nrmse": 0.333213,
+        "salient_cols": 45,
+        "bits": 2.9
+      },
+      "rho_0.15": {
+        "output_cos": 0.989016,
+        "output_nrmse": 0.147807,
+        "weight_nrmse": 0.314787,
+        "salient_cols": 134,
+        "bits": 3.7
+      },
+      "rho_0.30": {
+        "output_cos": 0.991713,
+        "output_nrmse": 0.128476,
+        "weight_nrmse": 0.285526,
+        "salient_cols": 269,
+        "bits": 4.9
+      },
+      "nota": "residual INT8 apenas nas colunas salientes; em miss computa so com a base (qualidade cede, latencia nao)."
+    }
+  },
+  "e2e": {
+    "ORIGINAL": {
+      "ppl_calib": 49.105,
+      "gen_sample": " A largura de banda de memória (LBM) é um fator importante na velocidade de geração de"
+    },
+    "AETHER": {
+      "linears_patched": 168,
+      "bits_eff_blocos": 2.393,
+      "top1_agreement_calib": 0.0,
+      "mean_kl_calib": 14.12489,
+      "ppl_calib": 41542308.0,
+      "gen_sample": "\\\"\\🙂🙂\\\"\\🙂🙂\\\"\\🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂",
+      "seconds": 15.0
+    },
+    "CASCADE": {
+      "linears_patched": 168,
+      "bits_eff_blocos": 5.393,
+      "top1_agreement_calib": 0.7422,
+      "mean_kl_calib": 0.14805,
+      "ppl_calib": 55.856,
+      "gen_sample": " A largura de banda de memória (GB) é um fator importante na velocidade de geração de um",
+      "seconds": 17.2
+    },
+    "RIFT": {
+      "linears_patched": 168,
+      "bits_eff_blocos": 2.893,
+      "top1_agreement_calib": 0.0391,
+      "mean_kl_calib": 5.9986,
+      "ppl_calib": 22031.928,
+      "gen_sample": " of restors to r and r re to r to r r r r r r r r r r r r",
+      "seconds": 69.2
+    },
+    "GEYSER": {
+      "linears_patched": 168,
+      "bits_eff_blocos": 3.7,
+      "top1_agreement_calib": 0.375,
+      "mean_kl_calib": 1.2973,
+      "ppl_calib": 171.703,
+      "gen_sample": " A velocidade de geracao de um modelo de linguagem rodando em uma CPU comum é o limite de veloc",
+      "seconds": 67.1
+    }
+  },
+  "ceilings": {
+    "label": "PROJETADO — teto = BW_medida / bytes_por_token (embeddings/lm_head @ INT8); burst multiplica pelo tau MEDIDO no G3",
+    "bw_gbps_medida": 11.04,
+    "tau_medido_g3": 4.4167,
+    "por_esquema_tok_s": {
+      "AETHER_2b_r16_sempre": 45.39,
+      "CASCADE_int4_r16_sempre": 29.25,
+      "RIFT_int2_r16": 41.57,
+      "GEYSER_int2_rrs15": 36.59,
+      "GEYSER_int2_rrs15_burst": 161.62
+    }
+  }
+}

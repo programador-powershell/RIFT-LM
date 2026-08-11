@@ -64,11 +64,6 @@
       "destination": "/api/test?battery=final&technology=:tech&model=:model*"
     }
   ],
-  "functions": {
-    "api/geyser.mjs": {
-      "includeFiles": "engines/geyser/geyser_launcher.py"
-    }
-  },
   "headers": [
     {
       "source": "/data/(.*)",

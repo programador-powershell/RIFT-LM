@@ -1,0 +1,97 @@
+CASCADE-DIR v0.1 — FORMATO DE DESENVOLVIMENTO
+================================================
+
+Status:
+    Development / Converter output.
+    NÃO é o Bundle M0 binário congelado.
+
+Objetivo:
+    permitir começar a converter modelos reais sem inventar um ABI binário que
+    a especificação CASCADE v0.3 ainda não congelou.
+
+Estrutura:
+
+    model.cascade/
+        cascade_manifest.json
+        cascade_ir.json
+        gate_config.json
+        dashboard_battery.json
+        source_config/
+        tensors/<tensor_id>/
+
+Tensor convertido:
+
+    F0:
+        f0.int4
+        f0.scales.f16
+
+    F1 opcional:
+        f1.u.f16
+        f1.v.f16
+
+Representação:
+
+    W ~= dequant(F0) + U @ V^T
+
+F0:
+    INT4 signed two's complement
+    groupwise na última dimensão
+    scales FP16
+
+F1:
+    low-rank
+    U FP16
+    V FP16
+
+Gate:
+    não calibrado pelo weight converter.
+    Default seguro:
+        F1_ALWAYS_WHEN_PRESENT
+
+Fallback:
+    f0.raw
+    bytes exatos do tensor original quando disponível.
+
+Manifesto / retomada:
+    cascade_manifest.json é gravado incrementalmente (tmp + os.replace
+    atômico) após cada tensor concluído. Ele é a fonte de verdade do
+    --resume: tensores cujo registro existe e cujos arquivos de estágio
+    batem em existência+tamanho são pulados. Registros de shards de origem
+    já apagados (--delete-source-shards) são preservados na retomada.
+
+Disco (Colab ~120 GB):
+    --disk-budget-gb (padrão 75): orçamento máximo de saída. Antes de cada
+    tensor o conversor projeta o pico de escrita e consulta
+    shutil.disk_usage; ao exceder o orçamento ou a margem mínima de disco
+    livre (1 GiB) ele aborta limpo com estado retomável.
+    --delete-source-shards (opt-in): modo pacote-por-pacote; apaga cada
+    shard .safetensors de origem após todos os seus tensores serem
+    convertidos e verificados. Recusado se entrada == saída; fora do
+    Colab exige RIFT_ALLOW_LOCAL_CLEANUP=1.
+
+dashboard_battery.json (schema v2):
+    schema_version 2; benchmark_protocol CONVERTER_STATIC_V1;
+    comparison_group_id = cmp-<sha256[:24]> de protocol|model_id|device|torch;
+    comparison_context {protocol, device, torch, transformers, python, ...};
+    implementation {kind: REFERENCE_MEASURED, native: false, simulated: false};
+    campos candidate_* ao lado dos aliases legados rift_*;
+    *_ram_bytes de nível superior = null (sem medição de RSS);
+    estimativas aritméticas em metrics.memory.estimated_*;
+    tok/s = null (não medido).
+    --publish (opt-in) envia o registro via HTTPS com Bearer
+    RIFT_INGEST_TOKEN (>=32 caracteres).
+
+CASCADE-IR:
+    a versão 0.1 NÃO fabrica o DAG a partir do nome dos pesos.
+    operations[] permanece vazio até um architecture adapter construir o grafo.
+
+Regra:
+    inferir grafo topológico apenas por naming convention é proibido.
+
+Qualidade:
+    local cosine/NRMSE são pre-screen.
+    Não equivalem a validação de logits/perplexidade/geração.
+
+Próximo formato:
+    Bundle M0 binário deve substituir CASCADE-DIR após Header, Stage Table,
+    Gate Table e checksums serem congelados.

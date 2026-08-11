@@ -29,6 +29,21 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Compila TODOS os .py versionados (raiz, cascade/**, conversores, série
+      # C3 quando presente). O glob é dinâmico via git ls-files, então arquivos
+      # novos entram automaticamente — bugs classe NameError/SyntaxError não
+      # passam despercebidos.
+      - name: Python compile check (all tracked .py)
+        run: |
+          set -euo pipefail
+          git ls-files -z '*.py' | xargs -0 --no-run-if-empty python -m py_compile
+          echo "py_compile OK ($(git ls-files '*.py' | wc -l) arquivos)"
+
       - name: Install
         run: npm install --ignore-scripts --no-audit --no-fund
 

@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1060" viewBox="0 0 1280 1060" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#8a8a86"/>
+    </marker>
+  </defs>
+  <rect width="1280" height="1060" fill="#0b0b0d"/>
+
+  <text x="640" y="40" text-anchor="middle" fill="#b9b9b4" font-size="15" letter-spacing="6">TOKENS</text>
+  <line x1="640" y1="52" x2="640" y2="76" stroke="#8a8a86" stroke-width="1.4" marker-end="url(#arr)"/>
+
+  <g>
+    <rect x="410" y="80" width="460" height="52" fill="#141416" stroke="#4a4a46" stroke-width="1"/>
+    <text x="640" y="107" text-anchor="middle" fill="#d8d8d2" font-size="16">Embedding &#183; 8192 &#215; 512 (tied) &#183; digito-a-digito no vocab</text>
+    <text x="640" y="124" text-anchor="middle" fill="#8f8f89" font-size="12" font-style="italic">logits = ZCRMSNorm(x) E&#8548; &#183; &#945;&#8342;  (escala de logit aprendida, muP-safe)</text>
+  </g>
+  <line x1="640" y1="132" x2="640" y2="158" stroke="#8a8a86" stroke-width="1.4" marker-end="url(#arr)"/>
+
+  <rect x="200" y="162" width="880" height="620" fill="none" stroke="#5a5a55" stroke-width="1.2" stroke-dasharray="7 5"/>
+  <text x="1052" y="186" text-anchor="end" fill="#b9b9b4" font-size="14" letter-spacing="4">&#215; 27 LAYERS</text>
+
+  <g>
+    <rect x="290" y="200" width="700" height="66" fill="#141416" stroke="#4a4a46"/>
+    <text x="640" y="226" text-anchor="middle" fill="#d8d8d2" font-size="16">mHC lane read</text>
+    <text x="640" y="248" text-anchor="middle" fill="#9a9a94" font-size="13" font-style="italic">x&#772; = &#931;&#8342; &#963;(a&#8342; &#966;&#8342;&#7488;x&#770; + b&#8342;) X&#8342;,   init: a=0, &#963;(b)=1/K  &#8658; leitura = media exata</text>
+    <rect x="292" y="202" width="46" height="18" fill="#3d2b13" stroke="#c97f2e" stroke-width="0.8"/>
+    <text x="315" y="215" text-anchor="middle" fill="#e8a04c" font-size="11">FIX 3</text>
+  </g>
+  <line x1="640" y1="266" x2="640" y2="290" stroke="#8a8a86" stroke-width="1.4" marker-end="url(#arr)"/>
+
+  <g>
+    <rect x="290" y="294" width="700" height="76" fill="#141416" stroke="#4a4a46" stroke-dasharray="5 4"/>
+    <text x="640" y="318" text-anchor="middle" fill="#d8d8d2" font-size="16">Engram fusion &#183; n-gramas hasheados &#183; camadas {4, 14} &#183; K=4 hashes &#215; ordens {2,3}</text>
+    <text x="640" y="340" text-anchor="middle" fill="#9a9a94" font-size="13" font-style="italic">x&#8348; &#8592; x&#8348; + (1/KO) &#931;&#8347; &#963;(&#964;&#8338;&#10216;x&#770;&#8348;, k&#770;&#8347;&#10217; + &#946;&#8338;)&#183;v&#8347;,   v zero-init</text>
+    <text x="640" y="360" text-anchor="middle" fill="#7d7d77" font-size="12">antes: &#963;(&#10216;x&#770;,k&#770;&#10217;/&#8730;d) &#8712; [0.489, 0.511] &#8212; gate morto; colisao 1-hash ~38% &#8594; ~2% com K=4</text>
+    <rect x="292" y="296" width="46" height="18" fill="#3d1a1a" stroke="#c94b3c" stroke-width="0.8"/>
+    <text x="315" y="309" text-anchor="middle" fill="#e86a55" font-size="11">FIX 1</text>
+  </g>
+  <line x1="640" y1="370" x2="640" y2="394" stroke="#8a8a86" stroke-width="1.4" marker-end="url(#arr)"/>
+
+  <g>
+    <rect x="290" y="398" width="700" height="76" fill="#141416" stroke="#4a4a46"/>
+    <text x="640" y="422" text-anchor="middle" fill="#d8d8d2" font-size="16">GQA 8q/2kv &#183; QK-RMSNorm &#183; RoPE cache-relativo &#183; janela 256 + pinned sinks</text>
+    <text x="640" y="444" text-anchor="middle" fill="#9a9a94" font-size="13" font-style="italic">o&#8348; = softmax(q&#8348;K&#7488;/&#8730;d&#8341;)V sobre S &#8746; [t&#8722;256, t];  K pre-RoPE no cache, pos = indice no cache</text>
+    <text x="640" y="464" text-anchor="middle" fill="#7d7d77" font-size="12">dist. aos sinks fica constante sob eviccao (StreamingLLM); W&#8338; zero-init</text>
+    <rect x="292" y="400" width="46" height="18" fill="#3d2b13" stroke="#c97f2e" stroke-width="0.8"/>
+    <text x="315" y="413" text-anchor="middle" fill="#e8a04c" font-size="11">FIX 4</text>
+    <rect x="344" y="400" width="46" height="18" fill="#3d2b13" stroke="#c97f2e" stroke-width="0.8"/>
+    <text x="367" y="413" text-anchor="middle" fill="#e8a04c" font-size="11">FIX 3</text>
+  </g>
+  <line x1="640" y1="474" x2="640" y2="498" stroke="#8a8a86" stroke-width="1.4" marker-end="url(#arr)"/>
+
+  <g>
+    <rect x="290" y="502" width="700" height="76" fill="#141416" stroke="#4a4a46"/>
+    <text x="640" y="526" text-anchor="middle" fill="#d8d8d2" font-size="16">Hadamard MLP gateado (2 ramos)</text>
+    <text x="640" y="548" text-anchor="middle" fill="#9a9a94" font-size="13" font-style="italic">y = D&#8323;H (&#963;(D&#8322;&#8336;H D&#8321;&#8336;x) &#8857; D&#8322;&#7495;H D&#8321;&#7495;x),  H&#7488;H = I,  &#963; = SiLU,  D&#8323; zero-init</text>
+    <text x="640" y="568" text-anchor="middle" fill="#7d7d77" font-size="12">D&#8322;&#8336; opcional bloco-diagonal b=32 (+0.44M) &#8212; ligar so se a ablacao composicional justificar</text>
+    <rect x="292" y="504" width="46" height="18" fill="#13303d" stroke="#2e86c9" stroke-width="0.8"/>
+    <text x="315" y="517" text-anchor="middle" fill="#55a8e8" font-size="11">FIX 5</text>
+  </g>
+  <line x1="640" y1="578" x2="640" y2="602" stroke="#8a8a86" stroke-width="1.4" marker-end="url(#arr)"/>
+
+  <g>
+    <rect x="290" y="606" width="700" height="76" fill="#141416" stroke="#4a4a46"/>
+    <text x="640" y="630" text-anchor="middle" fill="#d8d8d2" font-size="16">mHC lane write</text>
+    <text x="640" y="652" text-anchor="middle" fill="#9a9a94" font-size="13" font-style="italic">X&#8330; = P X + g &#8855; y,   P = Sinkhorn(exp&#8728;A),  P1 = P&#7488;1 = 1</text>
+    <text x="640" y="672" text-anchor="middle" fill="#7d7d77" font-size="12">init A = &#945;&#183;I (&#945;=8) &#8658; P &#8776; I  (A=0 daria P=J/n!);  g=1 com y=0 &#8658; no-op SEM sela duplo-zero</text>
+    <rect x="292" y="608" width="46" height="18" fill="#3d1a1a" stroke="#c94b3c" stroke-width="0.8"/>
+    <text x="315" y="621" text-anchor="middle" fill="#e86a55" font-size="11">FIX 2</text>
+  </g>
+
+  <line x1="640" y1="782" x2="640" y2="806" stroke="#8a8a86" stroke-width="1.4" marker-end="url(#arr)"/>
+
+  <g>
+    <rect x="360" y="810" width="560" height="56" fill="#141416" stroke="#4a4a46"/>
+    <text x="640" y="834" text-anchor="middle" fill="#d8d8d2" font-size="16">&#931; softmax(&#952;)&#8342;&#183;X&#8342; &#8594; ZCRMSNorm &#8594; tied unembed</text>
+    <text x="640" y="854" text-anchor="middle" fill="#9a9a94" font-size="12" font-style="italic">&#952; = 0 no init (= media exata; o gradiente decide)</text>
+    <rect x="362" y="812" width="46" height="18" fill="#13303d" stroke="#2e86c9" stroke-width="0.8"/>
+    <text x="385" y="825" text-anchor="middle" fill="#55a8e8" font-size="11">FIX 6</text>
+  </g>
+  <line x1="640" y1="866" x2="640" y2="890" stroke="#8a8a86" stroke-width="1.4" marker-end="url(#arr)"/>
+
+  <g>
+    <rect x="330" y="894" width="620" height="52" fill="#141416" stroke="#6a6a64" stroke-width="1.4"/>
+    <text x="640" y="926" text-anchor="middle" fill="#e8e8e2" font-size="16" font-weight="bold">byte-level grammar &#8594; exact function call</text>
+  </g>
+
+  <g font-size="12">
+    <text x="80" y="985" fill="#e86a55">&#9632;</text><text x="98" y="985" fill="#9a9a94">FIX critico (bug funcional: gate morto do engram; init do mHC)</text>
+    <text x="80" y="1006" fill="#e8a04c">&#9632;</text><text x="98" y="1006" fill="#9a9a94">FIX de estabilidade (init no-op exato, QK-norm, RoPE cache-relativo)</text>
+    <text x="80" y="1027" fill="#55a8e8">&#9632;</text><text x="98" y="1027" fill="#9a9a94">FIX de capacidade (gate 2 ramos, readout aprendido) &#8212; atras de ablacao</text>
+    <text x="1200" y="1027" text-anchor="end" fill="#6a6a64">MicroLM v0.2 &#183; ~22M ativos + tabelas engram &#183; ref: microlm/model.py</text>
+  </g>
+</svg>
