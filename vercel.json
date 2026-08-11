@@ -5,11 +5,23 @@
   "rewrites": [
     {
       "source": "/",
-      "destination": "/dashboard.html"
+      "destination": "/index.html"
     },
     {
-      "source": "/legacy",
-      "destination": "/index.html"
+      "source": "/runner.py",
+      "destination": "/api/runner"
+    },
+    {
+      "source": "/converter.py",
+      "destination": "/api/converter"
+    },
+    {
+      "source": "/converter/:model*",
+      "destination": "/api/test?battery=converter&model=:model*"
+    },
+    {
+      "source": "/microlm",
+      "destination": "/api/test?battery=microlm"
     },
     {
       "source": "/rift/:model*",
@@ -30,8 +42,33 @@
     {
       "source": "/winner/:model*",
       "destination": "/api/real-test?technology=winner&model=:model*"
+    },
+    {
+      "source": "/geyser/:model*",
+      "destination": "/api/geyser?model=:model*"
+    },
+    {
+      "source": "/gguf/:model*",
+      "destination": "/api/test?battery=gguf&model=:model*"
+    },
+    {
+      "source": "/cap/:model*",
+      "destination": "/api/test?battery=cap&model=:model*"
+    },
+    {
+      "source": "/c3/:tech/:model*",
+      "destination": "/api/test?battery=c3&technology=:tech&model=:model*"
+    },
+    {
+      "source": "/final/:tech/:model*",
+      "destination": "/api/test?battery=final&technology=:tech&model=:model*"
     }
   ],
+  "functions": {
+    "api/geyser.mjs": {
+      "includeFiles": "engines/geyser/geyser_launcher.py"
+    }
+  },
   "headers": [
     {
       "source": "/data/(.*)",
@@ -64,6 +101,14 @@
         {
           "key": "X-Frame-Options",
           "value": "SAMEORIGIN"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://raw.githubusercontent.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=31536000; includeSubDomains"
         }
       ]
     }
