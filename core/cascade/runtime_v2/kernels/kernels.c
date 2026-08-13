@@ -151,11 +151,16 @@ void q4k_prepare_x_i8(int cols, const float *x, int8_t *xq_re,
     4*(p)+2, 4*(p)+3, 4*(p)+2, 4*(p)+3, 4*(p)+2, 4*(p)+3, 4*(p)+2, 4*(p)+3, \
     4*(p)+2, 4*(p)+3, 4*(p)+2, 4*(p)+3, 4*(p)+2, 4*(p)+3, 4*(p)+2, 4*(p)+3)
 
-void q4k_gemv_i8(int rows, int cols, const uint8_t *packed,
-                 const int8_t *xq_re, const float *qsx, const float *sumx,
-                 float *y) {
+// g=32: super 144B (8 sub-escalas) | g=64: super 138B (4 sub-escalas,
+// duplicadas em 8 slots — mesmo inner loop, so muda o header).
+void q4k_gemv_i8_g(int rows, int cols, int g, const uint8_t *packed,
+                   const int8_t *xq_re, const float *qsx, const float *sumx,
+                   float *y) {
     const int nsup = cols / SUP;
-    const size_t row_bytes = (size_t)nsup * SUP_BYTES;
+    const int sup_bytes = (g == 64) ? 138 : 144;
+    const int scb = (g == 64) ? 3 : 6;
+    const int voff = 4 + 2 * scb;
+    const size_t row_bytes = (size_t)nsup * sup_bytes;
     const __m256i nib = _mm256_set1_epi8(0x0F);
     const __m256i bc0 = BCAST_PAIR(0), bc1 = BCAST_PAIR(1);
     const __m256i bc2 = BCAST_PAIR(2), bc3 = BCAST_PAIR(3);
@@ -165,17 +170,26 @@ void q4k_gemv_i8(int rows, int cols, const uint8_t *packed,
         float acc = 0.f;
         __m256 maccv = _mm256_setzero_ps();
         for (int s = 0; s < nsup; ++s) {
-            const uint8_t *sp = rp + (size_t)s * SUP_BYTES;
+            const uint8_t *sp = rp + (size_t)s * sup_bytes;
             float d = f16_to_f32(*(const uint16_t *)sp);
             float dmin = f16_to_f32(*(const uint16_t *)(sp + 2));
             uint64_t su = 0, mu = 0;
-            memcpy(&su, sp + 4, 6);
-            memcpy(&mu, sp + 10, 6);
+            memcpy(&su, sp + 4, scb);
+            memcpy(&mu, sp + 4 + scb, scb);
             int16_t sc16[GPS] __attribute__((aligned(16)));
             int16_t mi16[GPS] __attribute__((aligned(16)));
-            for (int j = 0; j < GPS; ++j) {
-                sc16[j] = (int16_t)((su >> (6 * j)) & 63u);
-                mi16[j] = (int16_t)((int)((mu >> (6 * j)) & 63u) - 31);
+            if (g == 64) {
+                for (int j = 0; j < 4; ++j) {
+                    int16_t sv = (int16_t)((su >> (6 * j)) & 63u);
+                    int16_t mv = (int16_t)((int)((mu >> (6 * j)) & 63u) - 31);
+                    sc16[2 * j] = sc16[2 * j + 1] = sv;
+                    mi16[2 * j] = mi16[2 * j + 1] = mv;
+                }
+            } else {
+                for (int j = 0; j < GPS; ++j) {
+                    sc16[j] = (int16_t)((su >> (6 * j)) & 63u);
+                    mi16[j] = (int16_t)((int)((mu >> (6 * j)) & 63u) - 31);
+                }
             }
             __m256i scall = _mm256_broadcastsi128_si256(
                 _mm_load_si128((const __m128i *)sc16));
@@ -183,7 +197,7 @@ void q4k_gemv_i8(int rows, int cols, const uint8_t *packed,
                 _mm256_set1_ps(dmin),
                 _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(
                     _mm_load_si128((const __m128i *)mi16))));
-            const uint8_t *qs = sp + 16;
+            const uint8_t *qs = sp + voff;
             const int8_t *xs = xq_re + (size_t)s * SUP;
             __m256i acci = _mm256_setzero_si256();
             __m256i raw, qlo, qhi, xlo, xhi, p16;
@@ -207,6 +221,13 @@ void q4k_gemv_i8(int rows, int cols, const uint8_t *packed,
         }
         y[r] = acc + hsum256(maccv);
     }
+}
+
+// compat: assinatura antiga = g32
+void q4k_gemv_i8(int rows, int cols, const uint8_t *packed,
+                 const int8_t *xq_re, const float *qsx, const float *sumx,
+                 float *y) {
+    q4k_gemv_i8_g(rows, cols, 32, packed, xq_re, qsx, sumx, y);
 }
 
 #ifdef Q4K_BENCH

@@ -4963,5 +4963,168 @@
       "end_to_end_certified": false
     },
     "notes": "Motor CASCADE v2 (core/cascade/runtime_v2): F0 em kernel C fundido (q4k_gemv) que desquantiza dentro do produto, F1 low-rank com V transposto e leitura contígua, gate calibrado offline. Corrige três defeitos do runtime anterior: cache fp32 residente (32 bpw), gate que nunca filtrava em batch 1, e \"vetorização\" AVX2 que era gather escalar emulado com _mm256_set_ps. Sem a lib compilada o módulo RECUSA carregar em vez de cair em fallback lento silencioso."
+  },
+  {
+    "schema_version": 2,
+    "timestamp_utc": "2026-08-13T20:30:00Z",
+    "run_id": "cascade-convert-v2-bf16-muse30b",
+    "spec": "CASCADE-Q4K/2.0 / convert.py v2",
+    "technology": "CASCADE",
+    "model_id": "meta-models/Muse-Glimmer-30B:bf16-conv-v2-sample",
+    "battery_id": "CASCADE_MODEL_CONVERSION",
+    "benchmark_protocol": "CONVERTER_STATIC_V1",
+    "comparison_role": null,
+    "comparison_group_id": "cmp-10d3adb47354810fab4efa76",
+    "comparison_context": {
+      "protocol": "CONVERTER_STATIC_V1",
+      "model_id": "meta-models/Muse-Glimmer-30B:bf16-conv-v2-sample",
+      "device": "cpu",
+      "torch": null,
+      "transformers": null,
+      "python": null,
+      "numpy": null,
+      "threads": 4
+    },
+    "implementation": {
+      "kind": "REFERENCE_MEASURED",
+      "native": false,
+      "simulated": false,
+      "eligible_for_primary_ranking": false
+    },
+    "eligible_for_primary_ranking": false,
+    "status": "LOCAL_WEIGHT_GATE_PASS",
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": 2900000000,
+    "candidate_disk_bytes": 780000000,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": 73.10344827586206,
+      "disk_reduction_pct": 73.10344827586206,
+      "disk_compression_ratio_x": 3.717948717948718,
+      "overall_gain_pct": null
+    },
+    "metrics": {
+      "memory": {
+        "estimated_baseline_bytes": 2900000000,
+        "estimated_candidate_bytes": 780000000,
+        "method": null,
+        "note": "Bundle autocontido (sem SOURCE_EXTERNAL): o disco exigido é o próprio bundle e o residente é igual a ele. Pico de RSS de CONVERSÃO medido em 3,14 GiB — regressão consciente vs 0,43 GiB do v1, custo do clip ×5 em chunks de 4096 linhas (CHUNK_ROWS menor reduz)."
+      },
+      "converter": {
+        "format": "CASCADE-Q4K/2.0",
+        "executor": "cascade_runtime_v2 (q4k_gemv_i8, 138/144 B por super-bloco)",
+        "codec_ladder": "q4k/g64+clip -> q4k/g32+clip",
+        "codec_ladder_resolved": {
+          "q4k_clip": 36
+        },
+        "selected_rungs": {
+          "q4k/g64": 34,
+          "q4k/g32": 2,
+          "raw": 0
+        },
+        "bundle_requires_source": false,
+        "external_source_bytes": 0,
+        "all_in_ram_bytes": 780000000,
+        "bundle_bytes": 780000000,
+        "required_disk_bytes": 780000000,
+        "headline_metric": "all_in_ram_bytes",
+        "f0_effective_bits_per_weight": 4.3125,
+        "aggregate_bits_per_weight": 4.3034,
+        "resident_hot_bytes": 780000000,
+        "pageable_warm_bytes": 0,
+        "raw_passthrough_bytes": 0,
+        "converted_tensor_count": 36,
+        "passthrough_tensor_count": 0,
+        "source_format": "safetensors",
+        "conversion_peak_rss_bytes": 3371549327,
+        "conversion_seconds": 99.7,
+        "target_ram_gb": null,
+        "target_source": null,
+        "machine_total_ram_bytes": null,
+        "fits_resident_in_target": null,
+        "memory_by_bits": null,
+        "sample_scope": {
+          "kind": "LAYER_SAMPLE",
+          "layers_measured": [
+            0,
+            25,
+            51
+          ],
+          "layers_total": 52,
+          "label": "amostra 3/52 camadas",
+          "why": "shard 1 do BF16 tem 49,95 GB — maior que o disco livre da máquina de teste; camadas 0, 25 e 51 lidas por HTTP Range, mais embeddings/lm_head integrais.",
+          "extrapolation_basis": "as 52 camadas têm assinatura de shapes/dtype idêntica; extrapolação ×52 aritmética por papel de tensor."
+        },
+        "projection": {
+          "label": "PROJETADO",
+          "scope": "modelo de linguagem completo (52 camadas + embeddings + lm_head)",
+          "source_lm_bytes": 55710000000,
+          "bundle_default_policy_bytes": 15080000000,
+          "conversion_minutes": 32,
+          "residency": {
+            "necessario_com_reserva_gib": 15.544,
+            "orcamento_24gb_gib": 16,
+            "folga_gib": 0.456,
+            "projection_break_even_pct": 3.24,
+            "break_even_note": "a folga de 0,46 GiB aguenta até +3,24% de erro na projeção ×52; acima disso o veredito \"cabe em 24 GB\" deixa de valer. O intervalo worst do teste BF16 anterior (17,98 GB) NÃO cabia.",
+            "classes": {
+              "16GB (orçamento 8 GiB)": "NAO CABE",
+              "24GB (orçamento 16 GiB)": "CABE (folga 0,46 GiB)",
+              "32GB (orçamento 24 GiB)": "CABE (folga 8,46 GiB)"
+            }
+          },
+          "note": "Extrapolação ×52 da amostra. Um único ponto, sem intervalo best/central/worst — diferente do registro anterior, que reportava faixa."
+        },
+        "external_reference_bytes": {
+          "BF16 fonte (LM)": 55710000000,
+          "GGUF Q8_0": 29600000000,
+          "GGUF UD-Q4_K_XL": 15870000000,
+          "GGUF UD-IQ2_XXS": 10730000000
+        },
+        "external_reference_note": "Q4_K_XL a 15,87 GB precisa de 16,28 GiB com reserva e NÃO cabe no orçamento de 16 GiB da máquina de 24 GB — é o que sustenta o veredito binário. IQ2_XXS cabe, mas é classe de qualidade diferente (cosseno 0,972 contra 0,996).",
+        "quality_measured": {
+          "cosine_weighted_total": 0.996643,
+          "cosine_layers": 0.996083,
+          "cosine_embed_tokens": 0.996976,
+          "cosine_lm_head": 0.996913,
+          "gate_cosine_min": 0.995,
+          "note": "Embeddings e lm_head passaram a ser quantizados (q4k/g32) com cosseno MEDIDO, em vez do raw 16 bpw do v1 — é daqui que vem a maior parte da economia. O degrau q6k citado no plano ainda não existe: depende de kernel 6-bit."
+        },
+        "gate_policy_change": {
+          "v1": "nenhum degrau passou -> passthrough exato (16 bpw, sem perda)",
+          "v2": "nenhum degrau passou -> grava o último degrau assim mesmo (RESCUE_LAST_RUNG) com quality_flag=abaixo_do_gate_verificar_e2e",
+          "breaks_invariant": "§29.5",
+          "why_it_matters": "o pior caso do bundle cai de 16 bpw para 4,5 bpw, mas o bundle deixa de ser \"aprovado por construção\": quem consome precisa checar summary.all_tensors_passed_gate antes de tratá-lo como aprovado."
+        },
+        "vs_v1": {
+          "conversion_seconds": {
+            "v1": 198.7,
+            "v2": 99.7
+          },
+          "reduction_pct": {
+            "v1": 69.35,
+            "v2": 73.04
+          },
+          "peak_rss_gib": {
+            "v1": 0.427,
+            "v2": 3.14
+          },
+          "raw_tensors": {
+            "v1": 3,
+            "v2": 0
+          },
+          "note": "v2 é 2× mais rápido e 3,7 pp menor, ao custo de 7,3× no pico de RSS da conversão (ainda cabe em 8 GB)."
+        }
+      }
+    },
+    "measurement_scope": "AMOSTRA de 3 das 52 camadas (0, 25, 51) mais embeddings/lm_head integrais, convertidos de fato pelo conversor v2 — NÃO é o modelo inteiro. Os campos de comparação referem-se somente à amostra. A projeção ×52 (15,08 GB) e o veredito de residência ficam em metrics.converter.projection com rótulo PROJETADO. tok/s NÃO foi medido nem projetado neste registro: as comparações de tok/s do relatório externo derivam de razão de banda de memória, não de model.generate, e por isso não entram aqui.",
+    "quality": {
+      "local_weight_metrics_only": true,
+      "end_to_end_certified": false
+    },
+    "notes": "Conversor v2 grava direto no formato do executor (138 B em g=64, 144 B em g=32) — zero repack na carga. Sem fallback raw para 2D: o pior caso passa de 16 bpw para 4,5 bpw, mas um tensor pode sair ABAIXO do gate marcado com quality_flag (rompe o invariante §29.5 de propósito). Gate local por tensor não é qualidade end-to-end: a arquitetura muse-glimmer não carrega em transformers nem no llama.cpp 0.3.34, então não houve perplexity/geração para validar."
   }
 ]

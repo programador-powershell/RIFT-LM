@@ -53,3 +53,22 @@ de cair num fallback 60× mais lento silenciosamente.
   mmap-friendly; falta só o conversor gravar os planos com `pack_q4k`.
 - Validação end-to-end (perplexity) continua obrigatória antes de publicar
   qualquer bundle — gate local ≠ qualidade fim-a-fim.
+
+## Conversor otimizado (`convert.py`) — adicionado nesta versão
+
+```bash
+python -m cascade_runtime_v2.convert --input ./modelo-hf-bf16 --output ./bundle --model-id org/modelo
+```
+
+Otimizações sobre o conversor v1 (todas medidas na Muse-Glimmer BF16 real):
+1. **Grava no formato do executor** (138/144 B por super-bloco) — zero repack na carga.
+2. **Escada q4k/g64+clip → q4k/g32+clip**, sem fallback raw para 2D: na amostra,
+   34/36 tensores em 4,3125 bpw, 2 em 4,5, nenhum raw (v1: 3 raws de 16 bpw).
+3. **Embeddings/lm_head em q4k/g32 com cosseno MEDIDO** (0,9969/0,9969 na Muse)
+   em vez de raw 16 bpw (v1) — economiza 4,0 GB no 30B. Degrau q6k para
+   embeddings = pendência de kernel 6-bit.
+4. Exclusão padrão cobre também `token_embd`/`output.weight` (gap do v1).
+5. Encode em chunks de linhas: RSS pico 3,14 GiB na amostra (ajustável via
+   `CHUNK_ROWS`).
+6. Resultado: **2,90 GB → 0,78 GB (73,0%) em 99,7 s** — v1: 69,35% em 198,7 s
+   (2× mais rápido, 9,6% menor). Residência por classe de máquina no manifest.

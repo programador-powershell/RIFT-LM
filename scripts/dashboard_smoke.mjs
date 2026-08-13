@@ -3024,6 +3024,32 @@ for (const relPath of [
   await readFile(new URL(relPath, import.meta.url), "utf8");
 }
 
+// §31 — conversor v2: orçamento de máquina sem subtração dupla, política de
+// gate declarada e projeção com margem.
+const convV2 = await readFile(new URL("../core/cascade/runtime_v2/convert.py", import.meta.url), "utf8");
+assert.ok(convV2.includes("MACHINE_TOTAL_GIB = (16, 24, 32, 48)"),
+  "MACHINE_TOTAL_GIB precisa ser RAM TOTAL da máquina, não orçamento (§31.5)");
+assert.ok(!convV2.includes("MACHINE_CLASSES_GIB"),
+  "REGRESSÃO §31.5: a tupla ambígua MACHINE_CLASSES_GIB voltou (subtração dupla)");
+assert.ok(/budget = max\(total - 8, total \/ 2\)/.test(convV2),
+  "o orçamento tem de sair da regra do §28 sobre a RAM total (§31.5)");
+assert.ok(!/maquina_\{cls \+ 8/.test(convV2),
+  "REGRESSÃO §31.5: rótulo de classe voltado a somar 8 sobre um orçamento");
+for (const marker of [
+  "folga_gib", "regra_orcamento", "all_tensors_passed_gate",
+  "below_gate_tensor_count", "gate_policy", "RESCUE_LAST_RUNG", "§29.5",
+]) {
+  assert.ok(convV2.includes(marker), `convert.py v2 sem marcador §31: ${marker}`);
+}
+assert.ok(!convV2.includes("6.5 bpw"),
+  "o docstring não pode prometer pior caso de 6.5 bpw: LADDER só tem degraus de 4 bits (§31.2)");
+// O card precisa expor a MARGEM da projeção, não só o veredito.
+for (const marker of ["Folga em 24 GB", "break_even_note", "projRes"]) {
+  assert.ok(legacyHtml.includes(marker), `index.html sem a margem da projeção (§31.6): ${marker}`);
+}
+assert.ok(legacyHtml.includes("typeof projRaw===\"object\"?projRaw.central:projRaw"),
+  "a projeção precisa aceitar número OU {best,central,worst} (§31.6)");
+
 // §29.10 — política Fase-1 nos DOIS esquemas de nome. O padrão HF não casa nada
 // no ggml: sem as alternativas token_embd/output.weight/_exps a política era
 // silenciosamente inerte em entrada .gguf.

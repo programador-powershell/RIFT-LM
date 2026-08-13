@@ -939,3 +939,58 @@ nesta árvore antes de qualquer mudança.
    energia capturada em BF16): o resíduo de quantização é ruído de posto alto e
    rank ≤ 32 não o resgata. Enquanto isso valer, o formato efetivo do CASCADE é
    INT4 groupwise puro e o F1 é opcional.
+
+## 31. Conversor v2 (CASCADE-Q4K/2.0) — grava no formato do executor (18º lote)
+
+`core/cascade/runtime_v2/convert.py`. Fonte BF16/F16/F32 apenas: recomprimir
+GGUF é beco sem saída medido (§29.9). Ganhos medidos na amostra do
+Muse-Glimmer-30B (3/52 camadas + embeddings/lm_head integrais): 2,90 GB → 0,78 GB
+(73,1%) em 99,7 s, contra 69,35% em 198,7 s do v1 — 2× mais rápido e 3,7 pp
+menor, ao custo de 7,3× no pico de RSS de conversão (0,43 → 3,14 GiB, ainda cabe
+em 8 GB; `CHUNK_ROWS` menor reduz).
+
+1. SAÍDA NO FORMATO DO EXECUTOR: blobs de 138 B (g=64) / 144 B (g=32) por
+   super-bloco, prontos para mmap + GEMV fundido. Zero repack na carga — era a
+   maior perda do v1, que gravava um int4 próprio e obrigava o executor a
+   desquantizar para FP32.
+2. ESCADA `q4k/g64+clip → q4k/g32+clip`, sem fallback raw para 2D. Na amostra:
+   34 tensores em g=64 (4,3125 bpw), 2 em g=32 (4,5), ZERO raw — o `o_proj/L51`
+   que o v1 mandava a 16 bpw passou a 4,31. Os degraus q5k/q6k estão PLANEJADOS
+   e não implementados (dependem de kernel 5/6-bit): `LADDER` é a fonte da
+   verdade, não o docstring.
+3. EMBEDDINGS/LM_HEAD QUANTIZADOS com cosseno MEDIDO (0,996976 e 0,996913) em
+   vez do raw 16 bpw do v1 — a maior parcela da economia (~4 GB no 30B).
+
+4. MUDANÇA DE POLÍTICA QUE ROMPE O §29.5. Sem fallback raw, quando nenhum degrau
+   passa o gate o último é gravado ASSIM MESMO (`RESCUE_LAST_RUNG`) e o tensor
+   sai com `quality_flag="abaixo_do_gate_verificar_e2e"`. O invariante do v1 era
+   "quando nada passa, o resultado continua sendo passthrough exato"; o v2 troca
+   16 bpw exatos por 4,5 bpw com perda DECLARADA. O trade é legítimo, mas o
+   bundle deixa de ser aprovado por construção, então o resumo do manifesto
+   passa a expor `all_tensors_passed_gate`, `below_gate_tensor_count`,
+   `below_gate_tensors` e `gate_policy`, e o console imprime um ATENÇÃO com os
+   nomes. Consumidor de bundle DEVE checar `all_tensors_passed_gate`.
+
+5. BUG CORRIGIDO NO RELATÓRIO DE RESIDÊNCIA (subtração dupla). `residency_report`
+   recebia `MACHINE_CLASSES_GIB = (8,16,24,40)` — que já eram orçamentos — e
+   ainda fazia `budget = cls - 8`, rotulando a linha como `maquina_{cls+8}gb`.
+   Resultado: a linha rotulada "maquina_24gb" recebia orçamento de 8 GiB e
+   imprimia NÃO CABE para um bundle de 15,54 GiB que CABE em 24 GB pela regra do
+   §28. O `pct_final.json` do teste externo afirmava o correto ("24GB/16GiB:
+   CABE") e portanto NÃO foi gerado por esta função. Corrigido para
+   `MACHINE_TOTAL_GIB = (16,24,32,48)` com `budget = max(total-8, total/2)`, e o
+   relatório passa a trazer `folga_gib` e `regra_orcamento` explícitos.
+
+6. MARGEM É PARTE DO VEREDITO. O "cabe em 24 GB" do 30B tem folga de 0,46 GiB
+   sobre uma PROJEÇÃO ×52 de ponto único (o registro anterior reportava faixa
+   best/central/worst). O ponto de ruptura é **+3,24%** de erro na projeção;
+   acima disso o veredito deixa de valer, e o `worst` do intervalo anterior
+   (17,98 GB) não cabia. Por isso o card exibe "Folga em 24 GB" com selo
+   PROJETADO e a nota do ponto de ruptura ao lado — um "cabe" por 0,46 GiB não é
+   a mesma afirmação que um "cabe" por 8,46 GiB.
+
+7. TOK/S DO RELATÓRIO EXTERNO NÃO ENTRA NO REGISTRO. As comparações de tok/s
+   (−3,3% vs Q4_K_XL, +96,2% vs IQ2_XXS, >10× na máquina de 24 GB) derivam de
+   RAZÃO DE BANDA DE MEMÓRIA e de modelagem de paginação, não de
+   `model.generate`. Ficam fora do registro inteiro — nem em `metrics` — para não
+   serem confundidas com o tok/s medido das baterias E2E.

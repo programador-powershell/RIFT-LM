@@ -1228,7 +1228,14 @@ function renderConvertedModels(){
     // selo próprio e a projeção do modelo inteiro fica rotulada PROJETADO.
     const amostra=c.sample_scope&&c.sample_scope.label?String(c.sample_scope.label):"";
     const proj=c.projection||null;
-    const projCentral=proj?n(proj.bundle_default_policy_bytes?.central):null;
+    // A projeção vem como número (ponto único) ou {best,central,worst}.
+    const projRaw=proj?proj.bundle_default_policy_bytes:null;
+    const projCentral=projRaw==null?null
+      :n(typeof projRaw==="object"?projRaw.central:projRaw);
+    // Veredito de residência da PROJEÇÃO com a margem: um "cabe" por 0,46 GiB
+    // não é a mesma afirmação que um "cabe" por 8 GiB.
+    const projRes=proj&&proj.residency?proj.residency:null;
+    const folga=projRes?n(projRes.folga_gib):null;
     // Redução REAL: TOTAL em RAM contra a fonte. Um bundle pequeno que depende
     // do checkpoint não reduziu nada — o external entra na conta.
     const real=(baseline&&total!=null)?(1-total/baseline)*100:null;
@@ -1259,7 +1266,9 @@ function renderConvertedModels(){
         <div class="metric"><span class="mLabel">Passthrough exato</span><b>${fmtBytes(c.raw_passthrough_bytes)}</b></div>
         ${dep?`<div class="metric"><span class="mLabel">Fora do bundle (na fonte)</span><b>${fmtBytes(externo)}</b></div>`:""}
         ${projCentral!=null?`<div class="metric"><span class="mLabel">Modelo inteiro <span class="badge warn">PROJETADO</span></span><b>${fmtBytes(projCentral)}</b></div>`:""}
+        ${folga!=null?`<div class="metric"><span class="mLabel">Folga em 24 GB <span class="badge warn">PROJETADO</span></span><b class="${folga>0?"":"bad"}">${folga>0?"+":""}${folga.toFixed(2)} GiB</b></div>`:""}
       </div>
+      ${projRes&&projRes.break_even_note?`<div class="note">${esc(String(projRes.break_even_note))}</div>`:""}
       <div class="bitsTable">${bitsTable(c.memory_by_bits,c.resident_hot_bytes,
         c.f0_effective_bits_per_weight,c.fits_resident_in_target)}</div>
       <div class="note">RAM por largura de bits • <span class="badge warn">PROJETADO</span> • ${esc(fmtDate(timestamp))}</div>

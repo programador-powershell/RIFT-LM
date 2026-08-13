@@ -25,7 +25,7 @@ import torch
 import torch.nn as nn
 
 from .confidence_gate import GateCalibrator, GateConfig, decide_gate
-from .q4k_pack import GRP, SUP, SUP_BYTES, pack_q4k
+from .q4k_pack import GRP, SUP, pack_q4k, sup_bytes_for
 
 _LIB: Optional[ctypes.CDLL] = None
 
@@ -61,13 +61,18 @@ class Q4KLinearModule(nn.Module):
         v: Optional[torch.Tensor] = None,
         gate_cfg: Optional[GateConfig] = None,
         path: str = "F0_GATE_F1",
+        g: int = 32,
     ):
         super().__init__()
         self.lib = _load_lib()
         self.path = path
+        self.g = int(g)
         self.out_features = int(out_features)
         self.in_features = int(in_features)
-        self.nsup = packed.shape[1] // SUP_BYTES
+        sb = sup_bytes_for(self.g)
+        if packed.shape[1] % sb:
+            raise ValueError(f"blob nao alinha com g={g} ({packed.shape[1]} % {sb})")
+        self.nsup = packed.shape[1] // sb
         self.cols_padded = self.nsup * SUP
         if packed.shape[0] != out_features:
             raise ValueError("packed rows != out_features")
@@ -102,14 +107,14 @@ class Q4KLinearModule(nn.Module):
     @classmethod
     def from_dense(cls, w: torch.Tensor, *, rank: int = 0,
                    gate_cfg: Optional[GateConfig] = None,
-                   path: str = "F0_GATE_F1",
+                   path: str = "F0_GATE_F1", g: int = 32,
                    clips: tuple = (1.0, 0.975, 0.95, 0.925, 0.9)) -> "Q4KLinearModule":
         """Codifica um peso denso: F0 = q4k(W); F1 = SVD low-rank do residuo."""
         from .codec import encode_qk
         out_f, in_f = int(w.shape[0]), int(w.shape[1])
         pad = (-in_f) % SUP
         wp = torch.nn.functional.pad(w.to(torch.float32), (0, pad))
-        dq, planes = encode_qk(wp, g=GRP, bits=4, clips=clips)
+        dq, planes = encode_qk(wp, g=g, bits=4, clips=clips)
         packed = pack_q4k(planes)
         u = s = v = None
         if rank > 0:
@@ -119,7 +124,7 @@ class Q4KLinearModule(nn.Module):
             u, s, v = uu[:, :rank].contiguous(), ss[:rank].contiguous(), \
                 vv[:, :rank].contiguous()
         return cls(packed, out_f, in_f, u=u, s=s, v=v,
-                   gate_cfg=gate_cfg, path=path)
+                   gate_cfg=gate_cfg, path=path, g=g)
 
     @classmethod
     def from_linear(cls, linear: nn.Linear, **kw) -> "Q4KLinearModule":
@@ -136,10 +141,10 @@ class Q4KLinearModule(nn.Module):
         self.lib.q4k_prepare_x_i8(
             ctypes.c_int(self.cols_padded), _ptr(self._xbuf),
             _ptr(self._xq), _ptr(self._qsx), _ptr(self._sumx))
-        self.lib.q4k_gemv_i8(
+        self.lib.q4k_gemv_i8_g(
             ctypes.c_int(self.out_features), ctypes.c_int(self.cols_padded),
-            _ptr(self.packed), _ptr(self._xq), _ptr(self._qsx),
-            _ptr(self._sumx), _ptr(y_out))
+            ctypes.c_int(self.g), _ptr(self.packed), _ptr(self._xq),
+            _ptr(self._qsx), _ptr(self._sumx), _ptr(y_out))
 
     def _f1_add(self, x_row: np.ndarray, y_out: np.ndarray) -> None:
         self.lib.lowrank_gemv_f32(
