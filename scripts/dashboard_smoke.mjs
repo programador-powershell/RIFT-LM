@@ -3137,23 +3137,39 @@ if (wp) {
     "precisa dizer POR QUE não foi medido (§36.2b)");
   assert.ok(g.honest_gap_range_pct, "o gap contra o GGUF tem de vir com incerteza declarada (§36.2b)");
   assert.ok(g.honest_gap_range_pct.min <= g.honest_gap_range_pct.max, "faixa do gap invertida (§36.2b)");
-  if (g.honest_gap_range_pct.min === g.honest_gap_range_pct.max) {
-    // §37 — faixa colapsada em ponto: só vale se a assimetria que a criava sumiu.
-    assert.ok(g.honest_gap_range_pct.note && g.symmetric_derivation_status,
-      "colapsar a faixa em ponto exige justificar que a assimetria acabou (§37)");
-    assert.match(g.symmetric_derivation_status, /OBSOLETA/,
-      "a derivação simétrica só sai de cena declarada como obsoleta (§37)");
-    const dc = g.direct_comparison_v22;
-    assert.ok(dc && Math.abs(dc.gap_pct - g.honest_gap_range_pct.min) < 0.05,
-      "o ponto único tem de ser o gap da comparação direta medida (§37)");
-    assert.ok(dc.gap_pct > g.reported_derivation.delta_vs_cascade_pct,
-      "o gap do v2.2 tem de ser MENOS desfavorável que o do v2.1 (§37)");
-    assert.ok(dc.bandwidth_of_llamacpp_pct > 90,
-      "93% da banda do llama.cpp é o número que sustenta o gap de -5% (§37)");
+  // §38 — a faixa só estreita POR MEDIÇÃO. Se ela mudou de origem, tem de
+  // apontar o experimento; se veio de premissa, a derivação fica ao lado.
+  if (g.honest_gap_range_pct.measurement_source) {
+    const duel = g[g.honest_gap_range_pct.measurement_source];
+    assert.ok(duel && duel.label === "MEDIDO",
+      "a fonte que estreitou a faixa tem de ser um experimento MEDIDO (§38)");
+    // Kernel-vs-kernel com working set casado é o número que sustenta a faixa.
+    const bwL = duel.llama_cpp.bytes_per_token_gb * duel.llama_cpp.tok_s;
+    assert.ok(Math.abs(bwL - duel.llama_cpp.bandwidth_gbs) < 0.02,
+      "a banda do llama.cpp tem de derivar de bytes/token x tok/s (§38)");
+    const bwC = duel.cascade.working_set_gb / (duel.cascade.ms / 1000);
+    assert.ok(Math.abs(bwC - duel.cascade.bandwidth_gbs) < 0.02,
+      "a banda do CASCADE tem de derivar de working set / ms (§38)");
+    assert.ok(Math.abs((bwC / bwL - 1) * 100 - duel.kernel_vs_kernel_gap_pct) < 0.1,
+      "o gap kernel-vs-kernel tem de derivar das duas bandas medidas (§38)");
+    assert.ok(duel.llama_cpp.conservative_caveat && duel.residual_asymmetry,
+      "o duelo tem de declarar o que ficou conservador e o que ficou não pareado (§38)");
+    // A hipótese simétrica que EU criei foi refutada: não pode voltar como ativa.
+    assert.match(g.symmetric_derivation_status, /REFUTADA POR MEDIÇÃO/,
+      "a hipótese de degradação simétrica foi refutada por medição (§38)");
+    // A correção dos bytes do GGUF foi CONTRA o CASCADE: não pode ser desfeita.
+    const bc = g.gguf_bytes_correction;
+    assert.ok(bc && bc.after_gb < bc.before_gb && bc.q4_k_xl_tok_s_after > bc.q4_k_xl_tok_s_before,
+      "a correção untied do GGUF aumenta o tok/s dele e piora nosso gap (§38)");
+    // E o erro que eu publiquei fica nomeado, com a regra derivada.
+    const err = g.my_error_v37;
+    assert.ok(err && err.reasoning_error && err.rule,
+      "o ponto -5,0% publicado no §37.2 tem de ficar registrado como erro (§38)");
+    assert.ok(Math.abs(err.factor_off) > 3,
+      "o fator do erro tem de ser preservado (§38)");
   } else {
     assert.ok(g.symmetric_derivation, "faixa aberta exige a derivação simétrica ao lado (§36.2b)");
     assert.equal(g.honest_gap_range_pct.min, g.reported_derivation.delta_vs_cascade_pct);
-    assert.ok(g.symmetric_derivation.delta_vs_cascade_pct > g.reported_derivation.delta_vs_cascade_pct);
   }
   assert.match(g.decisive_fact, /CASCADE RODA|roda a Muse/i,
     "o fato decisivo (GGUF não carrega a Muse) tem de estar no registro (§36.4)");

@@ -5641,7 +5641,7 @@
   },
   {
     "schema_version": 2,
-    "timestamp_utc": "2026-08-14T01:15:00Z",
+    "timestamp_utc": "2026-08-14T02:00:00Z",
     "run_id": "cascade-exec-muse30b-weightpath",
     "spec": "CASCADE-Q4K/2.1 bundle 16,30 GB / kernels v2.2 (lote+prefetch+VNNI)",
     "technology": "CASCADE",
@@ -5757,21 +5757,80 @@
           "delta_vs_cascade_pct": -6.1
         },
         "honest_gap_range_pct": {
-          "min": -5,
-          "max": -5,
-          "note": "ponto único: a comparação direta virou a justa (v2.2)"
+          "min": -17.7,
+          "max": -14,
+          "note": "estreitada POR MEDIÇÃO (duelo de working set casado), não por premissa. O -14% é kernel-vs-kernel e é PISO, porque o lado do llama.cpp inclui o motor dele.",
+          "measurement_source": "matched_working_set_duel"
         },
         "honest_gap_note": "o gap real está entre −6,1% e −19,7%, e NÃO é estreitável nesta máquina: exigiria rodar o GGUF da Muse, que não carrega. Qualquer número único nessa faixa é escolha de premissa, não medição.",
         "practical_read": "com o v2.2 o CASCADE passa de 0,911 para 1,078 tok/s no caminho de pesos. Continua na casa de 1 tok/s num 30B com 4 núcleos — ~0,93 s por token —, então a leitura prática não muda: nesta escala o gargalo é banda de memória e nenhum dos dois formatos é interativo.",
         "decisive_fact": "o que a máquina do teste mostra sem derivação: o CASCADE RODA a Muse e o GGUF NÃO. Esse é o argumento de substituição, não os 6–20%.",
-        "symmetric_derivation_status": "OBSOLETA no v2.2 — a derivação simétrica existia para corrigir a assimetria de working set. Com a banda real do CASCADE acima da sintética, não há degradação medida para transportar ao llama.cpp, e a comparação DIRETA passa a ser a justa.",
+        "symmetric_derivation_status": "REFUTADA POR MEDIÇÃO (§38). A hipótese era que o llama.cpp degradaria com working set grande pelo mesmo fator do CASCADE. Medido: ele SOBE — 18,0 GB/s a 1,93 GB contra 19,35 a 4,38 GB (+7,5%). Mesmo padrão nas nossas fases (B 18,06 > A 16,24). A faixa colapsa para o lado ASSIMÉTRICO, não o simétrico.",
         "direct_comparison_v22": {
           "cascade_tok_s": 1.078,
           "cascade_bandwidth_gbs": 16.74,
-          "gguf_q4_k_xl_tok_s": 1.134,
-          "gap_pct": -5,
-          "bandwidth_of_llamacpp_pct": 93,
-          "note": "gap de −5,0% e 93% da banda do llama.cpp, contra a faixa −6,1% a −19,7% e 79% no v2.1. O resultado caiu no extremo FAVORÁVEL da faixa que eu havia publicado, e chegou lá por engenharia — não por reinterpretar o número."
+          "gguf_q4_k_xl_tok_s": 1.31,
+          "gap_pct": -17.7,
+          "bandwidth_of_llamacpp_pct": 87,
+          "note": "refeito com a régua de working set casado (19,35 GB/s) e os bytes/token corrigidos do GGUF (14,77 GB). O 93% que eu publiquei no §37.2 usava a régua de 18,0 GB/s medida em 1,93 GB — régua errada para este regime."
+        },
+        "matched_working_set_duel": {
+          "label": "MEDIDO",
+          "objetivo": "testar empiricamente se o llama.cpp também degrada com working set grande — a pergunta que a derivação simétrica ASSUMIA sem medir.",
+          "llama_cpp": {
+            "model": "Qwen7B Q4_K_M",
+            "tok_s": 4.421,
+            "weights_gb": 4.683,
+            "bytes_per_token_gb": 4.376,
+            "bandwidth_gbs": 19.35,
+            "accounting_note": "7B é untied: token_embd (0,307 GB, Q4_K) não é tocado no GEMV, então bytes/token = arquivo − embedding.",
+            "conservative_caveat": "os 4,421 tok/s INCLUEM o motor (atenção/KV/sampling), logo o kernel puro deles é >= 19,35 GB/s. O gap medido é PISO, não teto."
+          },
+          "cascade": {
+            "scope": "17 camadas da Muse, kernel puro, lote v2.2",
+            "working_set_gb": 4.64,
+            "ms": 278.9,
+            "bandwidth_gbs": 16.64
+          },
+          "kernel_vs_kernel_gap_pct": -14,
+          "residual_asymmetry": "working set casado, geometria de tensor NÃO: llama.cpp no Qwen7B, CASCADE em 17 camadas da Muse. O mix de shapes difere, e é o melhor pareamento possível nesta máquina."
+        },
+        "gguf_bytes_correction": {
+          "before_gb": 15.87,
+          "after_gb": 14.77,
+          "reason": "a Muse é untied: token_embd Q6_K (1,10 GB) não é tocado no GEMV, exatamente como o nosso embedding de 0,756 GB não entra no caminho de pesos (§36.1). Os bytes/token do GGUF estavam SUPERESTIMADOS, o que inflava o tok/s do CASCADE na comparação.",
+          "q4_k_xl_tok_s_before": 1.134,
+          "q4_k_xl_tok_s_after": 1.31,
+          "direction": "CONTRA o CASCADE — correção feita pelo próprio autor do teste"
+        },
+        "gap_measured_final": {
+          "kernel_vs_kernel_matched_ws_pct": -14,
+          "end_to_end_projected_pct": {
+            "min": -17.7,
+            "max": -16.1,
+            "note": "o extremo -16,1% usa o 1,099 citado no relatório; o -17,7% usa o 1,078 do artefato do v2.2. Não consegui reproduzir 1,099 a partir dos artefatos, então registro os dois."
+          },
+          "range_history": {
+            "v2.1 (§36.2b)": "faixa -6,1% a -19,7% (aberta, com a hipótese simétrica)",
+            "v2.2 (§37.2)": "ponto -5,0% — ERRADO, ver abaixo",
+            "v2.2 + duelo casado (§38)": "-14% (kernel) a -18% (ponta a ponta)"
+          },
+          "where_the_gap_lives": {
+            "fase_a_pct_of_llamacpp": 84,
+            "fase_b_pct_of_llamacpp": 93,
+            "reading": "o gap está concentrado na fase A, que carrega os 80 k_proj/v_proj de 0,9–1,7 MB. A fase B já faz 93% da banda do llama.cpp. O alvo de kernel restante é exatamente o que eles apontam: fusão por camada + unroll."
+          }
+        },
+        "my_error_v37": {
+          "what_i_published": "-5,0% como ponto único (§37.2)",
+          "measured": -17.7,
+          "factor_off": 3.5,
+          "reasoning_error": "colapsei uma incerteza de DOIS LADOS usando dado de um lado só. A assimetria era \"o llama.cpp degrada com working set grande?\" — pergunta sobre o llama.cpp. Eu a respondi observando que o CASCADE parou de degradar, o que não diz nada sobre o llama.cpp. E colapsei a faixa na direção que favorecia o projeto.",
+          "rule": "faixa criada por uma incerteza sobre TERCEIRO só colapsa com medição desse terceiro. Enquanto ela não existir, a faixa permanece aberta — e o smoke passa a exigir a fonte da medição para aceitar o colapso."
+        },
+        "unverified_in_report": {
+          "claim": "fase-B 19,65 > fase-A 16,19 GB/s",
+          "problem": "esses dois valores não aparecem em nenhum artefato recebido: o v2.1 traz A 13,71 / B 15,34 e o v2.2 traz A 16,24 / B 18,06. O padrão que eles sustentam (B > A) está correto nos dois artefatos, mas os números citados são de uma terceira execução não enviada."
         }
       }
     },
@@ -5782,6 +5841,6 @@
       "end_to_end_measured": false,
       "note": "este teste mede VELOCIDADE. A PPL da Muse continua não medida — o gate de 627/627 é pré-filtro (§33.1)."
     },
-    "notes": "v2.2 entrega +18,3% em tok/s e banda sobre o v2.1 (0,911 → 1,078; 14,16 → 16,74 GB/s) implementando os três itens do backlog do §36.5. Consequência analítica: a banda real passou a sintética de working set pequeno (16,74 > 16,55), então a degradação que justificava a derivação simétrica do §36.2b desapareceu e o gap direto contra o Q4_K_XL é −5,0%, com 93% da banda do llama.cpp. A leitura prática não muda: ~1 tok/s num 30B com 4 núcleos."
+    "notes": "v2.2 entrega +18,3% sobre o v2.1 (0,911 → 1,078 tok/s). Mas o duelo de working set CASADO refutou a hipótese de degradação simétrica que eu havia criado — o llama.cpp SOBE com working set grande (18,0 → 19,35 GB/s) — e o autor do teste ainda corrigiu contra si mesmo os bytes/token do GGUF (a Muse é untied: 15,87 → 14,77 GB). Resultado: o gap medido é −14% kernel-vs-kernel (piso, porque o lado deles inclui o motor) e −16% a −18% ponta a ponta. O ponto −5,0% que eu publiquei no §37.2 estava errado por um fator de 3,5. O gap vive na fase A (84% da banda deles) — a fase B já faz 93%."
   }
 ]

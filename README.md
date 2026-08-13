@@ -54,22 +54,20 @@ Pesos calibrados para o objetivo declarado do score: identificar a melhor tecnol
 
 ## :new: Releases Notes
 
-### :up: V.3.7
-
-### :warning: Latest Changes
-
-- **Kernel v2.2 (lote + prefetch + VNNI auto)** no mesmo bundle de 16,30 GB da Muse (contrato §37.1): **928,0 ms/token = 1,078 tok/s a 16,74 GB/s** — **+18,3%** em tok/s e banda sobre o v2.1 (0,911 / 14,16). São os três itens do backlog do §36.5 implementados: API de lote (uma região OMP para N GEMVs), unroll de 2 linhas com prefetch, e build VNNI opcional (`-DUSE_VNNI`) com o loader escolhendo a `.so`.
-- **Card do conversor passa a oferecer o engine v2** (§37.3): o runner de `/converter.py` só conhecia o v1 (CASCADE-DIR/0.1) enquanto toda a medição recente usava o v2. Agora `--engine v1|v2` com **v2 por padrão** — baixa o pacote `cascade_runtime_v2` e invoca `python -m cascade_runtime_v2.convert` **como módulo**, porque `convert.py` usa imports relativos. Converter não exige kernel compilado (`_load_lib()` é lazy); a `.so` só é necessária para executar o bundle. O v2 tem CLI enxuta porque a receita é ditada pelo código — foi a bateria de PPL que a escolheu — e o runner **lista as flags do v1 que está ignorando** em vez de aceitá-las em silêncio. Para GGUF, `--engine v1`.
-- **`tests/test_manifest_honesty.py`** adotado (§37.5): contrato de honestidade **executável**, melhor que asserções estáticas. Roda duas conversões reais em miniatura — uma limpa e uma **adversarial** que constrói outliers opostos por grupo de 32 até forçar `RESCUE_LAST_RUNG` — e exige `quality_flag` no tensor, `below_gate_tensors` no resumo e "ATENCAO" no console.
+### :up: V.3.7.1
 
 ### :pushpin: Fixes
 
-- **A degradação por working set desapareceu, e isso derruba a minha própria defesa** (§37.2): a banda real (16,74) passou a sintética de working set pequeno (16,55), **+1,2%**. Sem degradação medida não há fator para transportar ao llama.cpp, então a derivação simétrica que eu havia criado fica **obsoleta** e a comparação direta passa a ser a justa: **93% da banda do llama.cpp** (era 79%) e gap de **−5,0%** contra o Q4_K_XL (era faixa −6,1% a −19,7%). O resultado caiu no extremo favorável da faixa que eu publiquei, e chegou lá por engenharia — não por reinterpretar o número. Também mostra que a queda do v2.1 **não era limite de TLB**: era wake-up de OMP não amortizado nos 80 `k_proj`/`v_proj` de 0,9–1,7 MB, exatamente o que a API de lote resolve. Regra derivada: faixa de incerteza que colapsa em ponto tem de declarar por que a assimetria acabou, e o smoke exige essa justificação.
-- **Minha asserção do §36.5 exigia degradação negativa** e quebrou quando ela virou positiva. Passou a exigir que a comparação sintético-vs-real exista sempre, que `degradation_pct` derive das duas bandas registradas, e que sinal positivo venha com explicação.
+- **Publiquei −5,0% e o medido é −17,7%: errei por um fator de 3,5** (contrato §38.5). No §37.2 colapsei a faixa de gap em ponto único porque "a assimetria desapareceu". O erro de raciocínio: **colapsei uma incerteza de dois lados usando dado de um lado só**. A pergunta era "o llama.cpp degrada com working set grande?" — pergunta sobre o llama.cpp — e eu a respondi observando que o CASCADE parou de degradar. Pior: colapsei na direção que favorecia o projeto. Regra derivada, com asserção no smoke: **faixa criada por incerteza sobre um terceiro só colapsa com medição desse terceiro**; para aceitar o estreitamento, o registro tem de apontar o experimento em `honest_gap_range_pct.measurement_source`.
+- **Minha hipótese de degradação simétrica está refutada por medição** (§38.2): eu supus que o llama.cpp cairia com working set grande pelo mesmo fator do CASCADE. Medido no duelo de working set casado: ele **sobe** — 18,0 GB/s a 1,93 GB contra **19,35 GB/s a 4,38 GB** (+7,5%). O mesmo padrão aparece nas nossas próprias fases (B 18,06 > A 16,24).
+- **Gap real, medido** (§38.1 e §38.4): kernel-vs-kernel com working set casado (~4,6 GB nos dois lados) = **−14,0%** (16,64 contra 19,35 GB/s), e é **piso** porque o lado do llama.cpp inclui o motor dele. Ponta a ponta: **−16% a −18%**. A faixa saiu de −6,1%..−19,7% (premissa) para −14%..−18% (medição).
+- **Correção do teste contra o próprio CASCADE** (§38.3): a Muse é **untied**, então `token_embd` Q6_K (1,10 GB) não é tocado no GEMV — exatamente como o nosso embedding de 0,756 GB não entra no caminho de pesos. Os bytes/token do GGUF estavam superestimados: 15,87 → **14,77 GB**, e o Q4_K_XL projetado sobe de 1,134 para **1,310 tok/s**. Correção que piora nosso gap, feita por quem defende o CASCADE.
 
-### :construction_worker: Refactors
+### :warning: Latest Changes
 
-- **Merge, não substituição — 3ª vez neste projeto** (§37.4, após §18.1 e §32.1): os dois zips deste lote trouxeram um `convert.py` que regredia os campos de honestidade do §33/§34 (`GATE_ROLE`, `gate_vs_ppl_evidence`, `end_to_end_validated`, `kv_runtime_reserve_gib`) e revertia a distinção 138 B (g=64) / 144 B (g=32). Mantido o nosso; adotados os arquivos genuinamente novos: `kernels.c` v2.2, `q4k_linear.py` com `Q8RLinearModule`, `__init__.py`, `build.sh`, `MIGRACAO.md` e `test_report.json`. Conferi que as 10 pré-condições do `test_manifest_honesty.py` passam contra o nosso `convert.py`.
+- **Onde o gap vive, e é acionável** (§38.6): por fase, contra os 19,35 GB/s do llama.cpp — **fase A 84%**, **fase B 93%**. O gap está concentrado na fase A, que carrega os 80 `k_proj`/`v_proj` de 0,9–1,7 MB; a fase B praticamente empatou. O alvo de kernel restante é fusão por camada + unroll na fase A.
+- **Assimetria residual declarada** (§38.7): working set casado, geometria de tensor **não** — llama.cpp no Qwen7B, CASCADE em 17 camadas da Muse. É o melhor pareamento possível nesta máquina, e o registro diz isso. **Não verificado** (§38.8): o relatório cita "fase-B 19,65 > fase-A 16,19 GB/s", valores que não estão em nenhum artefato recebido (v2.1 traz 13,71/15,34; v2.2 traz 16,24/18,06) — o padrão B > A é correto nos dois, mas os números vêm de uma terceira execução não enviada.
+- **Conclusão de produto inalterada** (§38.9): ambos em ~1 tok/s num 30B de 4 núcleos, os dois não-interativos. O diferencial sem derivação continua sendo cobertura de arquitetura — nesta máquina o CASCADE roda a Muse e o GGUF não. A PPL da Muse segue o item aberto: o gate 627/627 é pré-filtro.
 
 ## :wrench: Instalação
 

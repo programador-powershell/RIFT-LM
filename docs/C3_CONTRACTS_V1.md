@@ -1367,3 +1367,77 @@ Bateria `P1_CASCADE_WEIGHTPATH_MUSE`, protocolo `WEIGHTPATH_MEASURED_V1`, grupo
    `set(classe) == {orcamento_gib, cabe, folga_gib}` — o `kv_runtime_reserve_gib`
    que eu acrescentei vive no nível da residência, não dentro das classes.
    Não executável aqui (exige torch + safetensors); versionado para o CI.
+
+## 38. Duelo de working set casado: minha hipótese refutada, gap real −14% a −18% (25º lote)
+
+O experimento que a faixa do §36.2b pedia foi feito, e refuta a hipótese que EU
+levantei. Registro atualizado em `P1_CASCADE_WEIGHTPATH_MUSE`.
+
+1. MEDIDO, working set casado (~4,4–4,6 GB nos dois lados):
+
+   | | banda | escopo |
+   | --- | --- | --- |
+   | llama.cpp Qwen7B Q4_K_M | **19,35 GB/s** | 4,421 tok/s × 4,376 GB/token — **inclui o motor** |
+   | CASCADE 17 camadas da Muse | **16,64 GB/s** | 4,64 GB / 278,9 ms — kernel puro |
+
+   Gap kernel-vs-kernel: **−14,0%**, e é **PISO**: o lado do llama.cpp carrega
+   atenção/KV/sampling, então o kernel puro deles é ≥ 19,35.
+
+2. MINHA HIPÓTESE DE DEGRADAÇÃO SIMÉTRICA ESTÁ REFUTADA. Eu supus que o llama.cpp
+   cairia com working set grande pelo mesmo fator do CASCADE. Medido: ele **SOBE**
+   — 18,0 GB/s a 1,93 GB contra 19,35 a 4,38 GB (**+7,5%**). O mesmo padrão
+   aparece nas nossas fases (B 18,06 > A 16,24). A faixa colapsa para o lado
+   ASSIMÉTRICO, não o simétrico.
+
+3. E O AUTOR DO TESTE CORRIGIU CONTRA SI MESMO. A Muse é **untied**: `token_embd`
+   Q6_K (1,10 GB) não é tocado no GEMV — exatamente como o nosso embedding de
+   0,756 GB não entra no caminho de pesos (§36.1). Logo os bytes/token do GGUF
+   estavam SUPERESTIMADOS: 15,87 → **14,77 GB**, e o Q4_K_XL projetado sobe de
+   1,134 para **1,310 tok/s**. Correção que piora o nosso gap, feita por quem
+   defende o CASCADE.
+
+4. O GAP REAL, e a história da faixa:
+
+   | versão | gap | origem |
+   | --- | --- | --- |
+   | §36.2b (v2.1) | faixa −6,1% a −19,7% | aberta, com a hipótese simétrica |
+   | §37.2 (v2.2) | ponto **−5,0%** | **ERRADO** |
+   | §38 (v2.2 + duelo) | **−14%** (kernel) a **−18%** (ponta a ponta) | MEDIÇÃO |
+
+   Ponta a ponta: 1,078 tok/s (artefato v2.2) contra 1,310 = **−17,7%**; com o
+   1,099 citado no relatório, −16,1%. Não reproduzi 1,099 a partir dos artefatos,
+   então os dois extremos ficam registrados.
+
+5. O ERRO É MEU E FICA NOMEADO NO REGISTRO. Publiquei −5,0% como ponto único
+   colapsando a faixa porque "a assimetria desapareceu". **Colapsei uma incerteza
+   de DOIS LADOS usando dado de um lado só**: a pergunta era "o llama.cpp degrada
+   com working set grande?", que é sobre o llama.cpp, e eu a respondi observando
+   que o CASCADE parou de degradar. Pior: colapsei na direção que favorecia o
+   projeto. Errei por um fator de **3,5**.
+
+   Regra derivada, com asserção no smoke: faixa criada por incerteza sobre um
+   TERCEIRO só colapsa com medição desse terceiro. Enquanto ela não existir, a
+   faixa permanece aberta; para aceitar o estreitamento, o registro tem de
+   apontar o experimento em `honest_gap_range_pct.measurement_source`, e o
+   experimento tem de declarar o que ficou conservador e o que ficou não pareado.
+
+6. ONDE O GAP VIVE — e isso é acionável. Por fase, contra os 19,35 do llama.cpp:
+   **fase A 84%**, **fase B 93%**. O gap está concentrado na fase A, que carrega
+   os 80 `k_proj`/`v_proj` de 0,9–1,7 MB. A fase B praticamente empatou. O alvo
+   de kernel restante é exatamente o que eles apontam: fusão por camada + unroll
+   na fase A.
+
+7. ASSIMETRIA RESIDUAL DECLARADA: working set casado, geometria de tensor NÃO —
+   llama.cpp no Qwen7B, CASCADE em 17 camadas da Muse. É o melhor pareamento
+   possível nesta máquina, e o registro diz isso.
+
+8. NÃO VERIFICADO: o relatório cita "fase-B 19,65 > fase-A 16,19 GB/s". Esses
+   dois valores não estão em nenhum artefato recebido — o v2.1 traz A 13,71 /
+   B 15,34 e o v2.2 traz A 16,24 / B 18,06. O padrão que eles sustentam (B > A) é
+   correto nos dois, mas os números citados vêm de uma terceira execução não
+   enviada.
+
+9. CONCLUSÃO DE PRODUTO INALTERADA: ambos em ~1 tok/s num 30B de 4 núcleos, os
+   dois não-interativos. O diferencial sem derivação continua sendo cobertura de
+   arquitetura — nesta máquina o CASCADE roda a Muse e o GGUF não. E a PPL da
+   Muse segue o item aberto: o gate 627/627 é pré-filtro.
