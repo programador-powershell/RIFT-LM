@@ -1406,11 +1406,36 @@ def read_vmrss_bytes() -> Optional[int]:
     return None
 
 
+def sniff_container(path: Path) -> Optional[str]:
+    """
+    Formato do arquivo pelos MAGIC BYTES, não pelo nome.
+
+    `convert()` resolve o --input (Path.resolve segue symlink), e no cache do
+    Hugging Face `snapshots/<rev>/model.gguf` aponta para `blobs/<sha256>`, que
+    NÃO tem extensão: despachar por sufixo mandava o GGUF para o
+    SafeTensorSource e o erro saía como "Header truncado".
+    """
+    try:
+        with path.open("rb") as fh:
+            head = fh.read(4)
+    except OSError:
+        return None
+    if head == b"GGUF":
+        return "gguf"
+    if head[:2] == b"PK":  # .npz é um zip
+        return "npz"
+    return None  # safetensors não tem magic: fica com o fallback
+
+
 def make_source(input_path: Path, model_id: Optional[str]) -> Source:
-    suffix = input_path.suffix.lower()
-    if suffix == ".npz":
+    # Magic bytes primeiro; o sufixo é só fallback (arquivo vazio/truncado com
+    # nome .gguf deve falhar como GGUF, não como safetensors).
+    kind = None
+    if input_path.is_file():
+        kind = sniff_container(input_path) or input_path.suffix.lower().lstrip(".")
+    if kind == "npz":
         return NPZSource(input_path)
-    if suffix == ".gguf":
+    if kind == "gguf":
         return GGUFSource(input_path, model_id=model_id)
     if input_path.is_dir():
         ggufs = sorted(input_path.glob("*.gguf"))
@@ -2293,6 +2318,22 @@ def convert(args) -> Dict[str, Any]:
     manifest["summary"]["bundle_disk_reduction_pct"] = float(
         (1.0 - actual_bundle / max(total_original, 1)) * 100.0
     )
+
+    # FOOTPRINT HONESTO. Com SOURCE_EXTERNAL o bundle fica pequeno porque os
+    # bytes NÃO foram copiados — eles seguem obrigatórios no checkpoint de
+    # origem. Comparar bundle-vs-fonte nesse caso publica um ganho que não
+    # existe (medido no Muse-Glimmer-30B: "85,51%" de bundle contra 6,5% reais).
+    # Os campos de comparação usam o TOTAL exigido para rodar; o número
+    # bundle-only continua disponível, mas nunca como headline.
+    residency = manifest["summary"]["residency"]
+    external_bytes = int(residency["external_source_bytes"])
+    required_disk_bytes = int(actual_bundle) + external_bytes
+    all_in_ram_bytes = int(residency["all_in_ram_bytes"])
+    manifest["summary"]["required_disk_bytes"] = required_disk_bytes
+    manifest["summary"]["required_disk_reduction_pct"] = float(
+        (1.0 - required_disk_bytes / max(total_original, 1)) * 100.0
+    )
+    manifest["summary"]["headline_metric"] = "all_in_ram_bytes"
     json_dump_atomic(manifest_path, manifest)
 
     # Dashboard-compatible battery (schema v2 — docs/C3_CONTRACTS_V1.md §3).
@@ -2326,29 +2367,36 @@ def convert(args) -> Dict[str, Any]:
         "candidate_ram_bytes": None,
         "rift_ram_bytes": None,
         "baseline_disk_bytes": int(total_original),
-        "candidate_disk_bytes": int(actual_bundle),
-        "rift_disk_bytes": int(actual_bundle),
+        # Disco EXIGIDO para rodar = bundle + o que ficou no checkpoint de
+        # origem. Igual ao bundle quando não há SOURCE_EXTERNAL.
+        "candidate_disk_bytes": required_disk_bytes,
+        "rift_disk_bytes": required_disk_bytes,
         "gains": {
             "tok_s_gain_pct": None,
+            # RAM sai de all_in_ram_bytes (F0 + passthrough + F1), nunca dos
+            # bytes do bundle: o external não ocupa o bundle e ocupa a RAM.
             "ram_reduction_pct": float(
-                (1.0 - total_stage_bytes / max(total_original, 1)) * 100.0
+                (1.0 - all_in_ram_bytes / max(total_original, 1)) * 100.0
             ),
             "disk_reduction_pct": float(
-                (1.0 - actual_bundle / max(total_original, 1)) * 100.0
+                (1.0 - required_disk_bytes / max(total_original, 1)) * 100.0
             ),
             "disk_compression_ratio_x": float(
-                total_original / max(actual_bundle, 1)
+                total_original / max(required_disk_bytes, 1)
             ),
             "overall_gain_pct": None,
         },
         "metrics": {
             "memory": {
                 "estimated_baseline_bytes": int(total_original),
-                "estimated_candidate_bytes": int(total_stage_bytes),
+                "estimated_candidate_bytes": all_in_ram_bytes,
                 "method": None,
                 "note": (
                     "Estimativas aritméticas de tamanho de representação; "
-                    "nenhuma medição de RSS neste conversor estático."
+                    "nenhuma medição de RSS neste conversor estático. O "
+                    "candidato é all_in_ram_bytes (F0 + passthrough exato + "
+                    "F1), não o tamanho do bundle: com SOURCE_EXTERNAL os "
+                    "bytes não copiados continuam obrigatórios em RAM."
                 ),
             },
             # Card "Modelos convertidos" do painel (§28): residência medida +
@@ -2364,6 +2412,12 @@ def convert(args) -> Dict[str, Any]:
                 "external_source_bytes": (
                     manifest["summary"]["residency"]["external_source_bytes"]
                 ),
+                # Métrica de headline do card (§29.9): é por ela que o painel
+                # rankeia. bundle_bytes fica ao lado apenas como detalhe.
+                "all_in_ram_bytes": all_in_ram_bytes,
+                "bundle_bytes": int(actual_bundle),
+                "required_disk_bytes": required_disk_bytes,
+                "headline_metric": "all_in_ram_bytes",
                 "f0_effective_bits_per_weight": (
                     manifest["summary"]["residency"]["f0_effective_bits_per_weight"]
                 ),
@@ -2417,7 +2471,20 @@ def convert(args) -> Dict[str, Any]:
     print(f"Source tensor bytes : {total_original:,}")
     print(f"CASCADE stage bytes : {total_stage_bytes:,}")
     print(f"Bundle dir bytes    : {actual_bundle:,}")
-    print(f"Disk reduction      : {manifest['summary']['bundle_disk_reduction_pct']:.2f}%")
+    if external_bytes:
+        # Nunca imprimir o bundle-vs-fonte como "disk reduction" quando há
+        # external: o número existiria só porque os bytes não foram copiados.
+        print(f"Externo (na fonte)  : {external_bytes:,}")
+        print(f"Disco EXIGIDO       : {required_disk_bytes:,} "
+              f"(bundle + externo)")
+        print(f"Redução REAL disco  : "
+              f"{manifest['summary']['required_disk_reduction_pct']:.2f}% "
+              f"(bundle-vs-fonte seria "
+              f"{manifest['summary']['bundle_disk_reduction_pct']:.2f}%, "
+              f"mas o bundle DEPENDE da fonte)")
+    else:
+        print(f"Disk reduction      : "
+              f"{manifest['summary']['required_disk_reduction_pct']:.2f}%")
     print(f"Tensores retomados  : {resumed}")
     print(f"Output              : {out}")
 
@@ -2450,6 +2517,8 @@ def convert(args) -> Dict[str, Any]:
         print(f"Guarda de expansão  : {guard_hits} tensor(es) mantidos na fonte "
               f"(CASCADE ficaria maior que o original, sem ganho de qualidade)")
     print(f"Paginável (WARM F1) : {res['pageable_warm_bytes'] / gib:.3f} GiB")
+    print(f"TOTAL em RAM        : {res['all_in_ram_bytes'] / gib:.3f} GiB "
+          f"<- métrica de headline (é por ela que o painel rankeia)")
     verdict = "CABE" if res["fits_resident_in_target"] else "NAO CABE"
     print(f"Alvo {res['target_ram_gb']:.1f} GB livres  : {verdict} residente "
           f"(reserva de {res['runtime_reserve_bytes'] / gib:.1f} GiB p/ KV+runtime)")

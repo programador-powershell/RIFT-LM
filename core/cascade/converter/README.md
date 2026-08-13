@@ -262,6 +262,11 @@ disponível quando ela existir.
 
 GGUF multi-parte não é suportado (aponte `--input` para o arquivo).
 
+O formato é decidido pelos **magic bytes**, não pelo nome: `--input` pode apontar
+direto para um caminho do cache do Hugging Face
+(`.../snapshots/<rev>/model.gguf`), cujo alvo real é um blob sem extensão.
+Nenhum hardlink ou renomeação é necessário.
+
 ## Escada de codecs (`--codec-ladder`)
 
 Por tensor, tenta do mais barato ao mais caro e fica no **primeiro degrau que
@@ -313,6 +318,26 @@ depender do arquivo de origem, e `verify` recusa o tensor se o checkpoint
 desapareceu. **Economiza disco, não RAM de execução**: `external_bytes` continua
 somando no residente (HOT), porque o peso ainda precisa estar em memória para
 rodar.
+
+### O bundle pequeno NÃO é o ganho
+
+Com external, o bundle encolhe porque os bytes não foram copiados — comparar
+bundle-vs-fonte publica um ganho que não existe. Medido no Muse-Glimmer-30B
+(IQ2_XXS, 731 tensores, 688 externos):
+
+| número | valor | serve como headline? |
+| --- | --- | --- |
+| fonte GGUF | 10,73 GB | baseline |
+| bundle | 1,56 GB | **não** — depende da fonte |
+| externo (na fonte) | 8,48 GB | — |
+| disco exigido (bundle + externo) | 10,03 GB | sim |
+| **TOTAL em RAM** (`all_in_ram_bytes`) | **10,03 GB** | **sim — é o headline** |
+| redução real | **6,5%** | sim (bundle-vs-fonte daria 85,5%) |
+
+Por isso `candidate_disk_bytes` é o disco EXIGIDO, `ram_reduction_pct` sai de
+`all_in_ram_bytes` e o painel ordena os modelos convertidos por
+`all_in_ram_bytes` ascendente. `cascade_bundle_directory_bytes` e
+`bundle_disk_reduction_pct` seguem no manifesto como detalhe.
 
 ## Piso de energia do F1
 

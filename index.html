@@ -1166,6 +1166,15 @@ function measureChartLatencia(){
 // metrics.converter). Mostra o que decide a compra: quanto o modelo ocupa
 // residente, se cabe no alvo e a RAM projetada por largura de bits.
 const CONVERTER_BATTERY_ID="CASCADE_MODEL_CONVERSION";
+// Métrica de headline: TOTAL em RAM (F0 + passthrough exato + F1). Registros
+// antigos não traziam o campo — o fallback soma residente + paginável. NUNCA
+// usar bytes de bundle aqui: com SOURCE_EXTERNAL o bundle é pequeno só porque
+// os bytes não foram copiados, e eles continuam obrigatórios em RAM.
+function allInRam(c){
+  if(c&&c.all_in_ram_bytes!=null)return n(c.all_in_ram_bytes);
+  const hot=n(c?.resident_hot_bytes),warm=n(c?.pageable_warm_bytes);
+  return hot==null?null:hot+(warm||0);
+}
 function converterRows(){
   const out=new Map();
   for(const r of state.records){
@@ -1173,9 +1182,16 @@ function converterRows(){
     const c=r.raw?.metrics?.converter;if(!c)continue;
     const prev=out.get(r.model);
     if(!prev||String(r.timestamp||"")>String(prev.timestamp||""))
-      out.set(r.model,{model:r.model,timestamp:r.timestamp,c});
+      out.set(r.model,{model:r.model,timestamp:r.timestamp,c,baseline:r.baselineDisk});
   }
-  return [...out.values()].sort((a,b)=>String(b.timestamp||"").localeCompare(String(a.timestamp||"")));
+  // Ranking pelo headline (menor RAM total primeiro), não por data.
+  return [...out.values()].sort((a,b)=>{
+    const ra=allInRam(a.c),rb=allInRam(b.c);
+    if(ra==null&&rb==null)return String(b.timestamp||"").localeCompare(String(a.timestamp||""));
+    if(ra==null)return 1;
+    if(rb==null)return -1;
+    return ra-rb;
+  });
 }
 function bitsTable(rows,hotBytes,achieved,fits){
   if(!Array.isArray(rows)||!rows.length)return "";
@@ -1198,12 +1214,18 @@ function renderConvertedModels(){
   const root=$("convertedModels");if(!root)return;
   const rows=converterRows();
   if(!rows.length){root.innerHTML="";return}
-  const cards=rows.map(({model,timestamp,c})=>{
+  const cards=rows.map(({model,timestamp,c,baseline})=>{
     const machine=c.machine_total_ram_bytes
       ? `<span class="badge">máquina ${fmtBytes(c.machine_total_ram_bytes)}</span>`:"";
     const rungs=c.selected_rungs&&typeof c.selected_rungs==="object"
       ? Object.entries(c.selected_rungs).map(([k,v])=>`<span class="badge">${esc(k)}: ${esc(String(v))}</span>`).join("")
       :"";
+    const total=allInRam(c);
+    // Redução REAL: TOTAL em RAM contra a fonte. Um bundle pequeno que depende
+    // do checkpoint não reduziu nada — o external entra na conta.
+    const real=(baseline&&total!=null)?(1-total/baseline)*100:null;
+    const externo=n(c.external_source_bytes);
+    const dep=c.bundle_requires_source===true;
     return `<div class="card chart convertedCard">
       <h3>${esc(model)}<span class="badge ${c.fits_resident_in_target?"":"warn"}">${
         c.fits_resident_in_target?"cabe em":"não cabe em"} ${esc(String(c.target_ram_gb))} GB</span></h3>
@@ -1212,11 +1234,15 @@ function renderConvertedModels(){
         ${c.f0_effective_bits_per_weight!=null?`<span class="badge">${Number(c.f0_effective_bits_per_weight).toFixed(2)} bpw</span>`:""}
         ${c.source_format?`<span class="badge">${esc(String(c.source_format))}</span>`:""}
         <span class="badge">${esc(String(c.converted_tensor_count??"—"))} convertidos</span>
+        ${dep?`<span class="badge warn" title="Tensores em SOURCE_EXTERNAL: o bundle não é autocontido e o checkpoint de origem não pode ser apagado">depende da fonte</span>`:""}
         ${rungs}</div>
       <div class="metrics">
+        <div class="metric"><span class="mLabel">TOTAL em RAM</span><b>${fmtBytes(total)}</b></div>
+        ${real!=null?`<div class="metric"><span class="mLabel">Redução real vs fonte</span><b>${real.toFixed(1)}%</b></div>`:""}
         <div class="metric"><span class="mLabel">Residente</span><b>${fmtBytes(c.resident_hot_bytes)}</b></div>
         <div class="metric"><span class="mLabel">Paginável (F1)</span><b>${fmtBytes(c.pageable_warm_bytes)}</b></div>
         <div class="metric"><span class="mLabel">Passthrough exato</span><b>${fmtBytes(c.raw_passthrough_bytes)}</b></div>
+        ${dep?`<div class="metric"><span class="mLabel">Fora do bundle (na fonte)</span><b>${fmtBytes(externo)}</b></div>`:""}
       </div>
       <div class="bitsTable">${bitsTable(c.memory_by_bits,c.resident_hot_bytes,
         c.f0_effective_bits_per_weight,c.fits_resident_in_target)}</div>
@@ -1224,7 +1250,7 @@ function renderConvertedModels(){
     </div>`;
   }).join("");
   root.innerHTML=`<div class="sectionTitle">Modelos convertidos${infoBadge(
-    "Modelos processados pelo conversor CASCADE (registros CASCADE_MODEL_CONVERSION). Residente = estágio base + passthrough exato, o que precisa estar em RAM; Paginável = residual F1, que pode ficar em disco. O veredito compara o residente com o orçamento da máquina alvo (RAM total menos 8 GiB de reserva para SO/apps, piso de 50%: 16 GiB→8, 24→16, 32→24) descontando 1,5 GiB para KV-cache e ativações.",
+    "Modelos processados pelo conversor CASCADE (registros CASCADE_MODEL_CONVERSION), ordenados pelo TOTAL em RAM — menor primeiro. TOTAL em RAM = estágio base + passthrough exato + residual F1: é a métrica de headline, e o ranking usa ela. Residente = o que precisa estar em RAM ao mesmo tempo; Paginável = residual F1, que pode ficar em disco. Quando aparece 'depende da fonte', parte dos tensores ficou em SOURCE_EXTERNAL: o bundle é pequeno porque esses bytes NÃO foram copiados, mas continuam obrigatórios — por isso a redução exibida compara o TOTAL em RAM com a fonte, nunca o tamanho do bundle. O veredito compara o residente com o orçamento da máquina alvo (RAM total menos 8 GiB de reserva para SO/apps, piso de 50%: 16 GiB→8, 24→16, 32→24) descontando 1,5 GiB para KV-cache e ativações.",
     "Sobre os modelos convertidos")}<span class="infoBadge"><button type="button" class="infoBtn" data-info-toggle aria-expanded="false" aria-label="Sobre a tabela por bits" title="Sobre a tabela por bits">ⓘ</button><span class="infoPop" hidden role="note"><p>A tabela por largura de bits é PROJETADA: recalcula apenas o estágio base com cada largura hipotética (mantendo o overhead de escala por grupo) e soma o passthrough real, que não é quantizado. A linha <code>medido</code> é a residência real da conversão.</p><p>1–2 bits uniformes NÃO preservam qualidade neste projeto: medido em ternário PPL 41,5M e em INT2 PPL 22k, contra 49,1 do original. A escada de codecs só desce de bits nos tensores em que o gate de qualidade aprova.</p></span></span></div>
     <div class="measureCharts">${cards}</div>`;
 }

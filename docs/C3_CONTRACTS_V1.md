@@ -769,3 +769,48 @@ move `attn_output`; a conversão frequentemente AUMENTA bytes contra a fonte IQ2
    CASCADE" no card do conversor, desligado por padrão, com o custo (bundle
    deixa de ser autocontido) no ⓘ. O runner local também repassa
    `--codec-ladder`, `--include-regex` e `--target-ram-gb`.
+
+8. DESPACHO DE FORMATO POR MAGIC BYTES (bug real, reportado em teste com o
+   cache do Hugging Face). `convert()` faz `Path(args.input).resolve()`, e
+   `resolve()` SEGUE symlink: em `~/.cache/huggingface/.../snapshots/<rev>/
+   model.gguf → blobs/<sha256>` o alvo NÃO tem extensão, então o despacho por
+   sufixo mandava o GGUF para o `SafeTensorSource` e o erro saía como
+   "Header truncado". `sniff_container(path)` passa a decidir pelos magic bytes
+   (`GGUF` → gguf, `PK` → npz, ausência de magic → safetensors) e o sufixo fica
+   só como FALLBACK, para que um `.gguf` vazio ou truncado ainda falhe COMO
+   GGUF. Regra: nenhuma decisão de formato pode depender do NOME do arquivo.
+   `maybe_delete_source_shard` mantém de propósito o teste por sufixo
+   `.safetensors` — é uma guarda destrutiva que precisa falhar fechada
+   (um blob resolvido sem extensão é PRESERVADO, nunca apagado).
+
+9. FOOTPRINT HONESTO — `all_in_ram_bytes` É A MÉTRICA DE HEADLINE (bug real,
+   medido no Muse-Glimmer-30B). Com `SOURCE_EXTERNAL` o bundle fica pequeno
+   PORQUE os bytes não foram copiados: comparar bundle-vs-fonte publica um ganho
+   inexistente. Medido: fonte GGUF 10,73 GB → bundle 1,56 GB + externo 8,48 GB;
+   o registro publicava `disk_reduction_pct: 85,51` e `ram_reduction_pct: 85,52`
+   quando a redução REAL é 6,5%.
+
+   Regras:
+   - `candidate_disk_bytes` / `rift_disk_bytes` = `bundle + external_source_bytes`
+     (o disco EXIGIDO para rodar). Igual ao bundle quando não há external.
+   - `gains.disk_reduction_pct` e `disk_compression_ratio_x` derivam desse total.
+   - `gains.ram_reduction_pct` e `metrics.memory.estimated_candidate_bytes`
+     derivam de `all_in_ram_bytes` (F0 + passthrough exato + F1), NUNCA dos
+     bytes de estágio do bundle.
+   - `summary.required_disk_bytes` / `required_disk_reduction_pct` são os campos
+     honestos; `cascade_bundle_directory_bytes` e `bundle_disk_reduction_pct`
+     continuam existindo como DETALHE, nunca como headline.
+   - `metrics.converter` publica `all_in_ram_bytes`, `bundle_bytes`,
+     `required_disk_bytes` e `headline_metric: "all_in_ram_bytes"`.
+   - Console: com external > 0 é proibido imprimir "Disk reduction" bundle-vs-
+     fonte; imprime-se o disco exigido, a redução REAL e, entre parênteses, o
+     número bundle-only com a ressalva de que o bundle depende da fonte.
+   - Painel (`renderConvertedModels`): ordena os cards por `all_in_ram_bytes`
+     ASCENDENTE (menor primeiro) — nunca por data e nunca por redução de disco;
+     primeira métrica do card é "TOTAL em RAM", seguida de "Redução real vs
+     fonte"; `bundle_requires_source` vira o selo "depende da fonte" e a linha
+     "Fora do bundle (na fonte)". Registros antigos sem `all_in_ram_bytes` caem
+     no fallback `resident_hot_bytes + pageable_warm_bytes`.
+
+   Princípio: um bundle que DEPENDE do checkpoint de origem não reduziu o
+   footprint — apenas mudou onde os bytes moram.

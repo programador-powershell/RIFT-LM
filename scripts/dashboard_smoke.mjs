@@ -2969,6 +2969,9 @@ for (const marker of [
   "required_fraction",
   // Com auto a escada é por tensor: o relatório precisa dizer o que foi USADO.
   "codec_ladder_resolved", "dominant_ladder_mode",
+  // Despacho de formato por magic bytes: o resolve() do --input segue o symlink
+  // do cache do HF até um blob SEM extensão (§29.8).
+  "sniff_container", 'head == b"GGUF"',
 ]) {
   assert.ok(converterSource.includes(marker), `cascade_converter.py sem marcador §29: ${marker}`);
 }
@@ -2984,6 +2987,39 @@ for (const flag of ["--allow-byte-expansion", "--keep-source-passthrough"]) {
 // duas métricas e o fallback continua sendo passthrough exato (§29.5).
 assert.ok(/return m\["cosine"\] >= cosine_min and m\["nrmse"\] <= nrmse_max/.test(converterSource),
   "quality_pass não pode ser afrouxado pelas otimizações de custo (§29.5)");
+// §29.8 — make_source NÃO pode voltar a despachar só pelo sufixo: o magic byte
+// vem primeiro e o sufixo é apenas fallback.
+assert.ok(/kind = sniff_container\(input_path\) or input_path\.suffix/.test(converterSource),
+  "make_source precisa despachar por magic bytes antes do sufixo (§29.8)");
+
+// §29.9 — footprint honesto: os campos de comparação do registro publicado NÃO
+// podem ser bundle-vs-fonte quando parte dos tensores ficou em SOURCE_EXTERNAL
+// (medido no Muse-Glimmer-30B: "85,51%" de bundle contra 6,5% reais).
+for (const marker of [
+  "required_disk_bytes", "required_disk_reduction_pct", "all_in_ram_bytes",
+  'headline_metric": "all_in_ram_bytes',
+]) {
+  assert.ok(converterSource.includes(marker), `cascade_converter.py sem marcador §29.9: ${marker}`);
+}
+assert.ok(converterSource.includes('"candidate_disk_bytes": required_disk_bytes'),
+  "candidate_disk_bytes precisa ser o disco EXIGIDO (bundle + externo), §29.9");
+assert.ok(converterSource.includes('"rift_disk_bytes": required_disk_bytes'),
+  "o alias legado rift_disk_bytes precisa acompanhar o disco exigido (§29.9)");
+assert.ok(converterSource.includes('"estimated_candidate_bytes": all_in_ram_bytes'),
+  "estimated_candidate_bytes precisa sair de all_in_ram_bytes, não do bundle (§29.9)");
+assert.ok(!/"candidate_disk_bytes": int\(actual_bundle\)/.test(converterSource),
+  "REGRESSÃO §29.9: candidate_disk_bytes voltou a ser o tamanho do bundle");
+assert.ok(!/ram_reduction_pct[\s\S]{0,120}total_stage_bytes/.test(converterSource),
+  "REGRESSÃO §29.9: ram_reduction_pct voltou a sair dos bytes de estágio do bundle");
+// Painel: ranking e headline do card por all_in_ram_bytes.
+for (const marker of [
+  "function allInRam(", "TOTAL em RAM", "Redução real vs fonte",
+  "depende da fonte", "Fora do bundle (na fonte)",
+]) {
+  assert.ok(legacyHtml.includes(marker), `index.html sem marcador do headline do conversor (§29.9): ${marker}`);
+}
+assert.ok(/return ra-rb;/.test(legacyHtml),
+  "converterRows precisa ordenar pelo TOTAL em RAM (menor primeiro), não por data (§29.9)");
 // argparse interpola o help com %-formatting: um "%" literal não escapado faz
 // `convert --help` levantar TypeError. Vale para todos os CLIs Python do repo.
 const pythonCliFiles = [
