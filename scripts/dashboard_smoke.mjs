@@ -3066,6 +3066,54 @@ for (const marker of ["Folga em 24 GB", "break_even_note", "projRes"]) {
 assert.ok(legacyHtml.includes("typeof projRaw===\"object\"?projRaw.central:projRaw"),
   "a projeção precisa aceitar número OU {best,central,worst} (§31.6)");
 
+// §33 — o gate de cosseno é PRÉ-FILTRO, não veredito de qualidade.
+for (const marker of [
+  "PREFILTER_NOT_VERDICT", "GATE_ROLE", "end_to_end_validated",
+  "gate_vs_ppl_evidence", "+29.1% de PPL",
+]) {
+  assert.ok(convV2.includes(marker), `convert.py sem marcador §33.1: ${marker}`);
+}
+assert.ok(/PRE-FILTRO, nao veredito/.test(convV2),
+  "o aviso do gate como pré-filtro tem de ser impresso em toda conversão (§33.1)");
+
+const pplRecord = publishedHistory.find((r) => r.battery_id === "P1_CASCADE_PPL_E2E");
+if (pplRecord) {
+  const m = pplRecord.metrics;
+  assert.equal(pplRecord.benchmark_protocol, "PPL_E2E_V1");
+  assert.equal(pplRecord.quality.end_to_end_measured, true,
+    "o registro de PPL é a primeira medição end-to-end: precisa declarar isso");
+  assert.equal(pplRecord.quality.end_to_end_certified, false,
+    "medido não é certificado: a config default degrada 29,1% (§33.1)");
+  // O achado central não pode ser diluído.
+  assert.equal(m.gate_vs_ppl.all_tensors_passed_gate, true);
+  assert.ok(m.gate_vs_ppl.ppl_delta_pct_with_all_passing > 25,
+    "o registro precisa preservar que o gate aprovou tudo E a PPL degradou (§33.1)");
+  // A soma da decomposição tem de fechar com o delta reportado.
+  const d = m.perplexity.decomposition_ppl_points;
+  const soma = d.peso_g32_data_free + d.degrau_g64 + d.ativacao_int8_grupo256 + d.cabeca_4_5bpw;
+  assert.ok(Math.abs(soma - d.soma) < 1e-9, "a soma da decomposição de PPL não fecha");
+  assert.ok(Math.abs((m.perplexity.baseline_bf16 + soma) - m.perplexity.cascade_default) < 1e-9,
+    "baseline + decomposição precisa reproduzir a PPL da config default (§33.1)");
+  // Duelo: empate declarado quando o efeito não pareado excede a margem.
+  const duel = m.matched_class_duel;
+  assert.ok(duel.unmatched_variable_known_cost_ppl > duel.margin_ppl,
+    "se o efeito não pareado excede a margem, o duelo é empate (§33.2)");
+  assert.match(duel.verdict, /EMPATE T[ÉE]CNICO/,
+    "o duelo precisa ser registrado como empate, não vitória (§33.2)");
+  assert.equal(pplRecord.baseline_tok_s, null);
+  assert.equal(pplRecord.candidate_tok_s, null);
+}
+
+// §33.3 — a projeção de 24 GB da Muse ficou CONDICIONAL ao g64.
+const convRec = publishedHistory.find((r) => r.run_id === "cascade-convert-v2-bf16-muse30b");
+if (convRec) {
+  const cond = convRec.metrics.converter.projection.residency.new_condition_from_ppl;
+  assert.ok(cond, "a projeção de 24 GB precisa carregar a condição vinda da PPL (§33.3)");
+  assert.equal(cond.verdict_status, "CONDICIONAL");
+  assert.match(cond.consequence, /15,67|15.67/,
+    "a condição precisa citar o bundle de 15,67 GB que não cabe (§33.3)");
+}
+
 // §29.10 — política Fase-1 nos DOIS esquemas de nome. O padrão HF não casa nada
 // no ggml: sem as alternativas token_embd/output.weight/_exps a política era
 // silenciosamente inerte em entrada .gguf.

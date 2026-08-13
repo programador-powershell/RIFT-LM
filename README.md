@@ -54,17 +54,20 @@ Pesos calibrados para o objetivo declarado do score: identificar a melhor tecnol
 
 ## :new: Releases Notes
 
-### :up: V.3.4.1
+### :up: V.3.5
+
+### :warning: Latest Changes
+
+- **Primeira medição END-TO-END do projeto** (contrato §33): bateria `P1_CASCADE_PPL_E2E` (protocolo `PPL_E2E_V1`) com **perplexidade real** do `Qwen/Qwen2.5-0.5B` — modelo pequeno escolhido porque os dois formatos o rodam. Grupo e nome próprios: "P1 · Qualidade end-to-end (PPL)" / "Qualidade real (perplexidade)". Até aqui **todo** número de qualidade do projeto era cosseno de peso.
+- **Decomposição medida de onde a qualidade se perde**, em pontos de PPL sobre baseline 18,93: peso g32 data-free **+2,38** · degrau g64 **+1,44** · ativação int8/grupo-256 **+0,59** · cabeça 4,5 bpw **+1,09**. É o resultado mais útil do teste, porque diz onde gastar: as duas primeiras linhas do backlog recuperam 1,68 ponto a custo quase zero.
+- **Escopo do runtime decidido por número** (§33.4): llama.cpp completo 40–55 tok/s contra 11–13 de qualquer caminho PyTorch (BF16 ou CASCADE). No 0.5B o **motor** vale 3–4×, não o kernel — tokenizer, KV-cache, atenção e sampling em C++ dominam quando o GEMV não domina. Conclusão registrada: "acelerador de PyTorch" serve para bateria e validação; para o produto "roda em qualquer PC" é **motor autônomo ou nada**.
 
 ### :pushpin: Fixes
 
-- **Publiquei o melhor de três runs como se fosse o número** (contrato §32.4): o registro do kernel v2 trazia speedup de **43,6×** contra o caminho `low_mem` e **1,74×** contra o `default` — os valores do único run que eu tinha na época. Com três execuções do MESMO benchmark sintético, sem mudança de código entre elas, a dispersão é de **8,0%** no tok/s do v2 e **19,9% no speedup de manchete** (36,4× · 41,5× · 43,6×). Regra nova: benchmark com mais de um run publica `<metrica>_range` com `{min,max,median}` mais `runs`/`runs_detail`, e o campo de ponto único carrega a **mediana**, nunca o melhor — o smoke falha se voltar a ser o máximo. Consequência sobre o §30.5: o ganho de cosseno do F1 (+3e-5) é uma ordem de grandeza menor que os 8% de dispersão do próprio benchmark, então naquele stack o F1 é indistinguível de ruído.
-- **Faixa da projeção de residência** (§32.3): o "cabe na máquina de 24 GB" passa a vir com os três cenários — central 15,08 GB (folga +0,46 GiB), worst realista 15,19 (+0,35) e worst estrutural 15,67 (−0,09). O ponto de ruptura de +3,24% exigiria bpw médio de ~4,47, ou seja **~96% dos tensores em g32 quando o medido é 5,6%** — o veredito sobrevive ao worst realista e cai só no estrutural, por 0,09 GiB.
-- **Docstring do conversor tinha dois resíduos vencidos** (§32.2): listava as classes de máquina como `8/16/24/40`, que são os ORÇAMENTOS e não os totais (resto exato do bug de subtração dupla do §31.5), e afirmava "144 B/super-bloco" para todo caso quando g=64 usa 138 B.
-
-### :construction_worker: Refactors
-
-- **Merge do conversor v2 pós-review** (§32.1), pela mesma regra do GEYSER: atualização de ciência é merge, nunca substituição da camada de publicação. A forma nova do relatório de residência é melhor e foi adotada — chave `maquina_<total>gb` com `orcamento_gib`/`cabe`/`folga_gib` como campos, em vez do orçamento embutido no nome da chave — com anti-regressão versionada em `tests/test_residency.py` (inclui o limiar exato 14,50 CABE / 14,51 NÃO CABE). Repostos por cima: `kv_runtime_reserve_gib` numérico ao lado da frase `regra_orcamento`, para consumidor de JSON não precisar parsear texto, e `gate_policy` no resumo, porque um bundle que rompe o invariante §29.5 precisa ser autodescritivo.
+- **O gate de cosseno não protege perplexidade — e era critério de aceitação** (§33.1): o gate 0,995 aprovou **todos** os tensores e a configuração aprovada degradou a PPL em **+29,1%** (18,93 → 24,43). O gate passa a ser **PRÉ-FILTRO, nunca veredito**: `convert.py` expõe `gate_role: "PREFILTER_NOT_VERDICT"`, `end_to_end_validated: false` e `gate_vs_ppl_evidence` no resumo do manifesto, e imprime o aviso no fim de **toda** conversão — principalmente quando tudo passou. Toda afirmação de qualidade anterior baseada em cosseno (§29.4, §29.11, §31) descreve proximidade de **peso**, não qualidade de **modelo**.
+- **Duelo de mesma classe é empate técnico, não vitória** (§33.2): CASCADE 21,90 contra q4_0 21,97 é margem de **0,07 PPL**, mas a variável não pareada (cabeça FP32 nossa vs Q8_0 deles) tem custo conhecido de **1,09** — **15,6× a margem**. Regra nova: quando o efeito de uma variável não pareada excede a margem, o resultado é EMPATE e a diferença não vai para manchete. O que a medição sustenta é a estrutura assimétrica+clip pagar, e o formato tratar hidden 896 por padding enquanto o llama.cpp abandonou o K-quant naquele arquivo.
+- **A projeção de 24 GB da Muse ficou CONDICIONAL** (§33.3): o degrau g64, que sustenta os 15,08 GB, custou +1,44 de PPL no 0.5B. Se a Muse exigir piso g32, o bundle vai a 15,67 GB e **não cabe** (folga −0,09) — o "worst estrutural" do §32.3 deixou de ser barra de erro e passou a ter **mecanismo**. Só a conversão integral + PPL da Muse fecha o veredito.
+- **Perplexidade era rotulada como velocidade** (§33.5): `batteryFriendlySuffix` e `batteryGroupKey` casavam `_E2E` antes de tudo e chamavam a bateria de PPL de "Velocidade ponta a ponta" no grupo "P1 · Codec principal". A regra `_PPL` passou a vir antes, com fixtures travando as duas e confirmando que `_E2E_TOKS` segue no grupo de tok/s.
 
 ## :wrench: Instalação
 

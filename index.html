@@ -546,6 +546,9 @@ function batteryGroupKey(batteryId){
   // Comparação de gerações (contrato §18): regra NOVA, a PRIMEIRA a casar.
   if(/^CMP_/.test(id))return "E2E · comparação de gerações";
   if(/^CAP_/.test(id))return "Capacidades";
+  // PPL vem ANTES do _E2E: perplexidade é qualidade, não velocidade, e a regra
+  // de tok/s engolia o sufixo _E2E rotulando-a como "Velocidade ponta a ponta".
+  if(/_PPL(_|$)/.test(id))return "P1 · Qualidade end-to-end (PPL)";
   if(/_E2E_TOKS$/.test(id))return "E2E · tok/s modelo completo";
   if(/^B0_/.test(id))return "B0 · Fundação";
   if(/(_SIM$|_POLICY_SIM$|PREFETCH_SIM$)/.test(id))return "P1 · políticas simuladas";
@@ -805,6 +808,7 @@ function batteryLevel(batteryId){
 const BATTERY_FRIENDLY_NAMES={
   // Nível 1 — fundação e codecs
   P1_CASCADE_RUNTIME_V2_KERNEL:"Motor de execução (kernel C)",
+  P1_CASCADE_PPL_E2E:"Qualidade real (perplexidade)",
   B0_GEYSER_PHYSICS_BANDWIDTH:"Banda de memória",
   G1_GEYSER_ZDC_LUT:"Compressão + kernel LUT",
   G2_GEYSER_RRS_SALIENCE:"Saliência e cache",
@@ -874,6 +878,7 @@ function batteryFriendlySuffix(batteryId){
   if(/^C4_/.test(id))return "Segunda família";
   if(/^C5_/.test(id))return "Blocos representativos";
   if(/^C6_/.test(id))return "Compilar e executar";
+  if(/_PPL(_|$)/.test(id))return "Qualidade real (perplexidade)";
   if(/_E2E(_TOKS)?$/.test(id))return "Velocidade ponta a ponta";
   if(/(_SIM|_POLICY_SIM|PREFETCH_SIM)$/.test(id))return "Política simulada";
   if(/_C0_/.test(id))return "Linear (4 caminhos)";

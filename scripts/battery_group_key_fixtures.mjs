@@ -89,6 +89,10 @@ assert.equal(batteryGroupKey("P1_CASCADE_C1_BLOCK_GATED"), "C1 · Bloco real");
 // Motor de execução (kernel nativo) tem grupo próprio: não é codec, e o
 // fallback "P1 · Codec principal" descreveria a coisa errada.
 assert.equal(batteryGroupKey("P1_CASCADE_RUNTIME_V2_KERNEL"), "P1 · Motor de execução");
+// Perplexidade é QUALIDADE, não velocidade: a regra de _PPL precisa vencer a de
+// _E2E, que rotulava a bateria de PPL como "Velocidade ponta a ponta".
+assert.equal(batteryGroupKey("P1_CASCADE_PPL_E2E"), "P1 · Qualidade end-to-end (PPL)");
+assert.equal(batteryGroupKey("P1_CASCADE_C2_E2E_TOKS"), "E2E · tok/s modelo completo");
 // A regra ^B0_ vem ANTES e continua vencendo para o setup do runtime GGUF.
 assert.equal(batteryGroupKey("B0_GGUF_RUNTIME_SETUP"), "B0 · Fundação");
 
@@ -151,6 +155,7 @@ const KNOWN_GROUPS = new Set([
   "C5 · Blocos representativos",
   "C6 · Compilar+Executar",
   "P1 · Motor de execução",
+  "P1 · Qualidade end-to-end (PPL)",
   "P1 · Codec principal",
 ]);
 const groupsByModel = new Map();

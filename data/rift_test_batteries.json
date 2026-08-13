@@ -5121,6 +5121,12 @@
               "central": 0.46,
               "worst_realista": 0.35,
               "worst_estrutural": -0.09
+            },
+            "new_condition_from_ppl": {
+              "source": "P1_CASCADE_PPL_E2E (Qwen2.5-0.5B)",
+              "finding": "o degrau g64 custou +1,44 de PPL no 0.5B",
+              "consequence": "os 15,08 GB dependem do g64 sobreviver na escala de 30B. Se a Muse exigir piso g32, o bundle vai a 15,67 GB e NÃO cabe em 24 GB (folga −0,09) — ou seja, o \"worst estrutural\" deixou de ser barra de erro e passou a ter mecanismo. Modelos de 30B toleram quantização melhor que 0.5B, então o g64 pode sobreviver; só a conversão integral + PPL da Muse decide.",
+              "verdict_status": "CONDICIONAL"
             }
           },
           "note": "Extrapolação ×52 da amostra, agora com faixa: central 15,08 GB, worst realista 15,19, worst estrutural 15,67. A primeira versão deste registro trazia ponto único."
@@ -5138,7 +5144,8 @@
           "cosine_embed_tokens": 0.996976,
           "cosine_lm_head": 0.996913,
           "gate_cosine_min": 0.995,
-          "note": "Embeddings e lm_head passaram a ser quantizados (q4k/g32) com cosseno MEDIDO, em vez do raw 16 bpw do v1 — é daqui que vem a maior parte da economia. O degrau q6k citado no plano ainda não existe: depende de kernel 6-bit."
+          "note": "Embeddings e lm_head passaram a ser quantizados (q4k/g32) com cosseno MEDIDO, em vez do raw 16 bpw do v1 — é daqui que vem a maior parte da economia. O degrau q6k citado no plano ainda não existe: depende de kernel 6-bit.",
+          "gate_role_note": "os cossenos acima são PRÉ-FILTRO, não veredito: medido no Qwen2.5-0.5B, o gate 0,995 aprovou tudo e o modelo degradou 29,1% de PPL."
         },
         "gate_policy_change": {
           "v1": "nenhum degrau passou -> passthrough exato (16 bpw, sem perda)",
@@ -5173,5 +5180,157 @@
       "end_to_end_certified": false
     },
     "notes": "Conversor v2 grava direto no formato do executor (138 B em g=64, 144 B em g=32) — zero repack na carga. Sem fallback raw para 2D: o pior caso passa de 16 bpw para 4,5 bpw, mas um tensor pode sair ABAIXO do gate marcado com quality_flag (rompe o invariante §29.5 de propósito). Gate local por tensor não é qualidade end-to-end: a arquitetura muse-glimmer não carrega em transformers nem no llama.cpp 0.3.34, então não houve perplexity/geração para validar."
+  },
+  {
+    "schema_version": 2,
+    "timestamp_utc": "2026-08-13T22:10:00Z",
+    "run_id": "cascade-ppl-e2e-qwen05b",
+    "spec": "CASCADE-Q4K/2.0 / runtime_v2 + llama.cpp b-ref",
+    "technology": "CASCADE",
+    "model_id": "Qwen/Qwen2.5-0.5B",
+    "battery_id": "P1_CASCADE_PPL_E2E",
+    "benchmark_protocol": "PPL_E2E_V1",
+    "comparison_role": null,
+    "comparison_group_id": "cmp-42a1ddb2a9615510ed3f4446",
+    "comparison_context": {
+      "protocol": "PPL_E2E_V1",
+      "model_id": "Qwen/Qwen2.5-0.5B",
+      "device": "cpu",
+      "torch": null,
+      "transformers": null,
+      "python": null,
+      "numpy": null,
+      "note": "hidden 896 — não divide por 256, o que torna K-quants inaplicáveis neste arquivo e explica o mix de ~7,9 bpw do q4_k_m."
+    },
+    "implementation": {
+      "kind": "REFERENCE_MEASURED",
+      "native": true,
+      "simulated": false,
+      "eligible_for_primary_ranking": false
+    },
+    "eligible_for_primary_ranking": false,
+    "status": "EXPERIMENTAL_PASS",
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "metrics": {
+      "perplexity": {
+        "baseline_bf16": 18.93,
+        "cascade_default": 24.43,
+        "cascade_default_delta_pct": 29.05,
+        "cascade_best_same_class": 21.9,
+        "cascade_best_delta_pct": 15.69,
+        "gguf_q4_0": 21.97,
+        "gguf_q4_0_delta_pct": 16.06,
+        "gguf_q4_k_m": 20.02,
+        "gguf_q4_k_m_delta_pct": 5.76,
+        "decomposition_ppl_points": {
+          "peso_g32_data_free": 2.38,
+          "degrau_g64": 1.44,
+          "ativacao_int8_grupo256": 0.59,
+          "cabeca_4_5bpw": 1.09,
+          "soma": 5.5
+        },
+        "note": "Decomposição verificada: soma 5,50 sobre baseline 18,93 reproduz o +29,1% reportado. A configuração DEFAULT do conversor é a de +29,1%."
+      },
+      "gate_vs_ppl": {
+        "gate_cosine_min": 0.995,
+        "all_tensors_passed_gate": true,
+        "ppl_delta_pct_with_all_passing": 29.05,
+        "verdict": "o gate de cosseno NÃO protege perplexidade: aprovou todos os tensores e o modelo aprovado degradou 29,1%. O gate é PRÉ-FILTRO (a reconstrução do peso é próxima), nunca veredito de qualidade.",
+        "consequence": "toda afirmação anterior de qualidade baseada em cosseno — §29.4, §29.11, §31 — descreve proximidade de peso, não qualidade de modelo."
+      },
+      "matched_class_duel": {
+        "cascade": {
+          "ppl": 21.9,
+          "config": "q4k/g32 + clip, ativação int8/256, cabeça FP32"
+        },
+        "gguf": {
+          "ppl": 21.97,
+          "config": "q4_0, cabeça Q8_0"
+        },
+        "margin_ppl": 0.07,
+        "margin_pct": 0.32,
+        "unmatched_variable": "precisão da cabeça (FP32 nossa vs Q8_0 deles)",
+        "unmatched_variable_known_cost_ppl": 1.09,
+        "effect_to_margin_ratio_x": 15.6,
+        "verdict": "EMPATE TÉCNICO, não vitória. A margem é 0,07 PPL e o custo conhecido da variável não pareada (cabeça em 4,5 bpw custa 1,09) é 15,6× maior que a margem. Com cabeça pareada em 8 bits o resultado é empate ou perda marginal. O relatório de origem já declarava \"quase-empate honesto\".",
+        "structural_win": "o que a medição sustenta: a estrutura assimétrica+clip paga, e o formato lida com hidden 896 por padding enquanto o llama.cpp teve de abandonar o K-quant naquele arquivo."
+      },
+      "runtime": {
+        "scope": "REAL_MODEL_MEASURED",
+        "tok_s_range": {
+          "llama_cpp_completo": {
+            "min": 40,
+            "max": 55
+          },
+          "pytorch_bf16": {
+            "min": 11,
+            "max": 13
+          },
+          "pytorch_cascade": {
+            "min": 11,
+            "max": 13
+          }
+        },
+        "engine_advantage_x": {
+          "min": 3.1,
+          "max": 5
+        },
+        "verdict": "no 0.5B o MOTOR vale 3–4×, não o kernel: tokenizer, KV-cache, atenção e sampling em C++ dominam quando o GEMV não domina. A vantagem do kernel cresce com o tamanho do modelo. Consequência de escopo: \"acelerador de PyTorch\" serve para bateria e validação; para o produto \"roda em qualquer PC\" é motor autônomo ou nada."
+      },
+      "backlog_measured_return": [
+        {
+          "rank": 1,
+          "item": "ativações por grupo-32 (estilo Q8_0) no kernel",
+          "ppl_recovered": 0.59,
+          "cost": "~zero — mudança pequena em q4k_prepare_x_i8"
+        },
+        {
+          "rank": 2,
+          "item": "cabeça em classe 8 bits (q8 rowwise)",
+          "ppl_recovered": 1.09,
+          "cost": "+0,67 GB no 30B — o q4_0 do llama.cpp já faz"
+        },
+        {
+          "rank": 3,
+          "item": "política de degrau por escala do modelo (g32 como piso em modelo pequeno; g64 condicionado a PPL)",
+          "ppl_recovered": 1.44,
+          "cost": "bpw maior onde o g64 não sobreviver"
+        },
+        {
+          "rank": 4,
+          "item": "imatrix / calibração por ativação",
+          "ppl_recovered": null,
+          "cost": "o único item que muda de patamar"
+        }
+      ],
+      "backlog_projection": {
+        "cascade_data_free_with_1_2_3": {
+          "min": 21.3,
+          "max": 21.5
+        },
+        "label": "PROJETADO",
+        "note": "21,90 − 0,59 (ativação) = 21,31; ficaria à frente do q4_0 (21,97) com folga e atrás apenas do mix de ~7,9 bpw do q4_k_m (20,02)."
+      }
+    },
+    "measurement_scope": "PRIMEIRA medição END-TO-END do projeto: perplexidade real do Qwen/Qwen2.5-0.5B, não cosseno de peso. Modelo pequeno escolhido porque os dois formatos o rodam (a Muse-Glimmer não carrega no llama.cpp). Perplexidade é determinística sobre corpus fixo, então não há dispersão entre runs como no benchmark de kernel (§32.4). As velocidades são faixas medidas; tok/s de topo segue null porque não há par baseline/candidato sob protocolo idêntico. NÃO extrapolar para 30B: modelos grandes toleram quantização melhor, e é exatamente isso que falta medir.",
+    "quality": {
+      "local_weight_metrics_only": false,
+      "end_to_end_certified": false,
+      "end_to_end_measured": true,
+      "note": "end_to_end_MEASURED=true (existe PPL medida) mas end_to_end_CERTIFIED=false: a configuração default do conversor degrada 29,1% e ainda não há PPL do modelo alvo (Muse-Glimmer-30B)."
+    },
+    "notes": "Achado central: o gate de cosseno 0,995 aprovou 100% dos tensores e a configuração aprovada degradou a perplexidade em 29,1%. O gate passa a ser PRÉ-FILTRO, não veredito. Duelo de mesma classe é empate técnico (margem 0,07 PPL contra um efeito não pareado de 1,09). A distância até o q4_k_m não é codec, é mix: naquele arquivo o llama.cpp gastou ~7,9 bpw porque hidden 896 não divide por 256 e a receita M promove v/down/output."
   }
 ]

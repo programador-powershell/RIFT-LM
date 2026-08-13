@@ -37,8 +37,15 @@ import torch
 from .codec import encode_qk, kq_bpw
 from .q4k_pack import SUP, pack_q4k
 
+# O gate de cosseno/NRMSE e PRE-FILTRO, NAO veredito de qualidade. MEDIDO no
+# Qwen2.5-0.5B: o gate 0.995 aprovou TODOS os tensores e a configuracao aprovada
+# entregou +29.1% de perplexidade (18.93 -> 24.43). Decomposicao em pontos de
+# PPL: peso g32 +2.38 | degrau g64 +1.44 | ativacao int8/256 +0.59 | cabeca
+# 4.5 bpw +1.09. Passar o gate significa "a reconstrucao do peso e proxima",
+# nao "o modelo continua bom" — so PPL end-to-end decide isso.
 GATE_COS = 0.995
 GATE_NRMSE = 0.05
+GATE_ROLE = "PREFILTER_NOT_VERDICT"
 LADDER = (("q4k", 64, 4), ("q4k", 32, 4))
 CLIPS = (1.0, 0.975, 0.95, 0.925, 0.9)
 EXCLUDE_TOKENS = ("embed_tokens", "embedding", "embeddings", "lm_head",
@@ -215,9 +222,19 @@ def main() -> int:
     below = [t["name"] for t in manifest["tensors"]
              if t.get("quality_flag")]
     manifest["summary"] = {
+        # ATENCAO na leitura destes campos: eles falam do PRE-FILTRO de cosseno,
+        # nao de qualidade do modelo. all_tensors_passed_gate=True ja aconteceu
+        # junto com +29.1% de PPL no Qwen2.5-0.5B.
         "all_tensors_passed_gate": not below,
         "below_gate_tensor_count": len(below),
         "below_gate_tensors": below,
+        "gate_role": GATE_ROLE,
+        "end_to_end_validated": False,
+        "gate_vs_ppl_evidence": (
+            "MEDIDO (Qwen2.5-0.5B): gate 0.995 aprovou todos os tensores e a "
+            "config aprovada deu +29.1% de PPL (18.93 -> 24.43). Passar o gate "
+            "NAO autoriza publicar o bundle como bom: rode PPL end-to-end."
+        ),
         # O bundle precisa ser autodescritivo sobre o invariante que ele rompe:
         # quem le o manifest pode nao ter lido o MIGRACAO.md (contrato §29.5).
         "gate_policy": (
@@ -245,6 +262,12 @@ def main() -> int:
           f"({s['reducao_pct']}%, {s['bpw_medio']} bpw) em "
           f"{s['conversion_seconds']}s | RSS pico {s['peak_rss_gib']} GiB")
     print(json.dumps(s["residencia"], indent=1, ensure_ascii=False))
+    # O gate ser pre-filtro tem de aparecer no fim de TODA conversao, inclusive
+    # (e principalmente) quando tudo passou.
+    print("\nGate de cosseno/NRMSE = PRE-FILTRO, nao veredito. MEDIDO no "
+          "Qwen2.5-0.5B:\n  gate 0.995 aprovou todos os tensores e a config "
+          "aprovada deu +29.1% de PPL.\n  Rode PPL end-to-end antes de "
+          "publicar este bundle como bom.")
     return 0
 
 

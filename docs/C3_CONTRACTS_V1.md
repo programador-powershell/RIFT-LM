@@ -1046,3 +1046,70 @@ substituição da camada de publicação.
    Consequência sobre o §30.5: o ganho de cosseno do F1 (+3e-5) é uma ordem de
    grandeza MENOR que os 8% de dispersão do próprio benchmark — naquele stack o
    F1 é indistinguível de ruído, e a nota do registro passou a dizer isso.
+
+## 33. O gate de cosseno NÃO protege perplexidade (20º lote)
+
+Primeira medição END-TO-END do projeto, no `Qwen/Qwen2.5-0.5B` — modelo pequeno
+escolhido porque os dois formatos o rodam (a Muse-Glimmer não carrega no
+llama.cpp). Registro `P1_CASCADE_PPL_E2E`, protocolo `PPL_E2E_V1`.
+
+1. ACHADO QUE MUDA O CONTRATO. O gate 0,995 aprovou **todos** os tensores e a
+   configuração aprovada degradou a perplexidade em **+29,1%** (18,93 → 24,43).
+   Decomposição medida, em pontos de PPL: peso g32 data-free **+2,38** · degrau
+   g64 **+1,44** · ativação int8/grupo-256 **+0,59** · cabeça 4,5 bpw **+1,09**
+   (soma 5,50 — verificada, reproduz o +29,1% sobre 18,93).
+
+   Consequência: o gate de cosseno/NRMSE é **PRÉ-FILTRO**, nunca veredito.
+   Passar o gate significa "a reconstrução do peso é próxima", não "o modelo
+   continua bom". Toda afirmação de qualidade anterior baseada em cosseno —
+   §29.4, §29.11, §31 — descreve proximidade de PESO, não qualidade de MODELO.
+   `convert.py` passa a expor `gate_role: "PREFILTER_NOT_VERDICT"`,
+   `end_to_end_validated: false` e `gate_vs_ppl_evidence` no resumo, e imprime o
+   aviso no fim de TODA conversão — principalmente quando tudo passou.
+
+2. DUELO DE MESMA CLASSE É EMPATE TÉCNICO, não vitória. CASCADE
+   (q4k/g32+clip, ativação int8/256, cabeça FP32) = 21,90 contra q4_0 = 21,97.
+   Margem **0,07 PPL**. A variável não pareada é a precisão da cabeça (FP32
+   nossa, Q8_0 deles) e o custo conhecido de baixar a cabeça para 4,5 bpw é
+   **1,09** — **15,6× a margem**. Com cabeça pareada em 8 bits o resultado é
+   empate ou perda marginal. Regra: quando o efeito de uma variável não pareada
+   excede a margem, o resultado é EMPATE, e a diferença não vai para manchete.
+
+   O que a medição sustenta de fato: a estrutura assimétrica+clip paga, e o
+   formato trata hidden 896 por padding enquanto o llama.cpp teve de abandonar o
+   K-quant naquele arquivo. A distância até o q4_k_m (20,02) não é codec, é MIX:
+   ~7,9 bpw porque 896 não divide por 256 e a receita M promove v/down/output.
+
+3. A PROJEÇÃO DE 24 GB FICOU CONDICIONAL. O degrau g64 — que sustenta os
+   15,08 GB da Muse — custou +1,44 de PPL no 0.5B. Se a Muse exigir piso g32, o
+   bundle vai a 15,67 GB e NÃO cabe (folga −0,09). O "worst estrutural" do §32.3
+   deixou de ser barra de erro e passou a ter MECANISMO. Modelos de 30B toleram
+   quantização melhor que 0.5B, então o g64 pode sobreviver lá — mas isso agora é
+   afirmação que só a conversão integral + PPL da Muse pode fazer.
+   `verdict_status: "CONDICIONAL"` no registro.
+
+4. ESCOPO DO RUNTIME DECIDIDO POR NÚMERO. llama.cpp completo 40–55 tok/s;
+   qualquer caminho PyTorch (BF16 ou CASCADE) 11–13. No 0.5B o **motor** vale
+   3–4×, não o kernel: tokenizer, KV-cache, atenção e sampling em C++ dominam
+   quando o GEMV não domina — a vantagem do kernel cresce com o tamanho.
+   Portanto: "acelerador de PyTorch" serve para bateria e validação; para o
+   produto "roda em qualquer PC" é **motor autônomo ou nada**.
+
+5. PPL NÃO É VELOCIDADE — nome e grupo próprios. `batteryFriendlySuffix` e
+   `batteryGroupKey` casavam `_E2E` antes de qualquer coisa e rotulavam a bateria
+   de perplexidade como "Velocidade ponta a ponta" / "P1 · Codec principal". A
+   regra `_PPL` passa a vir ANTES do `_E2E`: nome "Qualidade real
+   (perplexidade)", grupo "P1 · Qualidade end-to-end (PPL)". Fixtures travam as
+   duas, incluindo que `_E2E_TOKS` continua no grupo de tok/s.
+
+6. BACKLOG COM RETORNO MEDIDO (ordem do relatório, mantida porque é por retorno
+   por custo): (1) ativações por grupo-32 estilo Q8_0 recupera **+0,59** a custo
+   ~zero em `q4k_prepare_x_i8`; (2) cabeça em classe 8 bits recupera **+1,09** por
+   +0,67 GB no 30B — o q4_0 já faz isso; (3) política de degrau por escala (g32
+   como piso em modelo pequeno, g64 condicionado a PPL) recupera **+1,44**;
+   (4) imatrix, o único item que muda de patamar. Com 1–3: CASCADE data-free
+   ≈ 21,3–21,5 (PROJETADO — 21,90 − 0,59 = 21,31), à frente do q4_0 com folga.
+
+   Nota de execução: (1) e (2) são mudanças em `kernels.c` e não foram
+   implementadas aqui — esta máquina não tem compilador C nem torch, e editar
+   kernel às cegas é pior que não editar.
