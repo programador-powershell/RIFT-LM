@@ -3100,8 +3100,43 @@ if (pplRecord) {
     "se o efeito não pareado excede a margem, o duelo é empate (§33.2)");
   assert.match(duel.verdict, /EMPATE T[ÉE]CNICO/,
     "o duelo precisa ser registrado como empate, não vitória (§33.2)");
-  assert.equal(pplRecord.baseline_tok_s, null);
-  assert.equal(pplRecord.candidate_tok_s, null);
+  // §34 — aqui o tok/s de topo é LEGÍTIMO: baseline e candidato correm no mesmo
+  // runtime PyTorch, mesma máquina, mediana de 3. Mas tem de bater com a mediana
+  // registrada em metrics.runtime, senão é número solto.
+  const tk = m.runtime.tok_s;
+  assert.equal(pplRecord.baseline_tok_s, tk.pytorch_bf16.median,
+    "baseline_tok_s tem de ser a mediana registrada do BF16 (§34)");
+  assert.equal(pplRecord.candidate_tok_s, tk.pytorch_cascade_full.median,
+    "candidate_tok_s tem de ser a mediana registrada do CASCADE (§34)");
+  for (const cfg of Object.values(tk)) {
+    if (!cfg.runs) continue;
+    const sorted = cfg.runs.slice().sort((a, b) => a - b);
+    assert.equal(cfg.median, sorted[Math.floor(sorted.length / 2)],
+      "a mediana declarada não é a mediana dos runs (§34)");
+  }
+  // A ablação tem de ser MEDIDA: cada componente é diferença de duas configs.
+  const ladder = m.perplexity.ablation_ladder;
+  assert.ok(ladder.length === 5, "a escada de ablação precisa das 5 configs medidas (§34)");
+  assert.equal(ladder[0].delta_pct, 0, "a primeira linha da escada é o baseline");
+  for (let i = 1; i < ladder.length; i += 1) {
+    assert.ok(ladder[i].ppl > ladder[i - 1].ppl,
+      "a escada de ablação tem de ser monotônica em PPL (§34)");
+  }
+  // RSS medido: o resultado é NEGATIVO e não pode ser maquiado.
+  const mem = m.memory;
+  assert.ok(mem.measured_candidate_rss_bytes > mem.measured_baseline_rss_bytes,
+    "o RSS medido do CASCADE é MAIOR que o do baseline — não esconder (§34.2)");
+  assert.ok(pplRecord.gains.ram_reduction_pct < 0,
+    "ram_reduction_pct tem de ser NEGATIVO: o CASCADE gastou mais RAM (§34.2)");
+  // Contabilidade de peso: o total inclui o embedding FP32.
+  const wa = m.weight_accounting;
+  assert.equal(wa.total_resident_weight_bytes,
+    wa.q4k_bytes + wa.fp32_input_embedding_bytes,
+    "o peso residente tem de somar q4k + embedding FP32 (§34.3)");
+  assert.equal(pplRecord.candidate_disk_bytes, wa.total_resident_weight_bytes,
+    "candidate_disk_bytes não pode ser só o bloco q4k (§34.3)");
+  assert.ok(wa.ratio_vs_q4_0_x > 1,
+    "o registro precisa preservar que o footprint real é MAIOR que o do q4_0 (§34.3)");
 }
 
 // §33.3 — a projeção de 24 GB da Muse ficou CONDICIONAL ao g64.

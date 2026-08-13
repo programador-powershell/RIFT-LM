@@ -1113,3 +1113,66 @@ llama.cpp). Registro `P1_CASCADE_PPL_E2E`, protocolo `PPL_E2E_V1`.
    Nota de execução: (1) e (2) são mudanças em `kernels.c` e não foram
    implementadas aqui — esta máquina não tem compilador C nem torch, e editar
    kernel às cegas é pior que não editar.
+
+## 34. Artefatos brutos da PPL: o que o placar não fechava (21º lote)
+
+Os arquivos `ppl_results.json` e `e2e_scorecard.json` são do
+**Qwen2.5-0.5B-Instruct**, não da Muse-Glimmer-30B (o protocolo declara).
+Corrigido o `model_id` do registro, que eu havia gravado como base em vez de
+Instruct. O teste da Muse — o único que resolve o veredito condicional dos
+24 GB — segue pendente.
+
+1. A DECOMPOSIÇÃO É ABLAÇÃO MEDIDA, mais forte do que eu registrei. São **cinco
+   configurações que rodaram de fato**, e cada componente é a diferença entre
+   duas delas — não aritmética:
+
+   | configuração | PPL | Δ |
+   | --- | --- | --- |
+   | bf16 pytorch (baseline) | 18,9307 | — |
+   | g32 + ativação fp32 + cabeça fp32 | 21,3122 | +12,6% |
+   | g32 + ativação int8/256 + cabeça fp32 | 21,9015 | +15,7% |
+   | g64 + ativação int8/256 + cabeça fp32 | 23,3379 | +23,3% |
+   | g64 + int8 + cabeça q4k (**DEFAULT**) | 24,4317 | +29,1% |
+
+   Componentes derivados dos pares: peso g32 **2,3815** · ativação int8
+   **0,5893** · degrau g64 **1,4364** · cabeça **1,0938**. Soma **5,5010**,
+   idêntica ao delta total. O piso data-free MEDIDO é 21,3122 — os itens 1–3 do
+   backlog recuperam o que foi perdido, não passam desse piso.
+
+2. RSS MEDIDO É PIOR QUE O BASELINE — resultado negativo, e o placar não o
+   mostrava. CASCADE **2,93 GiB** contra BF16 **2,63** e llama.cpp **2,64**,
+   apesar de os pesos q4k somarem 0,279 GiB contra 0,99 GB do BF16. No objetivo
+   declarado do projeto — RAM é a restrição dura — a economia de peso NÃO virou
+   economia de RAM nesta escala. `gains.ram_reduction_pct` do registro é
+   **−11,41%**, e o smoke falha se alguém tentar torná-lo positivo.
+
+3. `pesos_gb: 0.3` EXCLUI O EMBEDDING DE ENTRADA, que o executor mantém em FP32
+   no lookup. Em Qwen2.5-0.5B a tabela tem 136,1 M params — **27,5% de todos os
+   parâmetros do modelo** — e ocupa 0,545 GB em FP32. Peso residente real:
+   **0,844 GB**, ou seja 14,6% menor que o BF16 (não 70%) e **1,97× MAIOR que o
+   arquivo q4_0** (0,429 GB). Mesma classe de erro do "85% de disco" do §29.9:
+   reportar o componente comprimido como se fosse o total.
+   `candidate_disk_bytes` do registro passa a ser q4k + embedding FP32.
+
+4. SEGUNDA CONDIÇÃO CONTRA O VEREDITO DE 24 GB, mais forte que a do g64. O
+   bundle grava o embedding a 4,5 bpw; o executor testado o mantém em FP32. As
+   duas coisas não podem valer juntas. Na Muse o embedding tem 1,34 G params:
+   **0,76 GB a 4,5 bpw contra 5,38 GB em FP32**. Se o executor exigir FP32, o
+   bundle de 15,08 GB vira **19,70 GB**, precisa de 19,85 GiB e falha o orçamento
+   de 16 GiB por **3,85 GiB** — não por 0,09 como no cenário do g64.
+   Resolução: quantizar o embedding no executor (dequantizar só as linhas do
+   lookup é barato) ou aceitar que o veredito não vale. **O custo em PPL de um
+   embedding quantizado não foi medido em nenhuma das 5 configs** — é a medição
+   que falta, e ela vira o item 0 do backlog porque é a única cujo ganho é em
+   RAM, que é o objetivo do projeto.
+
+5. TOK/S DE TOPO AGORA É LEGÍTIMO NESTE REGISTRO. Baseline e candidato correm no
+   MESMO runtime PyTorch, mesma máquina, geração greedy de 32 tokens batch-1 com
+   mediana de 3 runs: `baseline_tok_s = 13,048` e `candidate_tok_s = 12,357`. O
+   smoke exige que os dois batam com a mediana registrada em `metrics.runtime` e
+   que cada mediana declarada seja a mediana real dos runs.
+
+   Consequência incômoda: **CASCADE em PyTorch é 5% mais lento que o próprio
+   BF16 em PyTorch** (12,36 contra 13,05) — o kernel q4k não paga o overhead de
+   ctypes nesta escala. Contra o llama.cpp q4_0 (55,404) o motor vale **4,5×**.
+   Isso fecha a decisão do §33.4 com número maior do que o estimado.

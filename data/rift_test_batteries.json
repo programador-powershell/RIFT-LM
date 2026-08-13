@@ -5127,6 +5127,14 @@
               "finding": "o degrau g64 custou +1,44 de PPL no 0.5B",
               "consequence": "os 15,08 GB dependem do g64 sobreviver na escala de 30B. Se a Muse exigir piso g32, o bundle vai a 15,67 GB e NÃO cabe em 24 GB (folga −0,09) — ou seja, o \"worst estrutural\" deixou de ser barra de erro e passou a ter mecanismo. Modelos de 30B toleram quantização melhor que 0.5B, então o g64 pode sobreviver; só a conversão integral + PPL da Muse decide.",
               "verdict_status": "CONDICIONAL"
+            },
+            "second_condition_fp32_embedding": {
+              "source": "P1_CASCADE_PPL_E2E (artefatos brutos, Qwen2.5-0.5B-Instruct)",
+              "finding": "o executor testado mantém o embedding de ENTRADA em FP32 no lookup, enquanto o bundle o grava a 4,5 bpw. As duas coisas não podem valer ao mesmo tempo.",
+              "muse_impact_bytes": 4620000000,
+              "consequence": "na Muse o embedding tem 1,34 G params: 0,76 GB a 4,5 bpw contra 5,38 GB em FP32. Se o executor exigir FP32, o bundle de 15,08 GB vira 19,70 GB e precisa de 19,85 GiB — NÃO cabe no orçamento de 16 GiB da máquina de 24 GB, falha por 3,85 GiB. Isso é maior que a condição do g64 (§33.3).",
+              "resolution": "quantizar o embedding no executor (dequantizar só as linhas do lookup é barato) OU aceitar que o veredito de 24 GB não vale. O custo em PPL de um embedding quantizado NÃO foi medido em nenhuma das 5 configs — é a medição que falta.",
+              "verdict_status": "CONDICIONAL"
             }
           },
           "note": "Extrapolação ×52 da amostra, agora com faixa: central 15,08 GB, worst realista 15,19, worst estrutural 15,67. A primeira versão deste registro trazia ponto único."
@@ -5185,22 +5193,29 @@
     "schema_version": 2,
     "timestamp_utc": "2026-08-13T22:10:00Z",
     "run_id": "cascade-ppl-e2e-qwen05b",
-    "spec": "CASCADE-Q4K/2.0 / runtime_v2 + llama.cpp b-ref",
+    "spec": "CASCADE-Q4K/2.0 / runtime_v2 (kernel C + ctypes) vs llama.cpp",
     "technology": "CASCADE",
-    "model_id": "Qwen/Qwen2.5-0.5B",
+    "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
     "battery_id": "P1_CASCADE_PPL_E2E",
     "benchmark_protocol": "PPL_E2E_V1",
     "comparison_role": null,
-    "comparison_group_id": "cmp-42a1ddb2a9615510ed3f4446",
+    "comparison_group_id": "cmp-f4e1236dbe6e4c756fe1c0ea",
     "comparison_context": {
       "protocol": "PPL_E2E_V1",
-      "model_id": "Qwen/Qwen2.5-0.5B",
+      "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
       "device": "cpu",
+      "threads": 4,
       "torch": null,
       "transformers": null,
       "python": null,
       "numpy": null,
-      "note": "hidden 896 — não divide por 256, o que torna K-quants inaplicáveis neste arquivo e explica o mix de ~7,9 bpw do q4_k_m."
+      "corpus": "WikiText-2-raw test",
+      "windows": 24,
+      "ctx": 512,
+      "stride": 512,
+      "nll_precision": "float64",
+      "generation": "greedy, 32 tokens, batch-1, mediana de 3 runs",
+      "note": "hidden 896 não divide por 256 — K-quants inaplicáveis neste arquivo, e é por isso que o q4_k_m gastou ~7,9 bpw (Q5_0/Q6_K/Q8_0)."
     },
     "implementation": {
       "kind": "REFERENCE_MEASURED",
@@ -5210,102 +5225,191 @@
     },
     "eligible_for_primary_ranking": false,
     "status": "EXPERIMENTAL_PASS",
-    "baseline_tok_s": null,
-    "candidate_tok_s": null,
-    "baseline_ram_bytes": null,
-    "candidate_ram_bytes": null,
-    "baseline_disk_bytes": null,
-    "candidate_disk_bytes": null,
+    "baseline_tok_s": 13.048,
+    "candidate_tok_s": 12.357,
+    "baseline_ram_bytes": 2823940997,
+    "candidate_ram_bytes": 3146063544,
+    "baseline_disk_bytes": 988000000,
+    "candidate_disk_bytes": 844112593,
     "gains": {
-      "tok_s_gain_pct": null,
-      "ram_reduction_pct": null,
-      "disk_reduction_pct": null,
-      "disk_compression_ratio_x": null,
+      "tok_s_gain_pct": -5.3,
+      "ram_reduction_pct": -11.41,
+      "disk_reduction_pct": 14.56,
+      "disk_compression_ratio_x": 1.17,
       "overall_gain_pct": null
     },
     "metrics": {
+      "memory": {
+        "estimated_baseline_bytes": 988000000,
+        "estimated_candidate_bytes": 844112593,
+        "measured_baseline_rss_bytes": 2823940997,
+        "measured_candidate_rss_bytes": 3146063544,
+        "measured_llamacpp_rss_bytes": 2834678415,
+        "method": "VmRSS durante a bateria",
+        "note": "ACHADO: o CASCADE gastou MAIS RSS que o baseline BF16 (2,93 contra 2,63 GiB) e que o llama.cpp (2,64), apesar de os pesos q4k somarem 0,279 GiB contra 0,99 GB do BF16. A economia de peso não virou economia de RAM nesta escala: o overhead do PyTorch (atenção/KV/sampling em fp32) e o embedding FP32 comem o ganho. No objetivo declarado do projeto — RAM é a restrição dura — este é um resultado NEGATIVO no 0.5B."
+      },
+      "weight_accounting": {
+        "q4k_bytes": 299573969,
+        "fp32_input_embedding_bytes": 544538624,
+        "total_resident_weight_bytes": 844112593,
+        "bf16_baseline_bytes": 988000000,
+        "gguf_q4_0_file_bytes": 429000000,
+        "gguf_q4_k_m_file_bytes": 491000000,
+        "reduction_vs_bf16_pct": 14.6,
+        "ratio_vs_q4_0_x": 1.97,
+        "finding": "o `pesos_gb: 0.3` do placar é SÓ o bloco q4k e não inclui o embedding de entrada, que o executor testado mantém em FP32 (0,545 GB — 27,5% dos parâmetros do modelo estão na tabela de embedding). Peso residente real: 0,844 GB, ou seja 14,6% menor que o BF16 e 1,97× MAIOR que o arquivo q4_0 (0,429 GB). Mesma classe de erro do \"85% de disco\" do §29.9: reportar o componente comprimido como se fosse o total."
+      },
       "perplexity": {
-        "baseline_bf16": 18.93,
-        "cascade_default": 24.43,
-        "cascade_default_delta_pct": 29.05,
-        "cascade_best_same_class": 21.9,
+        "baseline_bf16": 18.9307,
+        "cascade_default": 24.4317,
+        "cascade_default_delta_pct": 29.06,
+        "cascade_best_same_class": 21.9015,
         "cascade_best_delta_pct": 15.69,
-        "gguf_q4_0": 21.97,
+        "cascade_floor_all_fp32_aux": 21.3122,
+        "cascade_floor_delta_pct": 12.58,
+        "gguf_q4_0": 21.9715,
         "gguf_q4_0_delta_pct": 16.06,
-        "gguf_q4_k_m": 20.02,
-        "gguf_q4_k_m_delta_pct": 5.76,
+        "gguf_q4_k_m": 20.0172,
+        "gguf_q4_k_m_delta_pct": 5.74,
+        "ablation_ladder": [
+          {
+            "config": "bf16 pytorch (baseline)",
+            "ppl": 18.9307,
+            "delta_pct": 0
+          },
+          {
+            "config": "g32 + ativação fp32 + cabeça fp32",
+            "ppl": 21.3122,
+            "delta_pct": 12.58
+          },
+          {
+            "config": "g32 + ativação int8/256 + cabeça fp32",
+            "ppl": 21.9015,
+            "delta_pct": 15.69
+          },
+          {
+            "config": "g64 + ativação int8/256 + cabeça fp32",
+            "ppl": 23.3379,
+            "delta_pct": 23.28
+          },
+          {
+            "config": "g64 + ativação int8/256 + cabeça q4k (DEFAULT do conversor)",
+            "ppl": 24.4317,
+            "delta_pct": 29.06
+          }
+        ],
         "decomposition_ppl_points": {
-          "peso_g32_data_free": 2.38,
-          "degrau_g64": 1.44,
-          "ativacao_int8_grupo256": 0.59,
-          "cabeca_4_5bpw": 1.09,
-          "soma": 5.5
+          "peso_g32_data_free": 2.3815,
+          "ativacao_int8_grupo256": 0.5893,
+          "degrau_g64": 1.4364,
+          "cabeca_4_5bpw": 1.0938,
+          "soma": 5.501
         },
-        "note": "Decomposição verificada: soma 5,50 sobre baseline 18,93 reproduz o +29,1% reportado. A configuração DEFAULT do conversor é a de +29,1%."
+        "decomposition_method": "ABLAÇÃO MEDIDA, não aritmética: cada componente é a diferença entre duas configurações que rodaram de fato (5 configs). A soma fecha em 5,5010 contra o delta total de 5,5010.",
+        "ppl_seconds": {
+          "bf16": 55.5,
+          "cascade_full": 398.3,
+          "cascade_head_fp32": 268.2,
+          "q4_k_m": 195.6
+        }
       },
       "gate_vs_ppl": {
         "gate_cosine_min": 0.995,
         "all_tensors_passed_gate": true,
-        "ppl_delta_pct_with_all_passing": 29.05,
-        "verdict": "o gate de cosseno NÃO protege perplexidade: aprovou todos os tensores e o modelo aprovado degradou 29,1%. O gate é PRÉ-FILTRO (a reconstrução do peso é próxima), nunca veredito de qualidade.",
+        "ppl_delta_pct_with_all_passing": 29.06,
+        "verdict": "o gate de cosseno NÃO protege perplexidade: aprovou todos os tensores e o modelo aprovado degradou 29,1%. O gate é PRÉ-FILTRO, nunca veredito de qualidade.",
         "consequence": "toda afirmação anterior de qualidade baseada em cosseno — §29.4, §29.11, §31 — descreve proximidade de peso, não qualidade de modelo."
       },
       "matched_class_duel": {
         "cascade": {
-          "ppl": 21.9,
+          "ppl": 21.9015,
           "config": "q4k/g32 + clip, ativação int8/256, cabeça FP32"
         },
         "gguf": {
-          "ppl": 21.97,
-          "config": "q4_0, cabeça Q8_0"
+          "ppl": 21.9715,
+          "config": "q4_0 (simétrico g32 fp16), cabeça Q8_0"
         },
         "margin_ppl": 0.07,
         "margin_pct": 0.32,
         "unmatched_variable": "precisão da cabeça (FP32 nossa vs Q8_0 deles)",
-        "unmatched_variable_known_cost_ppl": 1.09,
+        "unmatched_variable_known_cost_ppl": 1.0938,
         "effect_to_margin_ratio_x": 15.6,
-        "verdict": "EMPATE TÉCNICO, não vitória. A margem é 0,07 PPL e o custo conhecido da variável não pareada (cabeça em 4,5 bpw custa 1,09) é 15,6× maior que a margem. Com cabeça pareada em 8 bits o resultado é empate ou perda marginal. O relatório de origem já declarava \"quase-empate honesto\".",
-        "structural_win": "o que a medição sustenta: a estrutura assimétrica+clip paga, e o formato lida com hidden 896 por padding enquanto o llama.cpp teve de abandonar o K-quant naquele arquivo."
+        "size_note": "e o duelo também não é de mesmo TAMANHO: contando o embedding FP32 que o executor mantém, o CASCADE ocupa 0,844 GB contra 0,429 GB do arquivo q4_0 — 1,97× mais peso residente para PPL equivalente.",
+        "verdict": "EMPATE TÉCNICO em PPL e DERROTA em tamanho. A margem de 0,07 PPL é 15,6× menor que o custo conhecido da variável não pareada (cabeça), e o footprint real é o dobro. O que a medição sustenta: a estrutura assimétrica+clip paga contra o simétrico, e o formato trata hidden 896 por padding enquanto o llama.cpp abandonou o K-quant."
       },
       "runtime": {
         "scope": "REAL_MODEL_MEASURED",
-        "tok_s_range": {
-          "llama_cpp_completo": {
-            "min": 40,
-            "max": 55
+        "runs_per_config": 3,
+        "tok_s": {
+          "llama_cpp_q4_0": {
+            "runs": [
+              55.404,
+              57.514,
+              49.173
+            ],
+            "median": 55.404
+          },
+          "llama_cpp_q4_k_m": {
+            "runs": [
+              40.529,
+              34.918,
+              41.235
+            ],
+            "median": 40.529
           },
           "pytorch_bf16": {
-            "min": 11,
-            "max": 13
+            "runs": [
+              13.048,
+              12.817,
+              13.416
+            ],
+            "median": 13.048
           },
-          "pytorch_cascade": {
-            "min": 11,
-            "max": 13
+          "pytorch_cascade_full": {
+            "runs": [
+              11.812,
+              12.357,
+              12.532
+            ],
+            "median": 12.357
+          },
+          "pytorch_cascade_head_fp32": {
+            "runs": [
+              11.101,
+              11.277,
+              11.528
+            ],
+            "median": 11.277
           }
         },
-        "engine_advantage_x": {
-          "min": 3.1,
-          "max": 5
-        },
-        "verdict": "no 0.5B o MOTOR vale 3–4×, não o kernel: tokenizer, KV-cache, atenção e sampling em C++ dominam quando o GEMV não domina. A vantagem do kernel cresce com o tamanho do modelo. Consequência de escopo: \"acelerador de PyTorch\" serve para bateria e validação; para o produto \"roda em qualquer PC\" é motor autônomo ou nada."
+        "engine_advantage_x": 4.48,
+        "verdict": "o motor vale 4,5× contra o melhor caminho PyTorch (55,4 contra 12,4). No 0.5B tokenizer, KV-cache, atenção e sampling em C++ dominam porque o GEMV não domina; a vantagem do kernel cresce com o tamanho. CASCADE em PyTorch é 5% MAIS LENTO que o próprio BF16 em PyTorch (12,36 contra 13,05): o kernel q4k não compensa o overhead de ctypes nesta escala. Escopo: acelerador de PyTorch serve para bateria e validação; para o produto é motor autônomo ou nada."
       },
       "backlog_measured_return": [
         {
+          "rank": 0,
+          "item": "embedding de entrada quantizado no executor (hoje FP32 no lookup)",
+          "ppl_recovered": null,
+          "ram_saved_note": "−0,25 GB no 0.5B; −4,62 GB no 30B",
+          "cost": "dequantizar só as linhas selecionadas no lookup — barato, mas ainda NÃO medido em PPL",
+          "why_rank_0": "é o único item que muda o veredito de 24 GB da Muse, e o único cujo ganho é em RAM, que é o objetivo declarado do projeto"
+        },
+        {
           "rank": 1,
           "item": "ativações por grupo-32 (estilo Q8_0) no kernel",
-          "ppl_recovered": 0.59,
-          "cost": "~zero — mudança pequena em q4k_prepare_x_i8"
+          "ppl_recovered": 0.5893,
+          "cost": "~zero — mudança em q4k_prepare_x_i8"
         },
         {
           "rank": 2,
           "item": "cabeça em classe 8 bits (q8 rowwise)",
-          "ppl_recovered": 1.09,
-          "cost": "+0,67 GB no 30B — o q4_0 do llama.cpp já faz"
+          "ppl_recovered": 1.0938,
+          "cost": "+0,67 GB no 30B — o q4_0 já faz isso"
         },
         {
           "rank": 3,
-          "item": "política de degrau por escala do modelo (g32 como piso em modelo pequeno; g64 condicionado a PPL)",
-          "ppl_recovered": 1.44,
+          "item": "política de degrau por escala (g32 piso em modelo pequeno)",
+          "ppl_recovered": 1.4364,
           "cost": "bpw maior onde o g64 não sobreviver"
         },
         {
@@ -5321,16 +5425,16 @@
           "max": 21.5
         },
         "label": "PROJETADO",
-        "note": "21,90 − 0,59 (ativação) = 21,31; ficaria à frente do q4_0 (21,97) com folga e atrás apenas do mix de ~7,9 bpw do q4_k_m (20,02)."
+        "note": "o piso data-free MEDIDO já é 21,3122 (g32 + ativação fp32 + cabeça fp32): os itens 1–3 apenas recuperam o que foi perdido, não passam do piso. Ficaria à frente do q4_0 (21,97) e atrás do mix de 7,9 bpw do q4_k_m (20,02)."
       }
     },
-    "measurement_scope": "PRIMEIRA medição END-TO-END do projeto: perplexidade real do Qwen/Qwen2.5-0.5B, não cosseno de peso. Modelo pequeno escolhido porque os dois formatos o rodam (a Muse-Glimmer não carrega no llama.cpp). Perplexidade é determinística sobre corpus fixo, então não há dispersão entre runs como no benchmark de kernel (§32.4). As velocidades são faixas medidas; tok/s de topo segue null porque não há par baseline/candidato sob protocolo idêntico. NÃO extrapolar para 30B: modelos grandes toleram quantização melhor, e é exatamente isso que falta medir.",
+    "measurement_scope": "TUDO MEDIDO, zero projeção. Qwen/Qwen2.5-0.5B-Instruct, WikiText-2-raw test, 24 janelas × 512 tokens, stride 512, NLL em float64; geração greedy de 32 tokens batch-1 com mediana de 3 runs; mesma máquina, 4 threads. As PPLs do CASCADE rodaram no executor real (kernel C + ctypes). tok/s de topo é legítimo aqui porque baseline e candidato correm no MESMO runtime PyTorch. NÃO É A MUSE-GLIMMER-30B: este é o modelo pequeno escolhido porque os dois formatos o rodam, e nada aqui autoriza extrapolar para 30B — modelos grandes toleram quantização melhor, e é exatamente isso que falta medir.",
     "quality": {
       "local_weight_metrics_only": false,
       "end_to_end_certified": false,
       "end_to_end_measured": true,
-      "note": "end_to_end_MEASURED=true (existe PPL medida) mas end_to_end_CERTIFIED=false: a configuração default do conversor degrada 29,1% e ainda não há PPL do modelo alvo (Muse-Glimmer-30B)."
+      "note": "end_to_end_MEASURED=true (PPL real, ablação de 5 configs) mas CERTIFIED=false: a configuração default do conversor degrada 29,1%, o RSS medido é PIOR que o baseline, e não há PPL do modelo alvo."
     },
-    "notes": "Achado central: o gate de cosseno 0,995 aprovou 100% dos tensores e a configuração aprovada degradou a perplexidade em 29,1%. O gate passa a ser PRÉ-FILTRO, não veredito. Duelo de mesma classe é empate técnico (margem 0,07 PPL contra um efeito não pareado de 1,09). A distância até o q4_k_m não é codec, é mix: naquele arquivo o llama.cpp gastou ~7,9 bpw porque hidden 896 não divide por 256 e a receita M promove v/down/output."
+    "notes": "Três achados. (1) O gate 0,995 aprovou 100% dos tensores e a config aprovada degradou 29,1% de PPL — o gate é pré-filtro, não veredito. (2) O RSS medido do CASCADE (2,93 GiB) é MAIOR que o do baseline BF16 (2,63) e que o do llama.cpp (2,64): no 0.5B a economia de peso não virou economia de RAM. (3) O `pesos_gb: 0.3` exclui o embedding de entrada, que o executor mantém em FP32; o peso residente real é 0,844 GB, 1,97× o arquivo q4_0. Consequência para a Muse: se o executor exigir embedding FP32, o bundle de 15,08 GB vira 19,70 GB e o veredito de 24 GB falha por 3,85 GiB."
   }
 ]

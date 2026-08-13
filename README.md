@@ -54,20 +54,20 @@ Pesos calibrados para o objetivo declarado do score: identificar a melhor tecnol
 
 ## :new: Releases Notes
 
-### :up: V.3.5
-
-### :warning: Latest Changes
-
-- **Primeira medição END-TO-END do projeto** (contrato §33): bateria `P1_CASCADE_PPL_E2E` (protocolo `PPL_E2E_V1`) com **perplexidade real** do `Qwen/Qwen2.5-0.5B` — modelo pequeno escolhido porque os dois formatos o rodam. Grupo e nome próprios: "P1 · Qualidade end-to-end (PPL)" / "Qualidade real (perplexidade)". Até aqui **todo** número de qualidade do projeto era cosseno de peso.
-- **Decomposição medida de onde a qualidade se perde**, em pontos de PPL sobre baseline 18,93: peso g32 data-free **+2,38** · degrau g64 **+1,44** · ativação int8/grupo-256 **+0,59** · cabeça 4,5 bpw **+1,09**. É o resultado mais útil do teste, porque diz onde gastar: as duas primeiras linhas do backlog recuperam 1,68 ponto a custo quase zero.
-- **Escopo do runtime decidido por número** (§33.4): llama.cpp completo 40–55 tok/s contra 11–13 de qualquer caminho PyTorch (BF16 ou CASCADE). No 0.5B o **motor** vale 3–4×, não o kernel — tokenizer, KV-cache, atenção e sampling em C++ dominam quando o GEMV não domina. Conclusão registrada: "acelerador de PyTorch" serve para bateria e validação; para o produto "roda em qualquer PC" é **motor autônomo ou nada**.
+### :up: V.3.5.1
 
 ### :pushpin: Fixes
 
-- **O gate de cosseno não protege perplexidade — e era critério de aceitação** (§33.1): o gate 0,995 aprovou **todos** os tensores e a configuração aprovada degradou a PPL em **+29,1%** (18,93 → 24,43). O gate passa a ser **PRÉ-FILTRO, nunca veredito**: `convert.py` expõe `gate_role: "PREFILTER_NOT_VERDICT"`, `end_to_end_validated: false` e `gate_vs_ppl_evidence` no resumo do manifesto, e imprime o aviso no fim de **toda** conversão — principalmente quando tudo passou. Toda afirmação de qualidade anterior baseada em cosseno (§29.4, §29.11, §31) descreve proximidade de **peso**, não qualidade de **modelo**.
-- **Duelo de mesma classe é empate técnico, não vitória** (§33.2): CASCADE 21,90 contra q4_0 21,97 é margem de **0,07 PPL**, mas a variável não pareada (cabeça FP32 nossa vs Q8_0 deles) tem custo conhecido de **1,09** — **15,6× a margem**. Regra nova: quando o efeito de uma variável não pareada excede a margem, o resultado é EMPATE e a diferença não vai para manchete. O que a medição sustenta é a estrutura assimétrica+clip pagar, e o formato tratar hidden 896 por padding enquanto o llama.cpp abandonou o K-quant naquele arquivo.
-- **A projeção de 24 GB da Muse ficou CONDICIONAL** (§33.3): o degrau g64, que sustenta os 15,08 GB, custou +1,44 de PPL no 0.5B. Se a Muse exigir piso g32, o bundle vai a 15,67 GB e **não cabe** (folga −0,09) — o "worst estrutural" do §32.3 deixou de ser barra de erro e passou a ter **mecanismo**. Só a conversão integral + PPL da Muse fecha o veredito.
-- **Perplexidade era rotulada como velocidade** (§33.5): `batteryFriendlySuffix` e `batteryGroupKey` casavam `_E2E` antes de tudo e chamavam a bateria de PPL de "Velocidade ponta a ponta" no grupo "P1 · Codec principal". A regra `_PPL` passou a vir antes, com fixtures travando as duas e confirmando que `_E2E_TOKS` segue no grupo de tok/s.
+- **`pesos_gb: 0.3` excluía o embedding de entrada** (contrato §34.3): o executor mantém a tabela de embedding em **FP32** no lookup, e em Qwen2.5-0.5B ela tem 136,1 M params — **27,5% de todos os parâmetros do modelo**, 0,545 GB. Peso residente real: **0,844 GB**, ou seja 14,6% menor que o BF16 (não os ~70% que o número sugeria) e **1,97× MAIOR que o arquivo q4_0** (0,429 GB). Mesma classe de erro do "85% de disco" do §29.9 — reportar o componente comprimido como se fosse o total. `candidate_disk_bytes` do registro passa a somar q4k + embedding FP32.
+- **RSS medido é PIOR que o baseline** (§34.2): CASCADE **2,93 GiB** contra BF16 **2,63** e llama.cpp **2,64**. No objetivo declarado do projeto — RAM é a restrição dura — a economia de peso não virou economia de RAM nesta escala. O registro carrega `ram_reduction_pct = −11,41%` e o smoke falha se alguém tornar isso positivo.
+- **Segunda condição contra o veredito de 24 GB, maior que a do g64** (§34.4): o bundle grava o embedding a 4,5 bpw, o executor o mantém em FP32 — as duas não podem valer juntas. Na Muse são 1,34 G params: **0,76 GB a 4,5 bpw contra 5,38 GB em FP32**. Se o executor exigir FP32, o bundle vira **19,70 GB** e falha o orçamento por **3,85 GiB** (não por 0,09 como no cenário do g64). O custo em PPL de um embedding quantizado **não foi medido em nenhuma das 5 configs** — virou o item 0 do backlog, o único cujo ganho é em RAM.
+- **`model_id` do registro estava errado**: era `Qwen/Qwen2.5-0.5B`, o protocolo declara `Instruct`.
+- **CASCADE em PyTorch é 5% mais lento que o próprio BF16 em PyTorch** (§34.5): 12,357 contra 13,048 tok/s — o kernel q4k não paga o overhead de ctypes nesta escala. Contra o llama.cpp q4_0 (55,404) o motor vale **4,5×**, fechando a decisão de escopo do §33.4 com número maior que o estimado.
+
+### :construction_worker: Refactors
+
+- **Ablação em vez de decomposição aritmética** (§34.1): o registro passa a trazer as **cinco configurações medidas** (18,9307 → 21,3122 → 21,9015 → 23,3379 → 24,4317), cada componente como diferença de dois pares reais — peso g32 2,3815 · ativação int8 0,5893 · degrau g64 1,4364 · cabeça 1,0938, soma 5,5010 idêntica ao delta total. O smoke exige escada monotônica de 5 linhas. O piso data-free MEDIDO é 21,3122: os itens 1–3 do backlog recuperam o perdido, não passam do piso.
+- **tok/s de topo agora é legítimo neste registro** (§34.5): baseline e candidato no mesmo runtime PyTorch, mesma máquina, mediana de 3 runs. O smoke exige que os campos de topo batam com as medianas de `metrics.runtime` e que cada mediana declarada seja a mediana real dos runs.
 
 ## :wrench: Instalação
 
