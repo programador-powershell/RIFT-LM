@@ -4845,5 +4845,123 @@
       "end_to_end_certified": false
     },
     "notes": "Gate local por tensor (cosseno/NRMSE) não é qualidade end-to-end: o bundle marca CALIBRATION_REQUIRED / NOT YET CERTIFIED. A arquitetura muse-glimmer não carrega em transformers nem no llama.cpp 0.3.34, então não houve perplexity/geração para validar. Vision tower (3,84 GB BF16) fora da conta, como nos GGUF."
+  },
+  {
+    "schema_version": 2,
+    "timestamp_utc": "2026-08-13T19:40:00Z",
+    "run_id": "cascade-runtime-v2-kernel-regression",
+    "spec": "CASCADE v0.3 / runtime_v2 kernels.c",
+    "technology": "CASCADE",
+    "model_id": "synthetic/cascade-runtime-v2-stack",
+    "battery_id": "P1_CASCADE_RUNTIME_V2_KERNEL",
+    "benchmark_protocol": "RUNTIME_KERNEL_SYNTHETIC_V1",
+    "comparison_role": null,
+    "comparison_group_id": "cmp-f5cd77f5b502619af61ad26d",
+    "comparison_context": {
+      "protocol": "RUNTIME_KERNEL_SYNTHETIC_V1",
+      "model_id": "synthetic/cascade-runtime-v2-stack",
+      "device": "cpu",
+      "torch": null,
+      "transformers": null,
+      "python": null,
+      "numpy": null,
+      "threads": 4,
+      "isa": "AVX2+FMA+F16C"
+    },
+    "implementation": {
+      "kind": "REFERENCE_MEASURED",
+      "native": true,
+      "simulated": false,
+      "eligible_for_primary_ranking": false
+    },
+    "eligible_for_primary_ranking": false,
+    "status": "EXPERIMENTAL_PASS",
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "metrics": {
+      "memory": {
+        "estimated_baseline_bytes": 2158221066,
+        "estimated_candidate_bytes": 300647711,
+        "method": null,
+        "note": "Bytes de representação RESIDENTE do stack sintético (fp32 com cache contra q4k sem cache), não VmRSS medido de inferência. O caminho antigo materializava W em fp32 (32 bpw); o v2 desquantiza dentro do produto e nunca materializa (w0_cache_bytes = 0 por construção)."
+      },
+      "runtime": {
+        "scope": "SYNTHETIC_STACK",
+        "scope_note": "stack sintético de 2,01 GB fp32 / 0,28 GB q4k, 4 threads — mede o KERNEL, não um modelo. tok/s aqui NÃO é comparável com o tok/s de model.generate das baterias E2E e por isso não sobe para campo de topo.",
+        "paths": {
+          "v2_kernel_c": {
+            "resident_bytes": 300647711,
+            "tok_s": 37.88,
+            "latency_s": 0.0264,
+            "bandwidth_gbs": 10.72
+          },
+          "legacy_low_mem": {
+            "resident_bytes": 300647711,
+            "tok_s": 0.869,
+            "latency_s": 1.151,
+            "note": "CASCADE_LOW_MEM=1: dequant por chamada"
+          },
+          "legacy_default": {
+            "resident_bytes": 2158221066,
+            "tok_s": 21.75,
+            "latency_s": 0.046,
+            "note": "cache fp32 residente + BLAS"
+          }
+        },
+        "speedup_vs_legacy_low_mem_x": 43.59,
+        "speedup_vs_legacy_default_x": 1.74,
+        "ram_ratio_legacy_default_x": 7.18,
+        "kernel_f0_bandwidth_gbs": 16.55,
+        "llama_cpp_q4k_bandwidth_gbs": 18,
+        "kernel_f0_fraction_of_llama_cpp": 0.92,
+        "w0_cache_bytes": 0,
+        "bits_per_weight_resident": 4.5
+      },
+      "quality_local": {
+        "pack_roundtrip": {
+          "status": "PASS",
+          "bytes": 221184,
+          "bpw": 4.5
+        },
+        "f0_kernel_cosine_vs_reference": 0.999906,
+        "f1_lowrank_rel_err_vs_reference": 0.01404,
+        "cosine_f0_only_vs_w": 0.996689,
+        "cosine_f0_plus_f1_vs_w": 0.996719,
+        "f1_cosine_delta": 0.00003,
+        "f1_verdict": "F1 adiciona 3e-5 de cosseno sobre o F0 neste stack — consistente com o resíduo de quantização ser ruído de posto alto (§29.4/§29.11). O custo do F1 não se paga com rank <= 32 sem calibração."
+      },
+      "gate": {
+        "calibrated_threshold": 2.8373,
+        "activation_rate_uncalibrated_batch1": 0,
+        "activation_rate_calibrated_p70": 0.29,
+        "legacy_v0_activation_rate_batch1": 1,
+        "legacy_v0_rate_by_batch": {
+          "1": 1,
+          "2": 0.5,
+          "3": 0.333333,
+          "4": 0.25,
+          "8": 0.375,
+          "16": 0.3125
+        },
+        "verdict": "o gate v0 tirava o threshold do percentil do PRÓPRIO batch: em decode (batch 1) o quantil é o próprio score e a máscara era sempre True — F1 em 100% dos tokens. A taxa não dependia das ativações, só do tamanho do batch. v1 calibra offline e faz fail-safe F0_ONLY em batch pequeno sem threshold."
+      }
+    },
+    "measurement_scope": "Benchmark de KERNEL sobre stack SINTÉTICO (2,01 GB fp32 / 0,28 GB q4k, 4 threads, AVX2) — NÃO é um modelo real e NÃO é model.generate. tok/s e RAM de topo são null de propósito: os números medidos ficam em metrics.runtime, que não é comparável com as baterias E2E. Qualidade é gate local de peso (cosseno vs referência), não end-to-end.",
+    "quality": {
+      "local_weight_metrics_only": true,
+      "end_to_end_certified": false
+    },
+    "notes": "Motor CASCADE v2 (core/cascade/runtime_v2): F0 em kernel C fundido (q4k_gemv) que desquantiza dentro do produto, F1 low-rank com V transposto e leitura contígua, gate calibrado offline. Corrige três defeitos do runtime anterior: cache fp32 residente (32 bpw), gate que nunca filtrava em batch 1, e \"vetorização\" AVX2 que era gather escalar emulado com _mm256_set_ps. Sem a lib compilada o módulo RECUSA carregar em vez de cair em fallback lento silencioso."
   }
 ]

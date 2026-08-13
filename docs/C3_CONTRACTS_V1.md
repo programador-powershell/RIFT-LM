@@ -879,3 +879,63 @@ move `attn_output`; a conversão frequentemente AUMENTA bytes contra a fonte IQ2
     capturou 0,064 contra os 0,190 exigidos pelo gate (§29.4): o early-abort
     derivado disparou corretamente em produção, e o formato efetivo é INT4
     groupwise puro (~4,75 bpw agregado).
+
+## 30. Motor de execução v2 e o bug do Confidence Gate (17º lote)
+
+Origem: auditoria externa do `runtime.zip`, com os três defeitos reproduzidos
+nesta árvore antes de qualquer mudança.
+
+1. GATE v0 NÃO FILTRAVA NADA (bug de correção, o mais grave).
+   `decide_gate` tirava o threshold de `torch.quantile` sobre o PRÓPRIO batch.
+   Em decode autorregressivo o batch é 1 token, então o quantil de um elemento
+   É aquele elemento e a máscara virava `score >= score` — sempre True. Medido
+   no harness, a taxa era função APENAS do tamanho do batch, idêntica em 8
+   sorteios por tamanho:
+
+   | batch | 1 | 2 | 3 | 4 | 8 | 16 |
+   | --- | --- | --- | --- | --- | --- | --- |
+   | taxa v0 | 1,000 | 0,500 | 0,333 | 0,250 | 0,375 | 0,3125 |
+
+   O "Confidence Gate" media o tamanho do batch, não a confiança da ativação.
+   v1: `GateCalibrator.observe/freeze` calibra o threshold offline e congela em
+   `GateConfig.fixed_threshold` (para gravar no bundle); precedência
+   `argumento explícito → fixed_threshold → percentil do batch (só com
+   batch >= min_batch_for_batch_percentile, default 8)`. Sem nenhum dos três, o
+   gate escolhe F0_ONLY e emite `warning` na telemetria com
+   `gate: "UNCALIBRATED_SMALL_BATCH_F0_ONLY"` e `threshold: None` — nunca uma
+   taxa inventada. `features` continua no meta (compat v0); `activation_rate` é
+   a única chave que os callers leem.
+   NENHUM registro publicado carregava taxa de gate CASCADE, então o histórico
+   não foi contaminado; o bug era latente para o próximo run de
+   `c3_methodology_auto_batteries.py` e `final_phase_auto_batteries.py`, que
+   importam `decide_gate`.
+
+2. CACHE FP32 RESIDENTE ANULAVA O FORMATO. `block_runtime.py` mantinha
+   `_w0_cache` com W desquantizado em fp32: 32 bpw residentes num formato de
+   4,5 bpw. Medido: 2,01 GB contra 0,28 GB (7,18×). O v2 desquantiza DENTRO do
+   produto (`q4k_gemv`) e `w0_cache_bytes` é 0 por construção.
+
+3. "VETORIZAÇÃO" AVX2 QUE ERA GATHER ESCALAR. `cpp/avx2_lowrank.cpp` montava o
+   vetor com `_mm256_set_ps` a partir de 8 cargas escalares em stride `rank`
+   (V é `(in, rank)` row-major), além de um loop `for (r)` cujo corpo calculava
+   `acc` e `Vr` sem usar nenhum dos dois. O arquivo fica como referência do
+   caminho C1 com os dois defeitos anotados; o kernel vivo é
+   `runtime_v2/kernels/kernels.c`, que transpõe V para `(rank, in)` e lê
+   contíguo com FMA.
+
+4. REGISTRO DO MOTOR É SINTÉTICO E NÃO SOBE PARA CAMPO DE TOPO.
+   `P1_CASCADE_RUNTIME_V2_KERNEL` (protocolo `RUNTIME_KERNEL_SYNTHETIC_V1`) mede
+   um stack sintético de 2,01 GB fp32 / 0,28 GB q4k, NÃO `model.generate`.
+   Portanto `baseline_tok_s`/`candidate_tok_s`/`*_ram_bytes` de topo são `null`
+   por design e os números medidos ficam em `metrics.runtime`, com
+   `scope: "SYNTHETIC_STACK"` e a nota de que aquele tok/s não é comparável com
+   as baterias E2E. `eligible_for_primary_ranking: false`. Grupo próprio
+   `P1 · Motor de execução` (o fallback `P1 · Codec principal` descreveria a
+   coisa errada) e nome amigável "Motor de execução (kernel C)".
+
+5. F1 CONTINUA NÃO SE PAGANDO. Medido neste stack: cosseno 0,996689 com F0
+   contra 0,996719 com F0+F1 — **+3e-5** por um GEMV extra. Terceira medição
+   independente na mesma direção (§29.4 derivou o piso, §29.11 mediu 0,064 de
+   energia capturada em BF16): o resíduo de quantização é ruído de posto alto e
+   rank ≤ 32 não o resgata. Enquanto isso valer, o formato efetivo do CASCADE é
+   INT4 groupwise puro e o F1 é opcional.

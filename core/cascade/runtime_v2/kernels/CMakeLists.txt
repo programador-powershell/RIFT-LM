@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+project(cascade_kernels LANGUAGES C)
+set(CMAKE_C_STANDARD 11)
+add_library(cascade_kernels SHARED kernels.c)
+target_compile_options(cascade_kernels PRIVATE -O3 -mavx2 -mfma -mf16c -fopenmp)
+target_link_options(cascade_kernels PRIVATE -fopenmp)
+target_link_libraries(cascade_kernels m)

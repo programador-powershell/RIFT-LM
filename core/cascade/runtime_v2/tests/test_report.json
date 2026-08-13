@@ -1,0 +1,46 @@
+{
+  "1_pack_roundtrip": {
+    "status": "PASS",
+    "bytes": 221184,
+    "bpw": 4.5
+  },
+  "2_f0_kernel": {
+    "status": "PASS",
+    "cos_vs_ref": 0.999906,
+    "bpw_residente": 4.5,
+    "w0_cache_bytes": 0
+  },
+  "3_gate_batch1": {
+    "status": "PASS",
+    "threshold_calibrado": 2.8373,
+    "taxa_f1_sem_calibracao (bug antigo: 1.0)": 0.0,
+    "taxa_f1_batch1_calibrado (~30% esperado p/ p70)": 0.29
+  },
+  "4_f1_lowrank_c": {
+    "status": "PASS",
+    "rel_err_vs_ref": 0.01404,
+    "cos_saida_f0_vs_w": 0.996689,
+    "cos_saida_f0+f1_vs_w": 0.996719
+  },
+  "5_regressao": {
+    "modelo_sintetico_gb_fp32": 2.01,
+    "v2_kernel": {
+      "residente_gb": 0.28,
+      "latencia_token_s": 0.0261,
+      "tok_s": 38.36,
+      "banda_gbs": 10.86
+    },
+    "antigo_low_mem (dequant/chamada)": {
+      "residente_gb": 0.28,
+      "latencia_token_s": 1.083,
+      "tok_s": 0.924,
+      "speedup_v2": 41.5
+    },
+    "antigo_default (cache fp32 + BLAS)": {
+      "residente_gb": 2.01,
+      "latencia_token_s": 0.0448,
+      "tok_s": 22.33,
+      "ram_extra_vs_v2": "7.1x"
+    }
+  }
+}

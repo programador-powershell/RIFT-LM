@@ -17,14 +17,18 @@ void lowrank_gemv_f32(
     int out_f, int rank,
     float* y)
 {
+  // SUPERSEDIDO por core/cascade/runtime_v2/kernels/kernels.c
+  // (lowrank_gemv_f32), que transpõe V para (rank, in) e lê contíguo. Este
+  // arquivo fica como referência do caminho C1; dois defeitos foram removidos:
+  //  1. um loop `for (r)` cujo corpo calculava `acc` e `Vr` e não usava nenhum
+  //     dos dois — código morto que nunca contribuiu para o resultado;
+  //  2. a "vetorização" abaixo monta o vetor com _mm256_set_ps a partir de 8
+  //     cargas ESCALARES em stride `rank` (V é (in, rank) row-major, então
+  //     V[i,r] e V[i+1,r] estão rank*4 bytes distantes). Não é uma carga
+  //     vetorial: é um gather emulado, e pode ser mais lento que o laço
+  //     escalar. O v2 resolve transpondo V na carga do módulo.
   std::vector<float> tmp(static_cast<size_t>(rank), 0.f);
-  // tmp[r] = dot(x, V[:,r]) * S[r]
-  for (int r = 0; r < rank; ++r) {
-    float acc = 0.f;
-    const float* Vr = V + static_cast<size_t>(r) * in_f; // if V is r×in row-major alternate
-    // We store V as in×r column-major-ish from PyTorch (in, r) contiguous as [in, r]
-  }
-  // PyTorch V is (in, r) row-major: V[i,r] at i*rank+r
+  // tmp[r] = dot(x, V[:,r]) * S[r]; V é (in, rank) row-major: V[i,r] em i*rank+r
   for (int r = 0; r < rank; ++r) {
     float acc = 0.f;
     int i = 0;

@@ -2992,6 +2992,38 @@ assert.ok(/return m\["cosine"\] >= cosine_min and m\["nrmse"\] <= nrmse_max/.tes
 assert.ok(/kind = sniff_container\(input_path\) or input_path\.suffix/.test(converterSource),
   "make_source precisa despachar por magic bytes antes do sufixo (§29.8)");
 
+// §30 — Confidence Gate v1: o threshold NÃO pode voltar a sair do percentil do
+// próprio batch (com batch 1 a máscara vira `score >= score`, sempre True).
+const gateSource = await readFile(new URL("../core/cascade/runtime/confidence_gate.py", import.meta.url), "utf8");
+for (const marker of [
+  "GateCalibrator", "fixed_threshold", "min_batch_for_batch_percentile",
+  "UNCALIBRATED_SMALL_BATCH_F0_ONLY", "ACTIVATION_SCORE_V1_CALIBRATED",
+  "threshold_source", "explicit_argument", "fixed_calibrated",
+  "batch_percentile_prefill", "warning",
+]) {
+  assert.ok(gateSource.includes(marker), `confidence_gate.py sem marcador §30.1: ${marker}`);
+}
+assert.ok(gateSource.includes('"features"') || gateSource.includes('"features":'),
+  "o meta do gate precisa manter `features` (compat com o v0)");
+assert.ok(/int\(x\.shape\[0\]\) >= int\(cfg\.min_batch_for_batch_percentile\)/.test(gateSource),
+  "o percentil do batch só vale a partir de min_batch_for_batch_percentile (§30.1)");
+assert.ok(!/if threshold is None:\s*\n\s*pct = min/.test(gateSource),
+  "REGRESSÃO §30.1: o gate voltou a cair direto no percentil do batch sem guarda");
+// §30.3 — o kernel AVX2 antigo fica anotado, sem o loop morto.
+const avx2Source = await readFile(new URL("../core/cascade/runtime/cpp/avx2_lowrank.cpp", import.meta.url), "utf8");
+assert.ok(avx2Source.includes("SUPERSEDIDO"),
+  "avx2_lowrank.cpp precisa declarar que foi supersedido pelo kernel do v2 (§30.3)");
+assert.ok(!avx2Source.includes("const float* Vr = V + static_cast<size_t>(r) * in_f"),
+  "REGRESSÃO §30.3: o loop morto voltou ao avx2_lowrank.cpp");
+// §30.4 — o motor v2 está na árvore com o kernel e o guia de migração.
+for (const relPath of [
+  "../core/cascade/runtime_v2/q4k_linear.py",
+  "../core/cascade/runtime_v2/kernels/kernels.c",
+  "../core/cascade/runtime_v2/MIGRACAO.md",
+]) {
+  await readFile(new URL(relPath, import.meta.url), "utf8");
+}
+
 // §29.10 — política Fase-1 nos DOIS esquemas de nome. O padrão HF não casa nada
 // no ggml: sem as alternativas token_embd/output.weight/_exps a política era
 // silenciosamente inerte em entrada .gguf.
@@ -3080,6 +3112,27 @@ if (bf16Record) {
     "RAM de topo é só RSS de inferência medido; a conversão não mede isso");
   assert.ok(conv.f0_effective_bits_per_weight === null,
     "bpw do F0 não é derivável deste relatório: precisa ser null, não um número inventado");
+}
+
+// §30.4 — o registro do motor v2 é SINTÉTICO: tok/s e RAM de topo têm de ser
+// null, senão o número de kernel se mistura com o tok/s de model.generate.
+const runtimeRecord = publishedHistory.find((r) => r.battery_id === "P1_CASCADE_RUNTIME_V2_KERNEL");
+if (runtimeRecord) {
+  assert.equal(runtimeRecord.benchmark_protocol, "RUNTIME_KERNEL_SYNTHETIC_V1");
+  assert.equal(runtimeRecord.metrics.runtime.scope, "SYNTHETIC_STACK");
+  for (const field of [
+    "baseline_tok_s", "candidate_tok_s", "baseline_ram_bytes", "candidate_ram_bytes",
+  ]) {
+    assert.equal(runtimeRecord[field], null,
+      `${field} do registro de kernel sintético precisa ser null (§30.4)`);
+  }
+  assert.equal(runtimeRecord.implementation.eligible_for_primary_ranking, false);
+  assert.ok(runtimeRecord.metrics.runtime.paths.v2_kernel_c.tok_s > 0,
+    "o tok/s medido do kernel vive em metrics.runtime, não no topo");
+  assert.equal(runtimeRecord.metrics.gate.legacy_v0_activation_rate_batch1, 1.0,
+    "o registro precisa preservar a taxa 1.0 do gate v0 como evidência do bug (§30.1)");
+  assert.match(runtimeRecord.measurement_scope, /NÃO é model\.generate/,
+    "o escopo precisa dizer explicitamente que não é model.generate");
 }
 // argparse interpola o help com %-formatting: um "%" literal não escapado faz
 // `convert --help` levantar TypeError. Vale para todos os CLIs Python do repo.

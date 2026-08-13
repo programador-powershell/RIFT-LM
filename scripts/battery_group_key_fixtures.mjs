@@ -86,6 +86,11 @@ assert.equal(batteryGroupKey("P1_CASCADE_C0_PIPELINE"), "C0 · Linear 4 caminhos
 
 // Regra 7: /_C1_/ (nível 2) → 'C1 · Bloco real'
 assert.equal(batteryGroupKey("P1_CASCADE_C1_BLOCK_GATED"), "C1 · Bloco real");
+// Motor de execução (kernel nativo) tem grupo próprio: não é codec, e o
+// fallback "P1 · Codec principal" descreveria a coisa errada.
+assert.equal(batteryGroupKey("P1_CASCADE_RUNTIME_V2_KERNEL"), "P1 · Motor de execução");
+// A regra ^B0_ vem ANTES e continua vencendo para o setup do runtime GGUF.
+assert.equal(batteryGroupKey("B0_GGUF_RUNTIME_SETUP"), "B0 · Fundação");
 
 // Regra 8: /^C3_<TECH>_(REST)$/ → 'C3 · ' + REST com underscores→espaços;
 // o MESMO passo agrupa entre techs; C3_*_C1_DECISION NÃO cai na regra 7 (nível 3).
@@ -145,6 +150,7 @@ const KNOWN_GROUPS = new Set([
   "C4 · Segunda família",
   "C5 · Blocos representativos",
   "C6 · Compilar+Executar",
+  "P1 · Motor de execução",
   "P1 · Codec principal",
 ]);
 const groupsByModel = new Map();

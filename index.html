@@ -549,6 +549,8 @@ function batteryGroupKey(batteryId){
   if(/_E2E_TOKS$/.test(id))return "E2E · tok/s modelo completo";
   if(/^B0_/.test(id))return "B0 · Fundação";
   if(/(_SIM$|_POLICY_SIM$|PREFETCH_SIM$)/.test(id))return "P1 · políticas simuladas";
+  // Motor de execução (kernel nativo), não codec: B0_*_RUNTIME_* já saiu acima.
+  if(/_RUNTIME_V\d+_/.test(id))return "P1 · Motor de execução";
   if(!/^C3_/.test(id)&&/_C0_/.test(id))return "C0 · Linear 4 caminhos";
   if(!/^C3_/.test(id)&&/_C1_/.test(id))return "C1 · Bloco real";
   const c3=id.match(/^C3_(RIFT|AETHER|CASCADE|SPECTRA)_(.+)$/);
@@ -802,6 +804,7 @@ function batteryLevel(batteryId){
 // ids desconhecidos caem no fallback humanizado.
 const BATTERY_FRIENDLY_NAMES={
   // Nível 1 — fundação e codecs
+  P1_CASCADE_RUNTIME_V2_KERNEL:"Motor de execução (kernel C)",
   B0_GEYSER_PHYSICS_BANDWIDTH:"Banda de memória",
   G1_GEYSER_ZDC_LUT:"Compressão + kernel LUT",
   G2_GEYSER_RRS_SALIENCE:"Saliência e cache",
