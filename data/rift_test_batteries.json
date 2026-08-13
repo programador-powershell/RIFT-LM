@@ -5135,9 +5135,17 @@
               "consequence": "na Muse o embedding tem 1,34 G params: 0,76 GB a 4,5 bpw contra 5,38 GB em FP32. Se o executor exigir FP32, o bundle de 15,08 GB vira 19,70 GB e precisa de 19,85 GiB — NÃO cabe no orçamento de 16 GiB da máquina de 24 GB, falha por 3,85 GiB. Isso é maior que a condição do g64 (§33.3).",
               "resolution": "quantizar o embedding no executor (dequantizar só as linhas do lookup é barato) OU aceitar que o veredito de 24 GB não vale. O custo em PPL de um embedding quantizado NÃO foi medido em nenhuma das 5 configs — é a medição que falta.",
               "verdict_status": "CONDICIONAL"
-            }
+            },
+            "verdict_status": "RESOLVIDO_CONTRA"
           },
-          "note": "Extrapolação ×52 da amostra, agora com faixa: central 15,08 GB, worst realista 15,19, worst estrutural 15,67. A primeira versão deste registro trazia ponto único."
+          "note": "Extrapolação ×52 da amostra, agora com faixa: central 15,08 GB, worst realista 15,19, worst estrutural 15,67. A primeira versão deste registro trazia ponto único.",
+          "superseded_by": {
+            "run_id": "cascade-convert-v21-muse30b-integral",
+            "measured_bundle_bytes": 16297873024,
+            "projected_bundle_bytes": 15080000000,
+            "delta_pct": 8.08,
+            "outcome": "a conversão integral mediu 16,30 GB contra os 15,08 GB projetados (+8,1%). A diferença NÃO é erro de extrapolação: a receita mudou por ordem da PPL do 0.5B (piso g32 em vez de escada g64, cabeça q8r). O veredito de 24 GB, que a projeção dava como CABE por 0,46 GiB, foi medido como NÃO CABE por 0,68 GiB."
+          }
         },
         "external_reference_bytes": {
           "BF16 fonte (LM)": 55710000000,
@@ -5436,5 +5444,199 @@
       "note": "end_to_end_MEASURED=true (PPL real, ablação de 5 configs) mas CERTIFIED=false: a configuração default do conversor degrada 29,1%, o RSS medido é PIOR que o baseline, e não há PPL do modelo alvo."
     },
     "notes": "Três achados. (1) O gate 0,995 aprovou 100% dos tensores e a config aprovada degradou 29,1% de PPL — o gate é pré-filtro, não veredito. (2) O RSS medido do CASCADE (2,93 GiB) é MAIOR que o do baseline BF16 (2,63) e que o do llama.cpp (2,64): no 0.5B a economia de peso não virou economia de RAM. (3) O `pesos_gb: 0.3` exclui o embedding de entrada, que o executor mantém em FP32; o peso residente real é 0,844 GB, 1,97× o arquivo q4_0. Consequência para a Muse: se o executor exigir embedding FP32, o bundle de 15,08 GB vira 19,70 GB e o veredito de 24 GB falha por 3,85 GiB."
+  },
+  {
+    "schema_version": 2,
+    "timestamp_utc": "2026-08-13T23:30:00Z",
+    "run_id": "cascade-convert-v21-muse30b-integral",
+    "spec": "CASCADE-Q4K/2.1 / muse_convert_stream.py",
+    "technology": "CASCADE",
+    "model_id": "meta-models/Muse-Glimmer-30B:cascade-v21-lm",
+    "battery_id": "CASCADE_MODEL_CONVERSION",
+    "benchmark_protocol": "CONVERTER_STATIC_V1",
+    "comparison_role": null,
+    "comparison_group_id": "cmp-3f793f9f22e7ead9e2805946",
+    "comparison_context": {
+      "protocol": "CONVERTER_STATIC_V1",
+      "model_id": "meta-models/Muse-Glimmer-30B:cascade-v21-lm",
+      "device": "cpu",
+      "torch": null,
+      "transformers": null,
+      "python": null,
+      "numpy": null,
+      "note": "streaming por HTTP Range direto dos shards BF16 no HF — a fonte de 55,71 GB nunca tocou o disco; retomável pelo manifesto."
+    },
+    "implementation": {
+      "kind": "REFERENCE_MEASURED",
+      "native": false,
+      "simulated": false,
+      "eligible_for_primary_ranking": false
+    },
+    "eligible_for_primary_ranking": false,
+    "status": "LOCAL_WEIGHT_GATE_PASS",
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": 55709561856,
+    "candidate_disk_bytes": 16297873024,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": 70.74,
+      "disk_reduction_pct": 70.74,
+      "disk_compression_ratio_x": 3.418,
+      "overall_gain_pct": null
+    },
+    "metrics": {
+      "memory": {
+        "estimated_baseline_bytes": 55709561856,
+        "estimated_candidate_bytes": 16297873024,
+        "method": null,
+        "note": "Bundle autocontido, sem SOURCE_EXTERNAL. Pico de RSS de CONVERSÃO MEDIDO em 0,537 GiB — converteu um 30B sem a fonte tocar o disco, contra 3,14 GiB do conversor anterior (5,8× melhor)."
+      },
+      "converter": {
+        "format": "CASCADE-Q4K/2.1",
+        "recipe": "corpo q4k/g32+clip | v_proj+lm_head q8r | emb q4k/g32 | acts int8/g32 | AWQ pendente",
+        "recipe_origin": "ditada pela bateria de PPL do 0.5B (§33/§34): piso g32 porque o degrau g64 custou +1,44 PPL; cabeça promovida porque 4,5 bpw custou +1,09; ativações por grupo-32 porque o grupo-256 custou +0,59. Os itens 1–3 do backlog do §33.6 foram implementados aqui.",
+        "codec_ladder": "sem escada — 1 degrau por PAPEL do tensor (1 passe de rede)",
+        "selected_rungs": {
+          "q4k/g32+clip": 365,
+          "q8r": 53,
+          "raw_1d": 209
+        },
+        "bundle_requires_source": false,
+        "external_source_bytes": 0,
+        "all_in_ram_bytes": 16297873024,
+        "bundle_bytes": 16297873024,
+        "required_disk_bytes": 16297873024,
+        "headline_metric": "all_in_ram_bytes",
+        "f0_effective_bits_per_weight": 4.681,
+        "aggregate_bits_per_weight": 4.681,
+        "resident_hot_bytes": 16297873024,
+        "pageable_warm_bytes": 0,
+        "raw_passthrough_bytes": 0,
+        "converted_tensor_count": 418,
+        "passthrough_tensor_count": 209,
+        "source_format": "safetensors",
+        "conversion_peak_rss_bytes": 576599359,
+        "conversion_seconds": 6426.5,
+        "target_ram_gb": 24,
+        "target_source": "explicit_flag",
+        "machine_total_ram_bytes": null,
+        "fits_resident_in_target": false,
+        "memory_by_bits": null,
+        "sample_scope": null,
+        "integral_conversion": {
+          "tensors_converted": 627,
+          "tensors_total": 627,
+          "label": "MEDIDO",
+          "supersedes": "substitui a projeção ×52 do registro cascade-convert-v2-bf16-muse30b (15,08 GB, 3/52 camadas).",
+          "reconciliation": "todo número do relatório foi recomputado a partir dos 627 registros de tensor do manifesto e fecha: bundle, fonte, redução, bpw, cosseno mínimo e mediana, contagem de degraus e tempo."
+        },
+        "quality_measured": {
+          "gate_cosine_min": 0.995,
+          "tensors_with_cosine": 418,
+          "cosine_min": 0.996257,
+          "cosine_median": 0.996971,
+          "all_tensors_passed_gate": true,
+          "below_gate_tensor_count": 0,
+          "embed_tokens": {
+            "rung": "q4k/g32",
+            "bpw": 4.5,
+            "cosine": 0.996976,
+            "bytes": 756000000
+          },
+          "lm_head": {
+            "rung": "q8r",
+            "bpw": 8.002,
+            "cosine": 0.999939,
+            "bytes": 1345000000
+          },
+          "gate_role_note": "PRÉ-FILTRO, não veredito (§33.1). Na rodada anterior o gate também aprovou 100% dos tensores e a PPL degradou 29,1% — aqui a receita mudou justamente por causa daquela medição, mas a PPL da Muse CONTINUA NÃO MEDIDA."
+        },
+        "residency_measured": {
+          "label": "MEDIDO",
+          "necessario_com_reserva_gib": 16.68,
+          "kv_runtime_reserve_gib": 1.5,
+          "classes": {
+            "maquina_16gb": {
+              "orcamento_gib": 8,
+              "cabe": false,
+              "folga_gib": -8.68
+            },
+            "maquina_24gb": {
+              "orcamento_gib": 16,
+              "cabe": false,
+              "folga_gib": -0.68
+            },
+            "maquina_32gb": {
+              "orcamento_gib": 24,
+              "cabe": true,
+              "folga_gib": 7.32
+            },
+            "maquina_48gb": {
+              "orcamento_gib": 40,
+              "cabe": true,
+              "folga_gib": 23.32
+            }
+          },
+          "verdict_24gb": "NAO CABE",
+          "verdict_24gb_gap_gib": -0.68,
+          "verdict_resolution": "RESOLVE o condicional do §33.3 CONTRA o projeto: o piso g32 ditado pela PPL do 0.5B custou exatamente o fit. A projeção de 15,08 GB valia para a receita ladder-g64, cujo degrau a PPL reprovou. Alvo prático da Muse v2.1: classe de 32 GB, com 7,32 GiB de folga.",
+          "reopening_paths_reported": [
+            {
+              "path": "kernel 6-bit na cabeça",
+              "delta_gb": -0.33,
+              "still_missing_gib": 0.37
+            },
+            {
+              "path": "g64 revalidado pela PPL da Muse",
+              "bundle_gb": 15.08,
+              "folga_gib": 0.46,
+              "caveat": "exige que a PPL da Muse absolva o degrau que o 0.5B reprovou"
+            },
+            {
+              "path": "fase-2 imatrix com q3k no MLP",
+              "bundle_gb": 13.6,
+              "folga_gib": "com folga"
+            }
+          ]
+        },
+        "fp32_embedding_status": {
+          "converter": "RESOLVIDO — embed_tokens gravado em q4k/g32, 0,756 GB, cosseno 0,996976",
+          "executor": "NÃO VERIFICADO — o executor testado no 0.5B mantinha o embedding em FP32 no lookup (§34.4). Se fizer o mesmo aqui, os 0,756 GB viram 5,38 GB e o bundle vai a 20,92 GB (20,98 GiB): continua CABENDO na classe de 32 GB, mas encerra qualquer volta aos 24 GB.",
+          "ppl_cost_of_quantized_embedding": "AINDA NÃO MEDIDO — nenhuma das 5 configs do §34.1 usou embedding quantizado."
+        },
+        "external_reference_bytes": {
+          "BF16 fonte (LM)": 55709561856,
+          "GGUF Q8_0": 29600000000,
+          "CASCADE v2.1 (MEDIDO)": 16297873024,
+          "GGUF UD-Q4_K_XL": 15870000000,
+          "GGUF UD-IQ2_XXS": 10730000000
+        },
+        "external_reference_note": "o bundle de qualidade ficou 2,7% MAIOR que o UD-Q4_K_XL (16,30 contra 15,87 GB). A expectativa de vencê-lo em PPL vem do proxy 0.5B e não está medida na Muse.",
+        "vs_previous": {
+          "conversor_v2_amostra": {
+            "bundle_gb": 15.08,
+            "escopo": "3/52 camadas, PROJETADO",
+            "peak_rss_gib": 3.14
+          },
+          "conversor_v21_integral": {
+            "bundle_gb": 16.3,
+            "escopo": "627/627 tensores, MEDIDO",
+            "peak_rss_gib": 0.537
+          },
+          "note": "o bundle cresceu 8% porque a receita ficou mais conservadora por ordem da PPL, e o pico de RSS caiu 5,8× — converteu um 30B em meio GiB de RAM, sem a fonte tocar o disco."
+        }
+      }
+    },
+    "measurement_scope": "Conversão INTEGRAL do modelo de linguagem da Muse-Glimmer-30B: 627 de 627 tensores, streaming por HTTP Range direto dos shards BF16 no Hugging Face — a fonte de 55,71 GB nunca tocou o disco. Zero projeção; todo número reconcilia a partir dos registros de tensor do manifesto. Substitui a projeção ×52 anterior. Conversão de representação de peso APENAS: a perplexidade da Muse NÃO foi medida (não roda na sandbox do teste), portanto a qualidade do bundle segue não certificada — e o gate de cosseno não supre isso (§33.1).",
+    "quality": {
+      "local_weight_metrics_only": true,
+      "end_to_end_certified": false,
+      "end_to_end_measured": false,
+      "note": "gate local aprovou 627/627 com cosseno mínimo 0,996257. Isso é PRÉ-FILTRO: na rodada anterior um gate 100% aprovado conviveu com +29,1% de PPL. A PPL da Muse é a medição que falta."
+    },
+    "notes": "Primeiro drop do projeto em que TODO número de manchete reconcilia a partir dos artefatos brutos. Resultado central: com a receita ditada pela PPL (piso g32, cabeça q8r, ativações g32), a Muse-Glimmer-30B ocupa 16,30 GB e precisa de 16,68 GiB — NÃO cabe no orçamento de 16 GiB da máquina de 24 GB, falta 0,68 GiB. O condicional do §33.3 fecha CONTRA o projeto: o piso g32 que a qualidade exigiu custou exatamente o fit. Alvo prático: classe de 32 GB (folga 7,32 GiB)."
   }
 ]

@@ -54,20 +54,20 @@ Pesos calibrados para o objetivo declarado do score: identificar a melhor tecnol
 
 ## :new: Releases Notes
 
-### :up: V.3.5.1
+### :up: V.3.6
+
+### :warning: Latest Changes
+
+- **Muse-Glimmer-30B convertida INTEGRALMENTE** (contrato §35): 627 de 627 tensores do LM, streaming por HTTP Range direto dos shards BF16 no Hugging Face — **a fonte de 55,71 GB nunca tocou o disco**. Receita v2.1 versionada em `core/cascade/runtime_v2/recipes/`. Medido: bundle **16,30 GB** (redução 70,74%, **4,681 bpw**) em 107 min, gates **627/627** com cosseno mínimo 0,996257, e **pico de RSS de 0,537 GiB** — converter um 30B em meio GiB de RAM, 5,8× melhor que os 3,14 GiB do conversor anterior. É a capacidade que o pipeline GGUF não tem: ele exige o intermediário BF16 em disco.
+- **Primeiro drop em que TODO número de manchete reconcilia a partir dos artefatos brutos**: bundle, fonte, redução, bpw, cosseno mínimo e mediana, contagem por degrau e tempo foram recomputados dos 627 registros de tensor e batem com o `summary` ao último dígito. Não havia acontecido em nenhuma rodada anterior.
 
 ### :pushpin: Fixes
 
-- **`pesos_gb: 0.3` excluía o embedding de entrada** (contrato §34.3): o executor mantém a tabela de embedding em **FP32** no lookup, e em Qwen2.5-0.5B ela tem 136,1 M params — **27,5% de todos os parâmetros do modelo**, 0,545 GB. Peso residente real: **0,844 GB**, ou seja 14,6% menor que o BF16 (não os ~70% que o número sugeria) e **1,97× MAIOR que o arquivo q4_0** (0,429 GB). Mesma classe de erro do "85% de disco" do §29.9 — reportar o componente comprimido como se fosse o total. `candidate_disk_bytes` do registro passa a somar q4k + embedding FP32.
-- **RSS medido é PIOR que o baseline** (§34.2): CASCADE **2,93 GiB** contra BF16 **2,63** e llama.cpp **2,64**. No objetivo declarado do projeto — RAM é a restrição dura — a economia de peso não virou economia de RAM nesta escala. O registro carrega `ram_reduction_pct = −11,41%` e o smoke falha se alguém tornar isso positivo.
-- **Segunda condição contra o veredito de 24 GB, maior que a do g64** (§34.4): o bundle grava o embedding a 4,5 bpw, o executor o mantém em FP32 — as duas não podem valer juntas. Na Muse são 1,34 G params: **0,76 GB a 4,5 bpw contra 5,38 GB em FP32**. Se o executor exigir FP32, o bundle vira **19,70 GB** e falha o orçamento por **3,85 GiB** (não por 0,09 como no cenário do g64). O custo em PPL de um embedding quantizado **não foi medido em nenhuma das 5 configs** — virou o item 0 do backlog, o único cujo ganho é em RAM.
-- **`model_id` do registro estava errado**: era `Qwen/Qwen2.5-0.5B`, o protocolo declara `Instruct`.
-- **CASCADE em PyTorch é 5% mais lento que o próprio BF16 em PyTorch** (§34.5): 12,357 contra 13,048 tok/s — o kernel q4k não paga o overhead de ctypes nesta escala. Contra o llama.cpp q4_0 (55,404) o motor vale **4,5×**, fechando a decisão de escopo do §33.4 com número maior que o estimado.
+- **O veredito de 24 GB caiu — e caiu pela causa prevista** (§35.2): a Muse v2.1 precisa de **16,68 GiB** contra orçamento de 16 GiB, falta **0,68 GiB**. O condicional do §33.3 resolve **contra o projeto**: o **piso g32 ditado pela PPL** (o degrau g64 custava +1,44) custou exatamente o fit. A projeção de 15,08 GB valia para a receita ladder-g64, cujo degrau a medição de qualidade reprovou. Alvo prático: **classe de 32 GB**, com 7,32 GiB de folga. A projeção errou por +8,1%, e a diferença não é erro de extrapolação — é mudança de receita por ordem da PPL.
+- **Projeção superada não pode outranquear a medição** (§35.5): a ordenação por RAM colocava as amostras de ~800 MB à frente da conversão integral de 15,18 GB, então o leitor via "Folga em 24 GB PROJETADO +0,46 GiB" **antes** do "não cabe em 24 GB" medido. Registro com `projection.superseded_by` vai para o fim da lista, com selo "projeção SUPERADA por medição"; a conversão integral ganha selo "627/627 tensores · MEDIDO".
+- **§34.4 resolvido no conversor, aberto no executor**: `embed_tokens` é gravado em q4k/g32 (0,756 GB, cosseno 0,996976) e `lm_head` em q8r (1,345 GB, cosseno 0,999939). Mas o executor testado no 0.5B mantinha o embedding em FP32 no lookup; se repetir aqui, os 0,756 GB viram 5,38 GB e o bundle vai a 20,92 GB — continua cabendo em 32 GB e encerra qualquer volta aos 24 GB. O custo em PPL de um embedding quantizado **segue não medido**.
+- **Correção ao §34.1**: eu escrevi que "os itens 1–3 do backlog recuperam o perdido e não passam do piso data-free de 21,3122". Isso valia para os itens 1–3; a receita v2.1 tem um **quarto lever** — `v_proj` promovido a q8r — que não estava em nenhuma das 5 configs da ablação. É o que torna plausível o 19,89 relatado no 0.5B, que veio **sem artefato** neste drop e está registrado como não verificado.
 
-### :construction_worker: Refactors
-
-- **Ablação em vez de decomposição aritmética** (§34.1): o registro passa a trazer as **cinco configurações medidas** (18,9307 → 21,3122 → 21,9015 → 23,3379 → 24,4317), cada componente como diferença de dois pares reais — peso g32 2,3815 · ativação int8 0,5893 · degrau g64 1,4364 · cabeça 1,0938, soma 5,5010 idêntica ao delta total. O smoke exige escada monotônica de 5 linhas. O piso data-free MEDIDO é 21,3122: os itens 1–3 do backlog recuperam o perdido, não passam do piso.
-- **tok/s de topo agora é legítimo neste registro** (§34.5): baseline e candidato no mesmo runtime PyTorch, mesma máquina, mediana de 3 runs. O smoke exige que os campos de topo batam com as medianas de `metrics.runtime` e que cada mediana declarada seja a mediana real dos runs.
 
 ## :wrench: Instalação
 

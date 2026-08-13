@@ -1176,3 +1176,68 @@ Instruct. O teste da Muse — o único que resolve o veredito condicional dos
    BF16 em PyTorch** (12,36 contra 13,05) — o kernel q4k não paga o overhead de
    ctypes nesta escala. Contra o llama.cpp q4_0 (55,404) o motor vale **4,5×**.
    Isso fecha a decisão do §33.4 com número maior do que o estimado.
+
+## 35. Muse-Glimmer-30B convertida INTEGRALMENTE: o veredito de 24 GB caiu (22º lote)
+
+Conversão real do LM completo — 627 de 627 tensores, streaming por HTTP Range
+direto dos shards BF16 no Hugging Face, com a fonte de 55,71 GB nunca tocando o
+disco. Receita v2.1 (`core/cascade/runtime_v2/recipes/muse_convert_stream.py`),
+resumo do manifesto versionado ao lado.
+
+1. PRIMEIRO DROP EM QUE TODO NÚMERO DE MANCHETE RECONCILIA a partir dos
+   artefatos brutos. Recomputei bundle, fonte, redução, bpw, cosseno mínimo e
+   mediana, contagem por degrau e tempo a partir dos 627 registros de tensor:
+   tudo bate com o `summary` ao último dígito. Isso não havia acontecido em
+   nenhuma rodada anterior.
+
+   | medido | valor |
+   | --- | --- |
+   | fonte BF16 (LM) | 55,71 GB |
+   | bundle | **16,30 GB** |
+   | redução | 70,74% |
+   | bpw médio | 4,681 |
+   | tempo | 107 min |
+   | **pico de RSS** | **0,537 GiB** |
+   | gates | 627/627, cos mín 0,996257 |
+   | degraus | q4k/g32+clip 365 · q8r 53 · raw_1d 209 |
+
+2. O VEREDITO DE 24 GB CAIU — resolve o condicional do §33.3 CONTRA o projeto.
+   Precisa de **16,68 GiB** contra orçamento de 16 GiB: falta **0,68 GiB**. A
+   causa é exatamente a que o §33.3 previu: o **piso g32 ditado pela PPL** (o
+   degrau g64 custava +1,44) custou o fit. A projeção de 15,08 GB valia para a
+   receita ladder-g64, cujo degrau a medição de qualidade reprovou. Alvo prático
+   da Muse v2.1: **classe de 32 GB**, com 7,32 GiB de folga.
+
+   A projeção errou por +8,1% (15,08 → 16,30), e a diferença NÃO é erro de
+   extrapolação: é mudança de receita por ordem da PPL. O registro da projeção
+   carrega `superseded_by` e `verdict_status: "RESOLVIDO_CONTRA"`.
+
+3. RSS DE CONVERSÃO CAIU 5,8× (3,14 → 0,537 GiB) e a fonte nunca tocou o disco.
+   Converter um 30B em meio GiB de RAM, sem espaço para os 55,71 GB de origem, é
+   o resultado de engenharia mais forte do projeto até aqui — e é justamente a
+   capacidade que o pipeline GGUF não tem (ele exige o intermediário BF16 em
+   disco).
+
+4. §34.4 RESOLVIDO NO CONVERSOR, ABERTO NO EXECUTOR. `embed_tokens` é gravado em
+   q4k/g32 (0,756 GB, cosseno 0,996976) e `lm_head` em q8r (1,345 GB, cosseno
+   0,999939). Mas o executor testado no 0.5B mantinha o embedding em FP32 no
+   lookup; se repetir aqui, os 0,756 GB viram 5,38 GB e o bundle vai a 20,92 GB
+   (20,98 GiB) — continua cabendo na classe de 32 GB, e encerra qualquer volta
+   aos 24 GB. **O custo em PPL de um embedding quantizado segue não medido.**
+
+5. CARD: PROJEÇÃO SUPERADA NÃO PODE OUTRANQUEAR A MEDIÇÃO. A ordenação por
+   `all_in_ram_bytes` colocava as amostras de ~800 MB à frente da conversão
+   integral de 15,18 GB, então o leitor via "Folga em 24 GB PROJETADO +0,46 GiB"
+   ANTES do "não cabe em 24 GB" medido. Registro com
+   `projection.superseded_by` passa a ir para o FIM da lista, com selo "projeção
+   SUPERADA por medição"; a conversão integral ganha selo
+   "627/627 tensores · MEDIDO".
+
+6. NÃO VERIFICADO NESTE DROP: a afirmação de que a receita v2.1 no 0.5B vence o
+   melhor GGUF em PPL (19,89 contra 20,02) vem sem artefato. Ela é plausível e
+   NÃO contradiz a ablação do §34.1 — 19,89 fica abaixo do piso data-free de
+   21,3122 porque a v2.1 promove `v_proj` a q8r, alavanca que não estava em
+   nenhuma das 5 configs. Mas isso corrige o que eu escrevi no §34.1: "os itens
+   1–3 recuperam o perdido e não passam do piso" valia para os itens 1–3, não
+   para a receita v2.1, que tem um quarto lever. E a PPL da Muse — a que decide
+   se o bundle de 16,30 GB presta — continua pendente.

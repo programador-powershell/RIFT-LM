@@ -1192,8 +1192,13 @@ function converterRows(){
     if(!prev||String(r.timestamp||"")>String(prev.timestamp||""))
       out.set(r.model,{model:r.model,timestamp:r.timestamp,c,baseline:r.baselineDisk});
   }
-  // Ranking pelo headline (menor RAM total primeiro), não por data.
+  // Ranking pelo headline (menor RAM total primeiro), não por data. EXCEÇÃO:
+  // registro cuja projeção foi SUPERADA por medição vai para o fim, senão a
+  // projeção otimista aparece na frente do número que a refutou.
+  const superseded=(r)=>Boolean(r.c&&r.c.projection&&r.c.projection.superseded_by);
   return [...out.values()].sort((a,b)=>{
+    const sa=superseded(a),sb=superseded(b);
+    if(sa!==sb)return sa?1:-1;
     const ra=allInRam(a.c),rb=allInRam(b.c);
     if(ra==null&&rb==null)return String(b.timestamp||"").localeCompare(String(a.timestamp||""));
     if(ra==null)return 1;
@@ -1262,6 +1267,8 @@ function renderConvertedModels(){
         <span class="badge">${esc(String(c.converted_tensor_count??"—"))} convertidos</span>
         ${dep?`<span class="badge warn" title="Tensores em SOURCE_EXTERNAL: o bundle não é autocontido e o checkpoint de origem não pode ser apagado">depende da fonte</span>`:""}
         ${amostra?`<span class="badge warn" title="${esc(String(c.sample_scope.why||""))}">${esc(amostra)}</span>`:""}
+        ${proj&&proj.superseded_by?`<span class="badge warn" title="${esc(String(proj.superseded_by.outcome||""))}">projeção SUPERADA por medição</span>`:""}
+        ${c.integral_conversion?`<span class="badge">${esc(String(c.integral_conversion.tensors_converted))}/${esc(String(c.integral_conversion.tensors_total))} tensores · MEDIDO</span>`:""}
         ${rungs}</div>
       <div class="metrics">
         <div class="metric"><span class="mLabel">TOTAL em RAM</span><b>${fmtBytes(total)}</b></div>

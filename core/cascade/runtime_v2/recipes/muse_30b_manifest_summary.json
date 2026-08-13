@@ -1,0 +1,93 @@
+{
+ "format": "CASCADE-Q4K/2.1",
+ "model_id": "meta-models/Muse-Glimmer-30B (LM apenas)",
+ "receita": "corpo q4k/g32+clip | v_proj+lm_head q8r | emb q4k/g32 | acts int8/g32 | AWQ pendente (Colab)",
+ "tensor_count": 627,
+ "summary": {
+  "all_tensors_passed_gate": true,
+  "below_gate_tensor_count": 0,
+  "below_gate_tensors": [],
+  "source_bytes": 55709561856,
+  "bundle_bytes": 16297873024,
+  "reducao_pct": 70.74,
+  "bpw_medio": 4.681,
+  "conversion_seconds": 6426.5,
+  "peak_rss_gib": 0.537,
+  "residencia": {
+   "necessario_com_reserva_gib": 16.68,
+   "classes": {
+    "maquina_16gb": {
+     "orcamento_gib": 8,
+     "cabe": false,
+     "folga_gib": -8.68
+    },
+    "maquina_24gb": {
+     "orcamento_gib": 16,
+     "cabe": false,
+     "folga_gib": -0.68
+    },
+    "maquina_32gb": {
+     "orcamento_gib": 24,
+     "cabe": true,
+     "folga_gib": 7.32
+    },
+    "maquina_48gb": {
+     "orcamento_gib": 40,
+     "cabe": true,
+     "folga_gib": 23.32
+    }
+   }
+  }
+ },
+ "agregados": {
+  "degraus": {
+   "q8r": 53,
+   "q4k32": 365,
+   "raw_1d": 209
+  },
+  "tensores_com_cosseno": 418,
+  "cosseno": {
+   "min": 0.996257,
+   "p50": 0.996971,
+   "max": 0.999956
+  },
+  "maiores_blobs": [
+   {
+    "name": "lm_head.weight",
+    "rung": "q8r",
+    "bpw": 8.002,
+    "cosine": 0.999939,
+    "output_bytes": 1345235584
+   },
+   {
+    "name": "model.language_model.embed_tokens.weight",
+    "rung": "q4k32",
+    "bpw": 4.5,
+    "cosine": 0.996976,
+    "output_bytes": 756467712
+   },
+   {
+    "name": "model.language_model.layers.0.mlp.down_proj.weight",
+    "rung": "q4k32",
+    "bpw": 4.5,
+    "cosine": 0.996921,
+    "output_bytes": 74760192
+   },
+   {
+    "name": "model.language_model.layers.0.mlp.gate_proj.weight",
+    "rung": "q4k32",
+    "bpw": 4.5,
+    "cosine": 0.996948,
+    "output_bytes": 74760192
+   },
+   {
+    "name": "model.language_model.layers.0.mlp.up_proj.weight",
+    "rung": "q4k32",
+    "bpw": 4.5,
+    "cosine": 0.996968,
+    "output_bytes": 74760192
+   }
+  ]
+ },
+ "nota": "Resumo do manifesto da conversão INTEGRAL (627/627). Os 627 registros por tensor ficam no bundle gerado; aqui guardamos o que reconcilia as manchetes."
+}

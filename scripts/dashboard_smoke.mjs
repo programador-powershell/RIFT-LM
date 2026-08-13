@@ -3066,6 +3066,61 @@ for (const marker of ["Folga em 24 GB", "break_even_note", "projRes"]) {
 assert.ok(legacyHtml.includes("typeof projRaw===\"object\"?projRaw.central:projRaw"),
   "a projeção precisa aceitar número OU {best,central,worst} (§31.6)");
 
+// §35 — conversão INTEGRAL da Muse: medição substitui projeção, e o veredito de
+// 24 GB caiu. Nada disso pode ser suavizado depois.
+const museReal = publishedHistory.find((r) => r.run_id === "cascade-convert-v21-muse30b-integral");
+if (museReal) {
+  const c = museReal.metrics.converter;
+  assert.equal(c.format, "CASCADE-Q4K/2.1");
+  assert.equal(c.sample_scope, null, "a conversão integral NÃO é amostra (§35.1)");
+  assert.equal(c.integral_conversion.tensors_converted, c.integral_conversion.tensors_total,
+    "integral significa 627/627 (§35.1)");
+  assert.equal(c.integral_conversion.label, "MEDIDO");
+  // O bundle tem de reconciliar com a soma dos degraus declarados.
+  const rungs = c.selected_rungs;
+  assert.equal(Object.values(rungs).reduce((a, b) => a + b, 0), c.integral_conversion.tensors_total,
+    "a contagem por degrau tem de somar o total de tensores (§35.1)");
+  // Veredito de 24 GB: NÃO CABE, e o gap é negativo.
+  const res = c.residency_measured;
+  assert.equal(res.label, "MEDIDO");
+  assert.equal(res.verdict_24gb, "NAO CABE",
+    "REGRESSÃO §35.2: o veredito de 24 GB da Muse foi medido como NÃO CABE");
+  assert.ok(res.verdict_24gb_gap_gib < 0, "o gap do veredito tem de ser negativo (§35.2)");
+  assert.equal(museReal.metrics.converter.fits_resident_in_target, false);
+  assert.ok(res.classes.maquina_32gb.cabe === true && res.classes.maquina_24gb.cabe === false,
+    "o alvo prático passou a ser a classe de 32 GB (§35.2)");
+  // RSS de conversão: o ganho de 5.8x não pode ser perdido em edição.
+  assert.ok(c.conversion_peak_rss_bytes < 0.6 * 1024 ** 3,
+    "o pico de RSS medido foi 0,537 GiB (§35.3)");
+  // Embedding: resolvido no conversor, aberto no executor.
+  assert.match(c.fp32_embedding_status.converter, /RESOLVIDO/);
+  assert.match(c.fp32_embedding_status.executor, /NÃO VERIFICADO/);
+  assert.match(c.fp32_embedding_status.ppl_cost_of_quantized_embedding, /NÃO MEDIDO/);
+  // Qualidade: gate 627/627 NÃO é certificação.
+  assert.equal(museReal.quality.end_to_end_measured, false,
+    "a PPL da Muse não foi medida: end_to_end_measured tem de ser false (§35.6)");
+  assert.equal(museReal.quality.end_to_end_certified, false);
+  assert.equal(c.quality_measured.all_tensors_passed_gate, true);
+}
+
+// §35.2 — o registro da projeção precisa apontar para a medição que o superou.
+const museProj = publishedHistory.find((r) => r.run_id === "cascade-convert-v2-bf16-muse30b");
+if (museProj) {
+  const sup = museProj.metrics.converter.projection.superseded_by;
+  assert.ok(sup, "a projeção de 15,08 GB precisa declarar que foi superada (§35.2)");
+  assert.equal(sup.run_id, "cascade-convert-v21-muse30b-integral");
+  assert.ok(sup.measured_bundle_bytes > sup.projected_bundle_bytes,
+    "a medição ficou ACIMA da projeção: não inverter o sinal (§35.2)");
+  assert.equal(museProj.metrics.converter.projection.residency.verdict_status, "RESOLVIDO_CONTRA");
+}
+// §35.5 — projeção superada vai para o FIM da lista de cards.
+assert.ok(legacyHtml.includes("projeção SUPERADA por medição"),
+  "index.html sem o selo de projeção superada (§35.5)");
+assert.ok(legacyHtml.includes("const superseded=(r)=>Boolean(r.c&&r.c.projection&&r.c.projection.superseded_by)"),
+  "converterRows precisa empurrar projeção superada para o fim (§35.5)");
+assert.ok(legacyHtml.includes("tensores · MEDIDO"),
+  "index.html sem o selo da conversão integral (§35.5)");
+
 // §33 — o gate de cosseno é PRÉ-FILTRO, não veredito de qualidade.
 for (const marker of [
   "PREFILTER_NOT_VERDICT", "GATE_ROLE", "end_to_end_validated",
