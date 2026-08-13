@@ -20,6 +20,22 @@ const CONVERTER_REPO_FILES = [
   "core/cascade/converter/requirements.txt",
 ];
 const CONVERTER_LOCAL_DIR = "cascade/converter";
+// Engine v2 (CASCADE-Q4K/2.x): grava direto no formato do executor. É o
+// caminho MEDIDO do projeto — a Muse-Glimmer-30B integral saiu por aqui
+// (§35). Só aceita fonte BF16/F16/F32; para GGUF o v1 segue sendo o caminho,
+// mesmo sabendo que recomprimir GGUF rende ~0 (§29.9).
+// `_load_lib()` do q4k_linear é lazy, então CONVERTER não exige kernel
+// compilado — a .so só é necessária para EXECUTAR o bundle.
+const CONVERTER_V2_REPO_FILES = [
+  "core/cascade/runtime_v2/__init__.py",
+  "core/cascade/runtime_v2/codec.py",
+  "core/cascade/runtime_v2/q4k_pack.py",
+  "core/cascade/runtime_v2/q4k_linear.py",
+  "core/cascade/runtime_v2/confidence_gate.py",
+  "core/cascade/runtime_v2/convert.py",
+];
+const CONVERTER_V2_LOCAL_DIR = "cascade_runtime_v2";
+const CONVERTER_DEFAULT_ENGINE = "v2";
 // Snapshot HF: apenas pesos + config/tokenizer (nada de PDFs/imagens do repo).
 const HF_ALLOW_PATTERNS = ["*.safetensors", "*.json", "tokenizer*", "*.model"];
 const PIP_INSTALL_HINT =
@@ -57,6 +73,9 @@ GITHUB_REPOSITORY = ${JSON.stringify(repo)}
 SOURCE_REF = ${JSON.stringify(ref)}
 CONVERTER_REPO_FILES = ${JSON.stringify(CONVERTER_REPO_FILES)}
 CONVERTER_LOCAL_DIR = ${JSON.stringify(CONVERTER_LOCAL_DIR)}
+CONVERTER_V2_REPO_FILES = ${JSON.stringify(CONVERTER_V2_REPO_FILES)}
+CONVERTER_V2_LOCAL_DIR = ${JSON.stringify(CONVERTER_V2_LOCAL_DIR)}
+CONVERTER_DEFAULT_ENGINE = ${JSON.stringify(CONVERTER_DEFAULT_ENGINE)}
 HF_ALLOW_PATTERNS = ${JSON.stringify(HF_ALLOW_PATTERNS)}
 PIP_INSTALL_HINT = ${JSON.stringify(PIP_INSTALL_HINT)}
 MODEL_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -111,8 +130,15 @@ def parse_args():
                         help="passthrough para o conversor (default do conversor: 64)")
     parser.add_argument("--ranks", default=None,
                         help="passthrough para o conversor, ex.: 8,16,32")
+    parser.add_argument(
+        "--engine", choices=["v1", "v2"], default=CONVERTER_DEFAULT_ENGINE,
+        help="v2 (padrão) = CASCADE-Q4K/2.x, grava direto no formato do "
+             "executor; é o caminho medido do projeto (a Muse-Glimmer-30B "
+             "integral saiu por aqui) e exige fonte BF16/F16/F32. v1 = "
+             "CASCADE-DIR/0.1, aceita GGUF — mas recomprimir GGUF rende ~0",
+    )
     parser.add_argument("--codec-ladder", default=None,
-                        help="passthrough: auto (default) | safe | compact | int4")
+                        help="passthrough do v1: auto (default) | safe | compact | int4")
     parser.add_argument("--include-regex", default=None,
                         help="passthrough: converte só os tensores que casam")
     parser.add_argument("--target-ram-gb", type=float, default=None,
@@ -155,9 +181,23 @@ def hf_token():
     token = (os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN") or "").strip()
     return token or None
 
-def download_converter(base_dir):
+def _fetch(repo_path, local_path):
+    url = REPO_BASE + "/" + repo_path
+    request = Request(url, headers={"User-Agent": "rift-converter-runner/1.0"})
+    local_path.write_bytes(urlopen(request, timeout=60).read())
+    print("[RUNNER] download", repo_path, "->", str(local_path))
+
+def download_converter(base_dir, engine=CONVERTER_DEFAULT_ENGINE):
     if not REPO_BASE.lower().startswith("https://"):
         fail("o download do conversor precisa usar HTTPS: " + REPO_BASE)
+    if engine == "v2":
+        # Pacote cascade_runtime_v2 completo: convert.py usa imports RELATIVOS
+        # (.codec/.q4k_pack), então tem de rodar como -m cascade_runtime_v2.convert.
+        target = base_dir / CONVERTER_V2_LOCAL_DIR
+        target.mkdir(parents=True, exist_ok=True)
+        for repo_path in CONVERTER_V2_REPO_FILES:
+            _fetch(repo_path, target / repo_path.rsplit("/", 1)[-1])
+        return target / "convert.py"
     package_root = base_dir / "cascade"
     target = base_dir / CONVERTER_LOCAL_DIR
     target.mkdir(parents=True, exist_ok=True)
@@ -166,11 +206,7 @@ def download_converter(base_dir):
     if not init_file.exists():
         init_file.write_bytes(b"")
     for repo_path in CONVERTER_REPO_FILES:
-        local_path = target / repo_path.rsplit("/", 1)[-1]
-        url = REPO_BASE + "/" + repo_path
-        request = Request(url, headers={"User-Agent": "rift-converter-runner/1.0"})
-        local_path.write_bytes(urlopen(request, timeout=60).read())
-        print("[RUNNER] download", repo_path, "->", str(local_path))
+        _fetch(repo_path, target / repo_path.rsplit("/", 1)[-1])
     return target / "cascade_converter.py"
 
 def download_model(model, base_dir):
@@ -235,11 +271,52 @@ def main():
     print("[RUNNER] repo pinado:", GITHUB_REPOSITORY, "| ref:", SOURCE_REF)
     print("[RUNNER] saída:", str(output_dir))
 
-    converter_script = download_converter(base_dir)
+    converter_script = download_converter(base_dir, args.engine)
     if args.model:
         input_dir = download_model(args.model, base_dir)
     else:
         input_dir = input_path
+
+    if args.engine == "v2":
+        # CLI enxuta do v2: só --input/--output/--model-id. A receita (piso g32,
+        # cabeça q8r, ativações g32) é ditada pelo código, não por flag, porque
+        # foi a bateria de PPL que a escolheu (§33/§35).
+        ignored = [name for name, on in (
+            ("--disk-budget-gb", args.disk_budget_gb != DEFAULT_DISK_BUDGET_GB),
+            ("--resume", not args.resume),
+            ("--delete-source-shards", args.delete_source_shards),
+            ("--group-size", args.group_size is not None),
+            ("--ranks", bool(args.ranks)),
+            ("--codec-ladder", bool(args.codec_ladder)),
+            ("--include-regex", bool(args.include_regex)),
+            ("--target-ram-gb", args.target_ram_gb is not None),
+            ("--keep-source-passthrough", args.keep_source_passthrough),
+            ("--publish", args.publish == "on"),
+        ) if on]
+        if ignored:
+            print("[RUNNER] AVISO: engine v2 IGNORA estas flags (são do v1): "
+                  + ", ".join(ignored))
+        print("[RUNNER] engine v2: fonte tem de ser BF16/F16/F32. Para GGUF use "
+              "--engine v1 (recomprimir GGUF rende ~0 — medido).")
+        command = [
+            sys.executable, "-m", "cascade_runtime_v2.convert",
+            "--input", str(input_dir),
+            "--output", str(output_dir),
+        ]
+        if args.model:
+            command += ["--model-id", args.model]
+        return_code = subprocess.call(command, cwd=str(base_dir),
+                                      env=os.environ.copy())
+        print("[RUNNER] finalizado rc =", return_code)
+        if return_code != 0:
+            raise SystemExit(return_code)
+        print("[RUNNER] saída CASCADE-Q4K:", str(output_dir))
+        print("[RUNNER] o gate de cosseno é PRÉ-FILTRO: confira "
+              "summary.all_tensors_passed_gate e rode PPL end-to-end antes de "
+              "publicar este bundle como bom.")
+        if args.hf_repo:
+            upload_output(args.hf_repo, output_dir)
+        return 0
 
     command = [
         sys.executable,
@@ -319,8 +396,11 @@ export default {
 };
 
 export const _test = {
+  CONVERTER_DEFAULT_ENGINE,
   CONVERTER_LOCAL_DIR,
   CONVERTER_REPO_FILES,
+  CONVERTER_V2_LOCAL_DIR,
+  CONVERTER_V2_REPO_FILES,
   DEFAULT_DISK_BUDGET_GB,
   HF_ALLOW_PATTERNS,
   PIP_INSTALL_HINT,

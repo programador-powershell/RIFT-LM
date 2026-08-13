@@ -18,7 +18,10 @@ Otimizacoes sobre o conversor v1 (auditoria + fisica medida):
   5. RSS limitado por chunking de LINHAS no encode (q4k e row-independent):
      nem o embedding de 2.69 GB materializa fp32 inteiro.
   6. Relatorio de residencia por CLASSE DE MAQUINA — MACHINE_TOTAL_GIB lista o
-     TOTAL (16/24/32/48 GB) e o orcamento sai de total - 8 GiB, piso metade.
+     TOTAL (16/24/32/48 GB de maquina) e o orcamento sai de total - 8 GiB, piso
+     50%. Anti-regressao da subtracao dupla: tests/test_residency.py.
+  Contrato de honestidade do manifest, executavel: tests/test_manifest_honesty.py
+  (roda uma conversao limpa e uma adversarial que forca RESCUE_LAST_RUNG).
 Fonte suportada: diretorio HF com *.safetensors (BF16/F16/F32). Fontes GGUF
 ja quantizadas continuam no v1 (recomprimir GGUF e beco sem saida medido).
 """

@@ -93,3 +93,21 @@ Otimizações sobre o conversor v1 (todas medidas na Muse-Glimmer BF16 real):
   (−0,09). Ponto de ruptura: +3,24% sobre o central (~4,47 bpw médio ⇒ ~96%
   dos tensores em g32; medido: 5,6%). Rótulo PROJETADO até a conversão
   integral (~32 min em Colab), que é o que fecha o veredito binário.
+
+## v2.2 — velocidade (tok/s)
+
+Três ataques aos ladrões de banda medidos (fork/join OMP por chamada,
+falta de ILP, maddubs onde há VNNI):
+1. **`cascade_gemv_batch`**: N GEMVs independentes numa única região OMP
+   (schedule dinâmico por blocos de linhas, `nowait` entre itens). No motor,
+   fundir por camada os grupos de mesmo input: {q,k,v,attn_gate}, {gate,up}.
+2. **Prefetch** (linha seguinte + super seguinte) e miolo refatorado por
+   blocos de linhas (`q4k_rows_i8_32`/`q8r_rows_i8`).
+3. **Build AVX512-VNNI** (`vpdpbusd`): `build.sh` gera
+   `libcascade_kernels_vnni.so`; o loader escolhe pelo `/proc/cpuinfo`.
+   AVX2 puro continua o baseline portável.
+
+Medido na Muse-30B real (bundle 16,30 GB, caminho de pesos por token):
+v2.1 **0,911 tok/s / 14,16 GB/s** → v2.2 **1,078 tok/s / 16,74 GB/s**
+(+18,3%; fase B a 18,05 GB/s = paridade com o kernel do llama.cpp).
+Contra o Q4_K_XL derivado (1,134 tok/s): 95%, com 627/627 no gate.

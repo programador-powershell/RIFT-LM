@@ -3066,6 +3066,30 @@ for (const marker of ["Folga em 24 GB", "break_even_note", "projRes"]) {
 assert.ok(legacyHtml.includes("typeof projRaw===\"object\"?projRaw.central:projRaw"),
   "a projeção precisa aceitar número OU {best,central,worst} (§31.6)");
 
+// §37 — o card do conversor precisa oferecer o engine v2, que é o caminho medido.
+assert.equal(converterApi.CONVERTER_DEFAULT_ENGINE, "v2",
+  "o runner do conversor tem de usar o engine v2 por padrão (§37)");
+assert.ok(Array.isArray(converterApi.CONVERTER_V2_REPO_FILES)
+  && converterApi.CONVERTER_V2_REPO_FILES.every((p) => p.startsWith("core/cascade/runtime_v2/")),
+  "os arquivos do engine v2 vêm de core/cascade/runtime_v2 (§37)");
+const runnerSrc = converterApi.buildRunner({ origin: "https://smoke.test", repo: "o/r", ref: "main" });
+for (const marker of [
+  '"--engine"', 'default=CONVERTER_DEFAULT_ENGINE',
+  '"-m", "cascade_runtime_v2.convert"', "engine v2 IGNORA",
+  "PRÉ-FILTRO", "BF16/F16/F32",
+]) {
+  assert.ok(runnerSrc.includes(marker), `runner do conversor sem marcador §37: ${marker}`);
+}
+// convert.py do v2 usa imports relativos: TEM de ser invocado como módulo.
+assert.ok(runnerSrc.includes('sys.executable, "-m", "cascade_runtime_v2.convert"'),
+  "o engine v2 tem de ser invocado como MÓDULO — convert.py usa imports relativos (§37)");
+// O card precisa dizer qual engine roda e que o gate não certifica qualidade.
+for (const marker of [
+  "engine v2 por padrão", "--engine v1", "pré-filtro, não veredito",
+]) {
+  assert.ok(legacyHtml.includes(marker), `index.html sem o aviso de engine do conversor (§37): ${marker}`);
+}
+
 // §36 — caminho de pesos da Muse: medido é medido, derivado é derivado, e o gap
 // contra o GGUF é FAIXA porque a derivação do relatório não era simétrica.
 const wp = publishedHistory.find((r) => r.battery_id === "P1_CASCADE_WEIGHTPATH_MUSE");
@@ -3090,21 +3114,47 @@ if (wp) {
   // Ressalvas de método obrigatórias.
   assert.match(rt.method_caveat, /RECONSTRUÍDO/,
     "o número é soma de duas metades: tem de estar declarado (§36.2a)");
-  assert.ok(rt.bandwidth_regression.degradation_pct < 0,
-    "a regressão de banda (16,55 -> 14,16) tem de ficar registrada (§36.5)");
+  // A comparação sintético-vs-real tem de existir sempre; o SINAL é resultado.
+  const br = rt.bandwidth_regression;
+  assert.ok(br.synthetic_gbs > 0 && br.real_gbs > 0 && br.real_working_set_gb > br.synthetic_working_set_gb,
+    "a comparação de banda sintético-vs-real tem de ficar registrada (§36.5)");
+  assert.ok(Math.abs((br.real_gbs / br.synthetic_gbs - 1) * 100 - br.degradation_pct) < 0.1,
+    "degradation_pct tem de derivar das duas bandas registradas (§36.5)");
+  if (br.degradation_pct >= 0) {
+    assert.ok(br.resolved, "se a degradação virou positiva, o registro tem de explicar por quê (§37)");
+  }
+  // §37 — v2.2: ganho declarado tem de bater com o baseline registrado.
+  if (rt.gain_over_v21) {
+    assert.ok(Math.abs((rt.tok_s_weight_path / rt.v21_baseline.tok_s - 1) * 100 - rt.gain_over_v21.tok_s_pct) < 0.1,
+      "o ganho sobre o v2.1 tem de derivar dos dois tok/s registrados (§37)");
+    assert.ok(rt.tok_s_weight_path > rt.v21_baseline.tok_s,
+      "o v2.2 tem de ser mais rápido que o v2.1 registrado (§37)");
+  }
   // Comparativo GGUF: derivado, assimétrico, e reportado como FAIXA.
   const g = wp.metrics.gguf_comparison;
   assert.match(g.status, /DERIVADO/, "o comparativo com GGUF não é medido (§36.2b)");
   assert.match(g.why_not_measured, /unknown model architecture|rejeita/,
     "precisa dizer POR QUE não foi medido (§36.2b)");
-  assert.ok(g.symmetric_derivation && g.honest_gap_range_pct,
-    "o gap tem de vir como faixa, com a derivação simétrica ao lado (§36.2b)");
-  assert.ok(g.honest_gap_range_pct.min < g.honest_gap_range_pct.max,
-    "faixa do gap invertida (§36.2b)");
-  assert.equal(g.honest_gap_range_pct.min, g.reported_derivation.delta_vs_cascade_pct,
-    "o pior extremo da faixa é o número do relatório (§36.2b)");
-  assert.ok(g.symmetric_derivation.delta_vs_cascade_pct > g.reported_derivation.delta_vs_cascade_pct,
-    "a derivação simétrica tem de ser MENOS desfavorável que a do relatório (§36.2b)");
+  assert.ok(g.honest_gap_range_pct, "o gap contra o GGUF tem de vir com incerteza declarada (§36.2b)");
+  assert.ok(g.honest_gap_range_pct.min <= g.honest_gap_range_pct.max, "faixa do gap invertida (§36.2b)");
+  if (g.honest_gap_range_pct.min === g.honest_gap_range_pct.max) {
+    // §37 — faixa colapsada em ponto: só vale se a assimetria que a criava sumiu.
+    assert.ok(g.honest_gap_range_pct.note && g.symmetric_derivation_status,
+      "colapsar a faixa em ponto exige justificar que a assimetria acabou (§37)");
+    assert.match(g.symmetric_derivation_status, /OBSOLETA/,
+      "a derivação simétrica só sai de cena declarada como obsoleta (§37)");
+    const dc = g.direct_comparison_v22;
+    assert.ok(dc && Math.abs(dc.gap_pct - g.honest_gap_range_pct.min) < 0.05,
+      "o ponto único tem de ser o gap da comparação direta medida (§37)");
+    assert.ok(dc.gap_pct > g.reported_derivation.delta_vs_cascade_pct,
+      "o gap do v2.2 tem de ser MENOS desfavorável que o do v2.1 (§37)");
+    assert.ok(dc.bandwidth_of_llamacpp_pct > 90,
+      "93% da banda do llama.cpp é o número que sustenta o gap de -5% (§37)");
+  } else {
+    assert.ok(g.symmetric_derivation, "faixa aberta exige a derivação simétrica ao lado (§36.2b)");
+    assert.equal(g.honest_gap_range_pct.min, g.reported_derivation.delta_vs_cascade_pct);
+    assert.ok(g.symmetric_derivation.delta_vs_cascade_pct > g.reported_derivation.delta_vs_cascade_pct);
+  }
   assert.match(g.decisive_fact, /CASCADE RODA|roda a Muse/i,
     "o fato decisivo (GGUF não carrega a Muse) tem de estar no registro (§36.4)");
   // O embedding fica FORA do caminho de pesos: lookup, não GEMV.

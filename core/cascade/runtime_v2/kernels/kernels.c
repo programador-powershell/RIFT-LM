@@ -343,3 +343,307 @@ void lowrank_gemv_f32(const float *x, int in_f,
         y[o] += a;
     }
 }
+
+// ---------------------------------------------------------------------------
+// v2.1 — correcoes ditadas pela bateria E2E (decomposicao da PPL):
+//   (a) ativacoes int8 com escala POR GRUPO DE 32 (estilo Q8_0) em vez de por
+//       super-256: recupera ~0.6 de PPL medida; custo ~zero.
+//   (b) GEMV q8 rowwise (pesos int8 + escala fp16 por linha) para tensores
+//       promovidos (cabeca/v_proj): +1.09 PPL medida da cabeca a 4.5 bpw.
+// ---------------------------------------------------------------------------
+
+void q4k_prepare_x_i8_32(int cols, const float *x, int8_t *xq_re,
+                         float *qs32, float *sumx) {
+    const int nsup = cols / SUP;
+    for (int gj = 0; gj < cols / GRP; ++gj) {
+        float s = 0.f, mx = 0.f;
+        for (int i = 0; i < GRP; ++i) {
+            float v = x[gj * GRP + i];
+            s += v;
+            float a = v < 0 ? -v : v;
+            if (a > mx) mx = a;
+        }
+        sumx[gj] = s;
+        qs32[gj] = mx > 0 ? mx / 127.f : 1.f;
+    }
+    for (int sblk = 0; sblk < nsup; ++sblk) {
+        const float *xs = x + sblk * SUP;
+        int8_t *dst = xq_re + (size_t)sblk * SUP;
+        for (int p = 0; p < GPS / 2; ++p) {
+            int g0 = sblk * GPS + 2 * p, g1 = g0 + 1;
+            const float *a = xs + (2 * p) * GRP;
+            const float *b = xs + (2 * p + 1) * GRP;
+            for (int k = 0; k < 16; ++k) {
+                dst[p * 64 + k]      = (int8_t)lrintf(a[k] / qs32[g0]);
+                dst[p * 64 + 16 + k] = (int8_t)lrintf(b[k] / qs32[g1]);
+                dst[p * 64 + 32 + k] = (int8_t)lrintf(a[16 + k] / qs32[g0]);
+                dst[p * 64 + 48 + k] = (int8_t)lrintf(b[16 + k] / qs32[g1]);
+            }
+        }
+    }
+}
+
+void q4k_gemv_i8_g32acts(int rows, int cols, int g, const uint8_t *packed,
+                         const int8_t *xq_re, const float *qs32,
+                         const float *sumx, float *y) {
+    const int nsup = cols / SUP;
+    const int sup_bytes = (g == 64) ? 138 : 144;
+    const int scb = (g == 64) ? 3 : 6;
+    const int voff = 4 + 2 * scb;
+    const size_t row_bytes = (size_t)nsup * sup_bytes;
+    const __m256i nib = _mm256_set1_epi8(0x0F);
+    const __m256i bc0 = BCAST_PAIR(0), bc1 = BCAST_PAIR(1);
+    const __m256i bc2 = BCAST_PAIR(2), bc3 = BCAST_PAIR(3);
+#pragma omp parallel for schedule(static)
+    for (int r = 0; r < rows; ++r) {
+        const uint8_t *rp = packed + (size_t)r * row_bytes;
+        float acc = 0.f;
+        __m256 maccv = _mm256_setzero_ps();
+        for (int s = 0; s < nsup; ++s) {
+            const uint8_t *sp = rp + (size_t)s * sup_bytes;
+            float d = f16_to_f32(*(const uint16_t *)sp);
+            float dmin = f16_to_f32(*(const uint16_t *)(sp + 2));
+            uint64_t su = 0, mu = 0;
+            memcpy(&su, sp + 4, scb);
+            memcpy(&mu, sp + 4 + scb, scb);
+            int16_t sc16[GPS] __attribute__((aligned(16)));
+            int16_t mi16[GPS] __attribute__((aligned(16)));
+            if (g == 64) {
+                for (int j = 0; j < 4; ++j) {
+                    int16_t sv = (int16_t)((su >> (6 * j)) & 63u);
+                    int16_t mv = (int16_t)((int)((mu >> (6 * j)) & 63u) - 31);
+                    sc16[2 * j] = sc16[2 * j + 1] = sv;
+                    mi16[2 * j] = mi16[2 * j + 1] = mv;
+                }
+            } else {
+                for (int j = 0; j < GPS; ++j) {
+                    sc16[j] = (int16_t)((su >> (6 * j)) & 63u);
+                    mi16[j] = (int16_t)((int)((mu >> (6 * j)) & 63u) - 31);
+                }
+            }
+            __m256i scall = _mm256_broadcastsi128_si256(
+                _mm_load_si128((const __m128i *)sc16));
+            __m256 m8v = _mm256_mul_ps(
+                _mm256_set1_ps(dmin),
+                _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(
+                    _mm_load_si128((const __m128i *)mi16))));
+            const uint8_t *qs = sp + voff;
+            const int8_t *xs = xq_re + (size_t)s * SUP;
+            const float *qg = qs32 + s * GPS;
+            __m256 accf = _mm256_setzero_ps();
+            __m256i raw, qlo, qhi, xlo, xhi, p16, i32;
+#define PAIR_STEP32(p, bc) \
+            raw = _mm256_loadu_si256((const __m256i *)(qs + (p) * 32)); \
+            qlo = _mm256_and_si256(raw, nib); \
+            qhi = _mm256_and_si256(_mm256_srli_epi16(raw, 4), nib); \
+            xlo = _mm256_loadu_si256((const __m256i *)(xs + (p) * 64)); \
+            xhi = _mm256_loadu_si256((const __m256i *)(xs + (p) * 64 + 32)); \
+            p16 = _mm256_add_epi16(_mm256_maddubs_epi16(qlo, xlo), \
+                                   _mm256_maddubs_epi16(qhi, xhi)); \
+            i32 = _mm256_madd_epi16(p16, _mm256_shuffle_epi8(scall, bc)); \
+            accf = _mm256_fmadd_ps(_mm256_cvtepi32_ps(i32), \
+                _mm256_set_m128(_mm_set1_ps(qg[2 * (p) + 1]), \
+                                _mm_set1_ps(qg[2 * (p)])), accf);
+            PAIR_STEP32(0, bc0)
+            PAIR_STEP32(1, bc1)
+            PAIR_STEP32(2, bc2)
+            PAIR_STEP32(3, bc3)
+#undef PAIR_STEP32
+            acc += d * hsum256(accf);
+            maccv = _mm256_fmadd_ps(m8v, _mm256_loadu_ps(sumx + s * GPS), maccv);
+        }
+        y[r] = acc + hsum256(maccv);
+    }
+}
+
+// q8 rowwise: pesos int8 (linha a linha) + escala fp16 por linha.
+// y[r] = rs[r] * sum_g qs32[g] * dot_i8(w8[g], x8[g])
+void q8r_gemv_i8(int rows, int cols, const int8_t *w8, const uint16_t *rscale,
+                 const int8_t *xq_lin, const float *qs32, float *y) {
+    const int ngrp = cols / GRP;
+#pragma omp parallel for schedule(static)
+    for (int r = 0; r < rows; ++r) {
+        const int8_t *wr = w8 + (size_t)r * cols;
+        __m256 accf = _mm256_setzero_ps();
+        for (int gj = 0; gj < ngrp; ++gj) {
+            __m256i wv = _mm256_loadu_si256((const __m256i *)(wr + gj * GRP));
+            __m256i xv = _mm256_loadu_si256((const __m256i *)(xq_lin + gj * GRP));
+            __m256i wa = _mm256_sign_epi8(wv, wv);
+            __m256i xb = _mm256_sign_epi8(xv, wv);
+            __m256i p16 = _mm256_maddubs_epi16(wa, xb);
+            __m256i i32 = _mm256_madd_epi16(p16, _mm256_set1_epi16(1));
+            accf = _mm256_fmadd_ps(_mm256_cvtepi32_ps(i32),
+                                   _mm256_set1_ps(qs32[gj]), accf);
+        }
+        y[r] = f16_to_f32(rscale[r]) * hsum256(accf);
+    }
+}
+
+// quantizacao linear das ativacoes (sem rearranjo) p/ q8r
+void q8r_prepare_x(int cols, const float *x, int8_t *xq_lin, float *qs32) {
+    for (int gj = 0; gj < cols / GRP; ++gj) {
+        float mx = 0.f;
+        for (int i = 0; i < GRP; ++i) {
+            float a = x[gj * GRP + i] < 0 ? -x[gj * GRP + i] : x[gj * GRP + i];
+            if (a > mx) mx = a;
+        }
+        float q = mx > 0 ? mx / 127.f : 1.f;
+        qs32[gj] = q;
+        for (int i = 0; i < GRP; ++i)
+            xq_lin[gj * GRP + i] = (int8_t)lrintf(x[gj * GRP + i] / q);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// v2.2 — tok/s: (1) API de LOTE: 1 regiao OMP para N GEMVs independentes
+// (mata fork/join por chamada; 417 chamadas/token na Muse -> ~4);
+// (2) unroll de 2 linhas + prefetch; (3) build VNNI opcional (-DUSE_VNNI,
+// vpdpbusd) — build.sh gera libcascade_kernels_vnni.so e o loader escolhe.
+// ---------------------------------------------------------------------------
+
+#ifdef USE_VNNI
+#define DOT_PAIR(qlo, qhi, xlo, xhi, scqs, accf) do { \
+    __m256i _lo = _mm256_dpbusd_epi32(_mm256_setzero_si256(), (qlo), (xlo)); \
+    __m256i _hi = _mm256_dpbusd_epi32(_mm256_setzero_si256(), (qhi), (xhi)); \
+    accf = _mm256_fmadd_ps(_mm256_cvtepi32_ps(_mm256_add_epi32(_lo, _hi)), \
+                           (scqs), accf); } while (0)
+#else
+#define DOT_PAIR(qlo, qhi, xlo, xhi, scqs, accf) do { \
+    __m256i _p16 = _mm256_add_epi16(_mm256_maddubs_epi16((qlo), (xlo)), \
+                                    _mm256_maddubs_epi16((qhi), (xhi))); \
+    __m256i _i32 = _mm256_madd_epi16(_p16, _mm256_set1_epi16(1)); \
+    accf = _mm256_fmadd_ps(_mm256_cvtepi32_ps(_i32), (scqs), accf); } while (0)
+#endif
+
+static void q4k_rows_i8_32(int r0, int r1, int cols, int g,
+                           const uint8_t *packed, const int8_t *xq_re,
+                           const float *qs32, const float *sumx, float *y) {
+    const int nsup = cols / SUP;
+    const int sup_bytes = (g == 64) ? 138 : 144;
+    const int scb = (g == 64) ? 3 : 6;
+    const int voff = 4 + 2 * scb;
+    const size_t row_bytes = (size_t)nsup * sup_bytes;
+    const __m256i nib = _mm256_set1_epi8(0x0F);
+    for (int r = r0; r < r1; ++r) {
+        const uint8_t *rp = packed + (size_t)r * row_bytes;
+        _mm_prefetch((const char *)(rp + row_bytes), _MM_HINT_T1);
+        float acc = 0.f;
+        __m256 maccv = _mm256_setzero_ps();
+        for (int s = 0; s < nsup; ++s) {
+            const uint8_t *sp = rp + (size_t)s * sup_bytes;
+            _mm_prefetch((const char *)(sp + 2 * sup_bytes), _MM_HINT_T0);
+            float d = f16_to_f32(*(const uint16_t *)sp);
+            float dmin = f16_to_f32(*(const uint16_t *)(sp + 2));
+            uint64_t su = 0, mu = 0;
+            memcpy(&su, sp + 4, scb);
+            memcpy(&mu, sp + 4 + scb, scb);
+            float scqs[GPS] __attribute__((aligned(32)));
+            float m8[GPS] __attribute__((aligned(32)));
+            const float *qg = qs32 + s * GPS;
+            if (g == 64) {
+                for (int j = 0; j < 4; ++j) {
+                    float sv = d * (float)((su >> (6 * j)) & 63u);
+                    float mv = dmin * (float)((int)((mu >> (6 * j)) & 63u) - 31);
+                    scqs[2 * j] = sv * qg[2 * j];
+                    scqs[2 * j + 1] = sv * qg[2 * j + 1];
+                    m8[2 * j] = mv; m8[2 * j + 1] = mv;
+                }
+            } else {
+                for (int j = 0; j < GPS; ++j) {
+                    scqs[j] = d * (float)((su >> (6 * j)) & 63u) * qg[j];
+                    m8[j] = dmin * (float)((int)((mu >> (6 * j)) & 63u) - 31);
+                }
+            }
+            const uint8_t *qs = sp + voff;
+            const int8_t *xs = xq_re + (size_t)s * SUP;
+            __m256 accf = _mm256_setzero_ps();
+            for (int p = 0; p < 4; ++p) {
+                __m256i raw = _mm256_loadu_si256((const __m256i *)(qs + p * 32));
+                __m256i qlo = _mm256_and_si256(raw, nib);
+                __m256i qhi = _mm256_and_si256(_mm256_srli_epi16(raw, 4), nib);
+                __m256i xlo = _mm256_loadu_si256((const __m256i *)(xs + p * 64));
+                __m256i xhi = _mm256_loadu_si256((const __m256i *)(xs + p * 64 + 32));
+                __m256 sq = _mm256_set_m128(_mm_set1_ps(scqs[2 * p + 1]),
+                                            _mm_set1_ps(scqs[2 * p]));
+                DOT_PAIR(qlo, qhi, xlo, xhi, sq, accf);
+            }
+            acc += hsum256(accf);
+            maccv = _mm256_fmadd_ps(_mm256_load_ps(m8),
+                                    _mm256_loadu_ps(sumx + s * GPS), maccv);
+        }
+        y[r] = acc + hsum256(maccv);
+    }
+}
+
+static void q8r_rows_i8(int r0, int r1, int cols, const int8_t *w8,
+                        const uint16_t *rscale, const int8_t *xq_lin,
+                        const float *qs32, float *y) {
+    const int ngrp = cols / GRP;
+    for (int r = r0; r < r1; ++r) {
+        const int8_t *wr = w8 + (size_t)r * cols;
+        _mm_prefetch((const char *)(wr + cols), _MM_HINT_T1);
+        __m256 accf = _mm256_setzero_ps();
+        for (int gj = 0; gj < ngrp; ++gj) {
+            __m256i wv = _mm256_loadu_si256((const __m256i *)(wr + gj * GRP));
+            __m256i xv = _mm256_loadu_si256((const __m256i *)(xq_lin + gj * GRP));
+            __m256i wa = _mm256_sign_epi8(wv, wv);
+            __m256i xb = _mm256_sign_epi8(xv, wv);
+            __m256 qsv = _mm256_set1_ps(qs32[gj]);
+            DOT_PAIR(wa, _mm256_setzero_si256(), xb,
+                     _mm256_setzero_si256(), qsv, accf);
+        }
+        y[r] = f16_to_f32(rscale[r]) * hsum256(accf);
+    }
+}
+
+typedef struct {
+    int kind;                 // 0 = q4k(g32|64), 2 = q8r
+    int rows, cols_padded, g;
+    const uint8_t *packed;
+    const int8_t *w8;
+    const uint16_t *rscale;
+    const int8_t *xq;
+    const float *qs32;
+    const float *sumx;
+    float *y;
+} cascade_gemv_desc;
+
+// N GEMVs independentes numa UNICA regiao paralela (schedule dinamico por
+// blocos de linhas; nowait — sem barreira entre itens).
+void cascade_gemv_batch(int n, const cascade_gemv_desc *d) {
+#pragma omp parallel
+    {
+        for (int i = 0; i < n; ++i) {
+            const cascade_gemv_desc *t = &d[i];
+            const int chunk = t->rows > 1024 ? 64 : 16;
+            if (t->kind == 2) {
+#pragma omp for schedule(dynamic, 1) nowait
+                for (int b = 0; b < (t->rows + chunk - 1) / chunk; ++b) {
+                    int r0 = b * chunk;
+                    int r1 = r0 + chunk < t->rows ? r0 + chunk : t->rows;
+                    q8r_rows_i8(r0, r1, t->cols_padded, t->w8, t->rscale,
+                                t->xq, t->qs32, t->y);
+                }
+            } else {
+#pragma omp for schedule(dynamic, 1) nowait
+                for (int b = 0; b < (t->rows + chunk - 1) / chunk; ++b) {
+                    int r0 = b * chunk;
+                    int r1 = r0 + chunk < t->rows ? r0 + chunk : t->rows;
+                    q4k_rows_i8_32(r0, r1, t->cols_padded, t->g, t->packed,
+                                   t->xq, t->qs32, t->sumx, t->y);
+                }
+            }
+        }
+    }
+}
+
+// v2.2 single-tensor (mesmo miolo refatorado)
+void q4k_gemv_i8_v22(int rows, int cols, int g, const uint8_t *packed,
+                     const int8_t *xq_re, const float *qs32,
+                     const float *sumx, float *y) {
+#pragma omp parallel for schedule(dynamic, 1)
+    for (int b = 0; b < (rows + 63) / 64; ++b) {
+        int r0 = b * 64, r1 = r0 + 64 < rows ? r0 + 64 : rows;
+        q4k_rows_i8_32(r0, r1, cols, g, packed, xq_re, qs32, sumx, y);
+    }
+}

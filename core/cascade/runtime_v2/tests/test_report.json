@@ -6,7 +6,7 @@
   },
   "2_f0_kernel": {
     "status": "PASS",
-    "cos_vs_ref": 0.999906,
+    "cos_vs_ref": 0.999935,
     "bpw_residente": 4.5,
     "w0_cache_bytes": 0
   },
@@ -18,28 +18,28 @@
   },
   "4_f1_lowrank_c": {
     "status": "PASS",
-    "rel_err_vs_ref": 0.01404,
+    "rel_err_vs_ref": 0.00752,
     "cos_saida_f0_vs_w": 0.996689,
-    "cos_saida_f0+f1_vs_w": 0.996719
+    "cos_saida_f0+f1_vs_w": 0.996871
   },
   "5_regressao": {
     "modelo_sintetico_gb_fp32": 2.01,
     "v2_kernel": {
       "residente_gb": 0.28,
-      "latencia_token_s": 0.0281,
-      "tok_s": 35.53,
-      "banda_gbs": 10.06
+      "latencia_token_s": 0.0283,
+      "tok_s": 35.32,
+      "banda_gbs": 10.0
     },
     "antigo_low_mem (dequant/chamada)": {
       "residente_gb": 0.28,
-      "latencia_token_s": 1.023,
-      "tok_s": 0.977,
-      "speedup_v2": 36.4
+      "latencia_token_s": 1.04,
+      "tok_s": 0.962,
+      "speedup_v2": 36.7
     },
     "antigo_default (cache fp32 + BLAS)": {
       "residente_gb": 2.01,
-      "latencia_token_s": 0.0424,
-      "tok_s": 23.56,
+      "latencia_token_s": 0.0456,
+      "tok_s": 21.93,
       "ram_extra_vs_v2": "7.1x"
     }
   }

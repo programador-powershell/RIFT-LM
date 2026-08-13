@@ -1301,3 +1301,69 @@ Bateria `P1_CASCADE_WEIGHTPATH_MUSE`, protocolo `WEIGHTPATH_MEASURED_V1`, grupo
 6. ROTULAGEM: `_WEIGHTPATH` entra no grupo "P1 · Motor de execução" junto com
    `_RUNTIME_V\d+_`, e o nome amigável é "Caminho de pesos por token" — o
    fallback humanizava como "Weightpath muse" e agrupava como codec.
+
+## 37. Kernel v2.2 e engine v2 no card do conversor (24º lote)
+
+1. KERNEL v2.2 (lote + prefetch + VNNI auto) no MESMO bundle de 16,30 GB:
+   **928,0 ms/token = 1,078 tok/s a 16,74 GB/s** — **+18,3%** em tok/s e banda
+   sobre o v2.1 (0,911 / 14,16). São os três itens do backlog do §36.5
+   implementados: API de LOTE (uma região OMP para N GEMVs), unroll de 2 linhas
+   com prefetch, e build VNNI opcional (`-DUSE_VNNI`/`vpdpbusd`) com o loader
+   escolhendo a `.so`. Fases: A 672,1 ms a 16,24 GB/s, B 255,9 ms a 18,05 GB/s.
+
+2. A DEGRADAÇÃO POR WORKING SET DESAPARECEU, e isso derruba a minha própria
+   defesa do §36.2b. A banda real (16,74) passou a sintética de working set
+   pequeno (16,55): **+1,2%**. Logo não existe degradação medida para transportar
+   ao llama.cpp, a derivação simétrica fica **OBSOLETA** e a comparação DIRETA
+   passa a ser a justa:
+
+   | | v2.1 | v2.2 |
+   | --- | --- | --- |
+   | banda vs llama.cpp | 79% | **93%** |
+   | gap vs Q4_K_XL | faixa −6,1% a −19,7% | **−5,0%** |
+
+   O resultado caiu no extremo FAVORÁVEL da faixa que eu havia publicado, e
+   chegou lá por engenharia — não por reinterpretar o número. Também mostra que a
+   queda do v2.1 não era limite de TLB: era wake-up de OMP não amortizado nos 80
+   `k_proj`/`v_proj` de 0,9–1,7 MB, exatamente o que a API de lote resolve.
+
+   Regra derivada: quando uma faixa de incerteza colapsa em ponto, o registro tem
+   de declarar POR QUE a assimetria que a criava deixou de existir
+   (`symmetric_derivation_status: "OBSOLETA"`), e o smoke exige essa justificação.
+
+   A leitura prática não muda: ~1 tok/s num 30B com 4 núcleos (0,93 s/token).
+
+3. CARD DO CONVERSOR PASSA A OFERECER O ENGINE v2 — era a lacuna que este lote
+   fechou. O runner de `/converter.py` só conhecia o v1
+   (`core/cascade/converter/cascade_converter.py`, CASCADE-DIR/0.1) enquanto TODA
+   a medição recente usava o v2. Agora `--engine v1|v2` com **v2 por padrão**:
+   baixa o pacote `cascade_runtime_v2` (6 arquivos) e invoca
+   `python -m cascade_runtime_v2.convert` — **como MÓDULO**, porque `convert.py`
+   usa imports relativos (`.codec`, `.q4k_pack`). `_load_lib()` do `q4k_linear`
+   é lazy, então converter NÃO exige kernel compilado; a `.so` só é necessária
+   para executar o bundle.
+
+   O v2 tem CLI enxuta (só `--input`/`--output`/`--model-id`) porque a receita é
+   ditada pelo código, não por flag — foi a bateria de PPL que a escolheu. O
+   runner LISTA as flags do v1 que está ignorando em vez de aceitá-las em
+   silêncio, avisa que a fonte tem de ser BF16/F16/F32, e ao terminar lembra que
+   o gate é pré-filtro. Para GGUF, `--engine v1`, com a ressalva medida de que
+   recomprimir GGUF rende ~0.
+
+4. MERGE, NÃO SUBSTITUIÇÃO (3ª vez neste projeto — §18.1, §32.1). Os dois zips
+   deste lote trouxeram um `convert.py` que REGREDIA os campos de honestidade do
+   §33/§34 (`GATE_ROLE`, `gate_vs_ppl_evidence`, `end_to_end_validated`,
+   `kv_runtime_reserve_gib`) e revertia a distinção 138 B (g=64) / 144 B (g=32).
+   Mantido o nosso; adotados os arquivos genuinamente novos: `kernels.c` v2.2,
+   `q4k_linear.py` com `Q8RLinearModule`, `__init__.py`, `build.sh`,
+   `MIGRACAO.md`, `test_report.json`.
+
+5. `tests/test_manifest_honesty.py` ADOTADO — é melhor que as minhas asserções
+   estáticas. Roda duas conversões reais em miniatura: uma limpa (tudo passa) e
+   uma ADVERSARIAL que constrói outliers opostos por grupo de 32 até forçar
+   `RESCUE_LAST_RUNG`, e então exige `quality_flag` no tensor,
+   `below_gate_tensors` no resumo e "ATENCAO" no console. Conferi que as 10
+   pré-condições dele passam contra o NOSSO `convert.py`, incluindo
+   `set(classe) == {orcamento_gib, cabe, folga_gib}` — o `kv_runtime_reserve_gib`
+   que eu acrescentei vive no nível da residência, não dentro das classes.
+   Não executável aqui (exige torch + safetensors); versionado para o CI.

@@ -5641,9 +5641,9 @@
   },
   {
     "schema_version": 2,
-    "timestamp_utc": "2026-08-14T00:20:00Z",
+    "timestamp_utc": "2026-08-14T01:15:00Z",
     "run_id": "cascade-exec-muse30b-weightpath",
-    "spec": "CASCADE-Q4K/2.1 bundle 16,30 GB / kernels q4k+q8r reais",
+    "spec": "CASCADE-Q4K/2.1 bundle 16,30 GB / kernels v2.2 (lote+prefetch+VNNI)",
     "technology": "CASCADE",
     "model_id": "meta-models/Muse-Glimmer-30B:cascade-v21-lm",
     "battery_id": "P1_CASCADE_WEIGHTPATH_MUSE",
@@ -5688,47 +5688,45 @@
         "scope": "WEIGHT_PATH_ONLY",
         "scope_note": "mede o caminho de PESOS por token — 52 camadas + lm_head com kernels reais sobre o bundle de 16,30 GB. NÃO inclui atenção, KV-cache, sampling nem tokenizer. Não é comparável com o tok/s de model.generate das baterias E2E.",
         "phase_a": {
-          "tensors": 320,
           "gb": 10.918,
-          "ms_median": 796.5,
-          "ms_best": 758.6,
-          "bw": 13.71,
-          "rss": 10.53
+          "ms_median": 672.1,
+          "bw": 16.24
         },
         "phase_b": {
-          "tensors": 97,
           "gb": 4.621,
-          "ms_median": 301.2,
-          "ms_best": 282.9,
-          "bw": 15.34,
-          "rss": 4.66
+          "ms_median": 255.9,
+          "bw": 18.05
         },
-        "latency_ms_per_token": 1097.7,
-        "tok_s_weight_path": 0.911,
+        "latency_ms_per_token": 928,
+        "tok_s_weight_path": 1.078,
         "gb_touched_per_token": 15.54,
-        "effective_bandwidth_gbs": 14.16,
+        "effective_bandwidth_gbs": 16.74,
         "coherence_check": "417 tensores no caminho (320+97) = os 418 com cosseno do manifesto MENOS o embedding, e 15,539 GB = bundle 16,298 menos o embedding 0,756. O embedding é lookup de UMA linha por token, não GEMV: pesa em RAM, não em banda.",
         "with_engine_estimated": {
-          "min": 0.79,
-          "max": 0.87,
+          "min": 0.92,
+          "max": 1.02,
           "basis": "overhead de 5–15% medido no 0.5B"
         },
         "method_caveat": "RECONSTRUÍDO, não medido no alvo: a soma de duas metades medidas separadamente numa VM de 15,7 GiB não é o mesmo que um passe único numa máquina de 32 GB onde tudo é residente. Cada metade tem working set MENOR que o todo, então a soma tende a ser OTIMISTA em localidade. Era a única forma de medir naquela VM.",
         "bandwidth_regression": {
           "synthetic_gbs": 16.55,
           "synthetic_working_set_gb": 1.6,
-          "real_gbs": 14.16,
-          "real_working_set_gb": 15.54,
-          "degradation_pct": -14.4,
-          "causes_reported": [
-            "pressão de TLB e cache de página cheio (13 GB de buff/cache)",
-            "80 k_proj/v_proj de 0,9–1,7 MB na fase A onde o wake-up do OMP não amortiza"
-          ],
-          "backlog": [
-            "fusão por camada (1 região OMP para 8 GEMVs)",
-            "unroll de 2 linhas",
-            "VNNI"
-          ]
+          "real_gbs": 16.74,
+          "real_working_set_gb": 15.539,
+          "degradation_pct": 1.2,
+          "resolved": "RESOLVIDA no v2.2: a banda real (16,74) passou a banda sintética de working set pequeno (16,55). A queda do v2.1 não era limite de TLB — era wake-up de OMP não amortizado nos 80 k_proj/v_proj de 0,9–1,7 MB, exatamente o que a API de lote resolve."
+        },
+        "kernel_version": "v2.2 (lote + prefetch + VNNI auto)",
+        "v21_baseline": {
+          "tok_s": 0.911,
+          "bandwidth_gbs": 14.16,
+          "phase_a_ms": 796.5,
+          "phase_b_ms": 301.2
+        },
+        "gain_over_v21": {
+          "tok_s_pct": 18.3,
+          "bandwidth_pct": 18.3,
+          "what_changed": "os três itens do backlog do §36.5 implementados: API de LOTE (1 região OMP para N GEMVs independentes), unroll de 2 linhas + prefetch, e build VNNI opcional (-DUSE_VNNI/vpdpbusd) com o loader escolhendo a .so."
         }
       },
       "gguf_comparison": {
@@ -5759,21 +5757,31 @@
           "delta_vs_cascade_pct": -6.1
         },
         "honest_gap_range_pct": {
-          "min": -19.7,
-          "max": -6.1
+          "min": -5,
+          "max": -5,
+          "note": "ponto único: a comparação direta virou a justa (v2.2)"
         },
         "honest_gap_note": "o gap real está entre −6,1% e −19,7%, e NÃO é estreitável nesta máquina: exigiria rodar o GGUF da Muse, que não carrega. Qualquer número único nessa faixa é escolha de premissa, não medição.",
-        "practical_read": "os dois formatos ficam em torno de 1 tok/s num 30B com 4 núcleos — ~1,1 s por token. A diferença de 6% ou 20% é entre duas velocidades inutilizáveis para uso interativo; nesta escala o gargalo é banda de memória, não formato.",
-        "decisive_fact": "o que a máquina do teste mostra sem derivação: o CASCADE RODA a Muse e o GGUF NÃO. Esse é o argumento de substituição, não os 6–20%."
+        "practical_read": "com o v2.2 o CASCADE passa de 0,911 para 1,078 tok/s no caminho de pesos. Continua na casa de 1 tok/s num 30B com 4 núcleos — ~0,93 s por token —, então a leitura prática não muda: nesta escala o gargalo é banda de memória e nenhum dos dois formatos é interativo.",
+        "decisive_fact": "o que a máquina do teste mostra sem derivação: o CASCADE RODA a Muse e o GGUF NÃO. Esse é o argumento de substituição, não os 6–20%.",
+        "symmetric_derivation_status": "OBSOLETA no v2.2 — a derivação simétrica existia para corrigir a assimetria de working set. Com a banda real do CASCADE acima da sintética, não há degradação medida para transportar ao llama.cpp, e a comparação DIRETA passa a ser a justa.",
+        "direct_comparison_v22": {
+          "cascade_tok_s": 1.078,
+          "cascade_bandwidth_gbs": 16.74,
+          "gguf_q4_k_xl_tok_s": 1.134,
+          "gap_pct": -5,
+          "bandwidth_of_llamacpp_pct": 93,
+          "note": "gap de −5,0% e 93% da banda do llama.cpp, contra a faixa −6,1% a −19,7% e 79% no v2.1. O resultado caiu no extremo FAVORÁVEL da faixa que eu havia publicado, e chegou lá por engenharia — não por reinterpretar o número."
+        }
       }
     },
-    "measurement_scope": "Caminho de PESOS por token do bundle REAL de 16,30 GB, com kernels q4k/q8r reais, 12 passes, 4 núcleos: 1097,7 ms/token = 0,911 tok/s a 14,16 GB/s efetivos. NÃO inclui atenção, KV-cache, sampling nem tokenizer — com o motor o próprio relatório estima 0,79–0,87 tok/s. O número é RECONSTRUÍDO de duas metades medidas separadamente, porque o bundle não cabe residente na VM de 15,7 GiB do teste. O comparativo com GGUF é DERIVADO de régua de banda medida em OUTRO modelo, e a derivação do relatório não é simétrica.",
+    "measurement_scope": "Caminho de PESOS por token do bundle REAL de 16,30 GB com o kernel v2.2 (lote + prefetch + VNNI auto), 4 núcleos: 928,0 ms/token = 1,078 tok/s a 16,74 GB/s efetivos, tocando 15,539 GB. NÃO inclui atenção, KV-cache, sampling nem tokenizer — com o motor, 0,92–1,02 tok/s. Segue RECONSTRUÍDO de duas metades, porque o bundle não cabe residente na VM de 15,7 GiB do teste. O comparativo com GGUF continua DERIVADO (llama.cpp não carrega a Muse), mas a assimetria de working set do v2.1 deixou de existir.",
     "quality": {
       "local_weight_metrics_only": true,
       "end_to_end_certified": false,
       "end_to_end_measured": false,
       "note": "este teste mede VELOCIDADE. A PPL da Muse continua não medida — o gate de 627/627 é pré-filtro (§33.1)."
     },
-    "notes": "Coerência interna impecável: 417 tensores no caminho = 418 do manifesto menos o embedding; 15,539 GB = bundle menos o embedding; latência, tok/s e banda reconciliam das duas fases. Duas ressalvas de método que o relatório não declara: (1) o número é soma de duas metades numa VM que não cabe o bundle, o que tende a ser otimista em localidade; (2) o gap de −19,7% contra o Q4_K_XL aplica 18,0 GB/s a um working set de 15,87 GB quando essa régua veio de um arquivo de 1,93 GB — com a mesma degradação que o CASCADE mediu em si, o gap cai para −6,1%."
+    "notes": "v2.2 entrega +18,3% em tok/s e banda sobre o v2.1 (0,911 → 1,078; 14,16 → 16,74 GB/s) implementando os três itens do backlog do §36.5. Consequência analítica: a banda real passou a sintética de working set pequeno (16,74 > 16,55), então a degradação que justificava a derivação simétrica do §36.2b desapareceu e o gap direto contra o Q4_K_XL é −5,0%, com 93% da banda do llama.cpp. A leitura prática não muda: ~1 tok/s num 30B com 4 núcleos."
   }
 ]
