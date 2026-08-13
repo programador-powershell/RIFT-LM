@@ -3031,16 +3031,32 @@ assert.ok(convV2.includes("MACHINE_TOTAL_GIB = (16, 24, 32, 48)"),
   "MACHINE_TOTAL_GIB precisa ser RAM TOTAL da máquina, não orçamento (§31.5)");
 assert.ok(!convV2.includes("MACHINE_CLASSES_GIB"),
   "REGRESSÃO §31.5: a tupla ambígua MACHINE_CLASSES_GIB voltou (subtração dupla)");
-assert.ok(/budget = max\(total - 8, total \/ 2\)/.test(convV2),
+assert.ok(/budget = max\(total - 8(?:\.0)?, total \/ 2(?:\.0)?\)/.test(convV2),
   "o orçamento tem de sair da regra do §28 sobre a RAM total (§31.5)");
 assert.ok(!/maquina_\{cls \+ 8/.test(convV2),
   "REGRESSÃO §31.5: rótulo de classe voltado a somar 8 sobre um orçamento");
+// O rótulo da classe fala do TOTAL da máquina; o orçamento é campo, não sufixo.
+assert.ok(/f"maquina_\{total:\.0f\}gb"/.test(convV2),
+  "a chave da classe precisa ser maquina_<total>gb (§31.5)");
 for (const marker of [
-  "folga_gib", "regra_orcamento", "all_tensors_passed_gate",
-  "below_gate_tensor_count", "gate_policy", "RESCUE_LAST_RUNG", "§29.5",
+  "orcamento_gib", "folga_gib", "regra_orcamento", "kv_runtime_reserve_gib",
+  "all_tensors_passed_gate", "below_gate_tensor_count", "below_gate_tensors",
+  "gate_policy", "RESCUE_LAST_RUNG",
 ]) {
   assert.ok(convV2.includes(marker), `convert.py v2 sem marcador §31: ${marker}`);
 }
+// Docstring não pode voltar a listar as classes antigas nem afirmar 144 B para
+// todo super-bloco (g=64 usa 138).
+assert.ok(!convV2.includes("8/16/24/40"),
+  "o docstring voltou a listar orçamentos como se fossem classes de máquina (§31.5)");
+assert.ok(!convV2.includes("144 B/super-bloco prontos"),
+  "o docstring precisa dizer 138 B em g=64 e 144 B em g=32 (§31.1)");
+// Anti-regressão versionada junto com o conversor.
+const residTest = await readFile(new URL("../core/cascade/runtime_v2/tests/test_residency.py", import.meta.url), "utf8");
+assert.ok(residTest.includes('maquina_24gb"]["orcamento_gib"] == 16.0'),
+  "test_residency.py precisa travar 24 GB total -> 16 GiB de orçamento (§31.5)");
+assert.ok(residTest.includes("14.51"),
+  "test_residency.py precisa cobrir o limiar exato do orçamento (§31.5)");
 assert.ok(!convV2.includes("6.5 bpw"),
   "o docstring não pode prometer pior caso de 6.5 bpw: LADDER só tem degraus de 4 bits (§31.2)");
 // O card precisa expor a MARGEM da projeção, não só o veredito.
@@ -3155,6 +3171,21 @@ if (runtimeRecord) {
   assert.equal(runtimeRecord.implementation.eligible_for_primary_ranking, false);
   assert.ok(runtimeRecord.metrics.runtime.paths.v2_kernel_c.tok_s > 0,
     "o tok/s medido do kernel vive em metrics.runtime, não no topo");
+  // §31.8 — benchmark com mais de um run precisa publicar a FAIXA, e o campo de
+  // ponto único tem de ser a mediana, nunca o melhor run.
+  const rtm = runtimeRecord.metrics.runtime;
+  assert.ok(rtm.runs >= 3 && Array.isArray(rtm.runs_detail) && rtm.runs_detail.length === rtm.runs,
+    "o registro do kernel precisa declarar quantos runs e o detalhe de cada um (§31.8)");
+  for (const key of ["tok_s_range", "speedup_vs_legacy_low_mem_range_x", "speedup_vs_legacy_default_range_x"]) {
+    const r = rtm[key];
+    assert.ok(r && r.min < r.max, `${key} precisa trazer a faixa medida (§31.8)`);
+    assert.ok(r.median >= r.min && r.median <= r.max, `${key}.median fora da faixa`);
+  }
+  const best = Math.max(...rtm.runs_detail.map((d) => d.v2 / d.low_mem));
+  assert.ok(rtm.speedup_vs_legacy_low_mem_x < best,
+    "REGRESSÃO §31.8: o speedup de ponto único voltou a ser o melhor run em vez da mediana");
+  assert.match(rtm.dispersion_note, /dispersão/i,
+    "a dispersão entre runs precisa estar declarada no registro (§31.8)");
   assert.equal(runtimeRecord.metrics.gate.legacy_v0_activation_rate_batch1, 1.0,
     "o registro precisa preservar a taxa 1.0 do gate v0 como evidência do bug (§30.1)");
   assert.match(runtimeRecord.measurement_scope, /NÃO é model\.generate/,

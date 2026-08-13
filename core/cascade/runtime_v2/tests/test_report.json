@@ -26,20 +26,20 @@
     "modelo_sintetico_gb_fp32": 2.01,
     "v2_kernel": {
       "residente_gb": 0.28,
-      "latencia_token_s": 0.0261,
-      "tok_s": 38.36,
-      "banda_gbs": 10.86
+      "latencia_token_s": 0.0281,
+      "tok_s": 35.53,
+      "banda_gbs": 10.06
     },
     "antigo_low_mem (dequant/chamada)": {
       "residente_gb": 0.28,
-      "latencia_token_s": 1.083,
-      "tok_s": 0.924,
-      "speedup_v2": 41.5
+      "latencia_token_s": 1.023,
+      "tok_s": 0.977,
+      "speedup_v2": 36.4
     },
     "antigo_default (cache fp32 + BLAS)": {
       "residente_gb": 2.01,
-      "latencia_token_s": 0.0448,
-      "tok_s": 22.33,
+      "latencia_token_s": 0.0424,
+      "tok_s": 23.56,
       "ram_extra_vs_v2": "7.1x"
     }
   }

@@ -4908,25 +4908,62 @@
           },
           "legacy_low_mem": {
             "resident_bytes": 300647711,
-            "tok_s": 0.869,
+            "tok_s": 0.924,
             "latency_s": 1.151,
             "note": "CASCADE_LOW_MEM=1: dequant por chamada"
           },
           "legacy_default": {
             "resident_bytes": 2158221066,
-            "tok_s": 21.75,
+            "tok_s": 22.33,
             "latency_s": 0.046,
             "note": "cache fp32 residente + BLAS"
           }
         },
-        "speedup_vs_legacy_low_mem_x": 43.59,
-        "speedup_vs_legacy_default_x": 1.74,
+        "speedup_vs_legacy_low_mem_x": 41.515,
+        "speedup_vs_legacy_default_x": 1.718,
         "ram_ratio_legacy_default_x": 7.18,
         "kernel_f0_bandwidth_gbs": 16.55,
         "llama_cpp_q4k_bandwidth_gbs": 18,
         "kernel_f0_fraction_of_llama_cpp": 0.92,
         "w0_cache_bytes": 0,
-        "bits_per_weight_resident": 4.5
+        "bits_per_weight_resident": 4.5,
+        "runs": 3,
+        "runs_detail": [
+          {
+            "run": "A",
+            "v2": 37.88,
+            "low_mem": 0.869,
+            "def": 21.75
+          },
+          {
+            "run": "B",
+            "v2": 38.36,
+            "low_mem": 0.924,
+            "def": 22.33
+          },
+          {
+            "run": "C",
+            "v2": 35.53,
+            "low_mem": 0.977,
+            "def": 23.56
+          }
+        ],
+        "tok_s_range": {
+          "min": 35.53,
+          "max": 38.36,
+          "median": 37.88
+        },
+        "speedup_vs_legacy_low_mem_range_x": {
+          "min": 36.366,
+          "max": 43.59,
+          "median": 41.515
+        },
+        "speedup_vs_legacy_default_range_x": {
+          "min": 1.508,
+          "max": 1.742,
+          "median": 1.718
+        },
+        "dispersion_note": "Três execuções do MESMO benchmark sintético (nenhuma mudança de código entre elas). Dispersão: tok/s do v2 8,0%, speedup vs low_mem 19,9%, speedup vs default 15,5%. Os campos de ponto único carregam a MEDIANA; a primeira versão deste registro publicou o melhor dos três (43,6× e 1,74×) porque era o único run disponível na época."
       },
       "quality_local": {
         "pack_roundtrip": {
@@ -4939,7 +4976,7 @@
         "cosine_f0_only_vs_w": 0.996689,
         "cosine_f0_plus_f1_vs_w": 0.996719,
         "f1_cosine_delta": 0.00003,
-        "f1_verdict": "F1 adiciona 3e-5 de cosseno sobre o F0 neste stack — consistente com o resíduo de quantização ser ruído de posto alto (§29.4/§29.11). O custo do F1 não se paga com rank <= 32 sem calibração."
+        "f1_verdict": "F1 adiciona 3e-5 de cosseno sobre o F0 neste stack — consistente com o resíduo de quantização ser ruído de posto alto (§29.4/§29.11). O custo do F1 não se paga com rank <= 32 sem calibração. (medido em 1 run; o delta de 3e-5 é uma ordem de grandeza menor que a dispersão de 8% do próprio benchmark, então o F1 é indistinguível de ruído aqui.)"
       },
       "gate": {
         "calibrated_threshold": 2.8373,
@@ -5062,21 +5099,31 @@
           "label": "PROJETADO",
           "scope": "modelo de linguagem completo (52 camadas + embeddings + lm_head)",
           "source_lm_bytes": 55710000000,
-          "bundle_default_policy_bytes": 15080000000,
+          "bundle_default_policy_bytes": {
+            "best": 15080000000,
+            "central": 15080000000,
+            "worst_realista": 15190000000,
+            "worst_estrutural": 15670000000
+          },
           "conversion_minutes": 32,
           "residency": {
             "necessario_com_reserva_gib": 15.544,
             "orcamento_24gb_gib": 16,
             "folga_gib": 0.456,
             "projection_break_even_pct": 3.24,
-            "break_even_note": "a folga de 0,46 GiB aguenta até +3,24% de erro na projeção ×52; acima disso o veredito \"cabe em 24 GB\" deixa de valer. O intervalo worst do teste BF16 anterior (17,98 GB) NÃO cabia.",
+            "break_even_note": "a folga de 0,46 GiB aguenta até +3,24% de erro na projeção ×52. O que isso exigiria: bpw médio de ~4,47, ou seja ~96% dos tensores em g32 — medido na amostra: 5,6%. O worst realista (15,19 GB) ainda cabe com 0,35 GiB; só o worst estrutural (15,67 GB) não cabe, por 0,09 GiB. A conversão integral (~32 min) é o que fecha o veredito binário.",
             "classes": {
               "16GB (orçamento 8 GiB)": "NAO CABE",
               "24GB (orçamento 16 GiB)": "CABE (folga 0,46 GiB)",
               "32GB (orçamento 24 GiB)": "CABE (folga 8,46 GiB)"
+            },
+            "folga_por_cenario_gib": {
+              "central": 0.46,
+              "worst_realista": 0.35,
+              "worst_estrutural": -0.09
             }
           },
-          "note": "Extrapolação ×52 da amostra. Um único ponto, sem intervalo best/central/worst — diferente do registro anterior, que reportava faixa."
+          "note": "Extrapolação ×52 da amostra, agora com faixa: central 15,08 GB, worst realista 15,19, worst estrutural 15,67. A primeira versão deste registro trazia ponto único."
         },
         "external_reference_bytes": {
           "BF16 fonte (LM)": 55710000000,

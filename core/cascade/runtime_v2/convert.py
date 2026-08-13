@@ -1,30 +1,24 @@
 """cascade_convert_v2 — conversor otimizado para o executor cascade_runtime_v2.
 
 Otimizacoes sobre o conversor v1 (auditoria + fisica medida):
-  1. SAIDA NO FORMATO DO EXECUTOR: blobs q4k de 144 B/super-bloco prontos para
-     mmap + GEMV fundido — zero repack na carga (v1 gravava int4 proprio que o
-     executor tinha que dequantar para FP32).
-  2. Escada nova (BF16/F16/F32): q4k/g64+clip -> q4k/g32+clip. SEM fallback raw
-     para matrizes 2D: o pior caso e 4.5 bpw (v1: 16 bpw). Os degraus q5k/q6k
-     estao PLANEJADOS e nao implementados — dependem de kernel 5/6-bit; LADDER
-     abaixo e a fonte da verdade.
-  3. Embeddings/lm_head: q4k/g32 direto com cosseno MEDIDO no manifest (na
-     Muse-Glimmer: 0.9969 nos dois) em vez de raw 16 bpw do v1 — economiza
-     ~4.0 GB no 30B. O degrau q6k para embeddings tambem e pendencia de kernel.
-
-  ATENCAO — MUDANCA DE POLITICA: sem fallback raw, quando nenhum degrau passa o
-  gate o ultimo degrau e gravado ASSIM MESMO (RESCUE_LAST_RUNG) e o tensor sai
-  marcado com quality_flag="abaixo_do_gate_verificar_e2e". Isso ROMPE o
-  invariante do conversor v1 (contrato §29.5: "quando nada passa, o resultado
-  continua sendo passthrough exato"). O trade e deliberado — troca 16 bpw exatos
-  por 4.5 bpw com perda declarada — mas todo consumidor do bundle precisa olhar
-  quality_flag antes de tratar o tensor como aprovado.
+  1. SAIDA NO FORMATO DO EXECUTOR: blobs q4k prontos para mmap + GEMV fundido,
+     138 B/super-bloco em g=64 e 144 B em g=32 — zero repack na carga (v1
+     gravava int4 proprio que o executor tinha que dequantar para FP32).
+  2. Escada nova (BF16/F16/F32): a FONTE DA VERDADE e a constante LADDER
+     abaixo — hoje q4k/g64+clip -> q4k/g32+clip (ambos 4 bits; degraus q5k/q6k
+     dependem do kernel 5/6-bit, pendencia declarada). SEM fallback raw para
+     2D: tensor que reprova o ultimo degrau e gravado com RESCUE_LAST_RUNG e
+     entra em below_gate_tensors no resumo — o bundle DEIXA de ser aprovado
+     por construcao e o console avisa.
+  3. Embeddings/lm_head: q4k/g32 direto com cosseno MEDIDO no manifest
+     (v1: raw 16 bpw = +4.0 GB no 30B). q6k para embeddings = mesma pendencia
+     de kernel.
   4. Exclusao padrao corrigida: cobre token_embd/output.weight (nomenclatura
      GGUF) alem de embed/lm_head (HF) — gap da auditoria v1.
   5. RSS limitado por chunking de LINHAS no encode (q4k e row-independent):
      nem o embedding de 2.69 GB materializa fp32 inteiro.
-  6. Relatorio de residencia por CLASSE DE MAQUINA (8/16/24/40 GiB), regra
-     orcamento = RAM total - 8 GiB.
+  6. Relatorio de residencia por CLASSE DE MAQUINA — MACHINE_TOTAL_GIB lista o
+     TOTAL (16/24/32/48 GB) e o orcamento sai de total - 8 GiB, piso metade.
 Fonte suportada: diretorio HF com *.safetensors (BF16/F16/F32). Fontes GGUF
 ja quantizadas continuam no v1 (recomprimir GGUF e beco sem saida medido).
 """
@@ -49,11 +43,6 @@ LADDER = (("q4k", 64, 4), ("q4k", 32, 4))
 CLIPS = (1.0, 0.975, 0.95, 0.925, 0.9)
 EXCLUDE_TOKENS = ("embed_tokens", "embedding", "embeddings", "lm_head",
                   "token_embd", "output.weight")
-# RAM TOTAL da máquina (não o orçamento). O orçamento sai daqui pela regra do
-# contrato §28: total - 8 GiB, com piso de metade. Antes esta tupla guardava o
-# orçamento E o relatório subtraía 8 de novo, então a linha rotulada
-# "maquina_24gb" recebia orçamento de 8 GiB e imprimia NÃO CABE para um bundle
-# de 15,54 GiB que CABE em 24 GB — subtração dupla.
 MACHINE_TOTAL_GIB = (16, 24, 32, 48)
 KV_RUNTIME_RESERVE_GIB = 1.5
 CHUNK_ROWS = 4096
@@ -139,23 +128,30 @@ def convert_tensor(name: str, w: torch.Tensor, out_dir: Path) -> dict:
 
 
 def residency_report(total_resident_bytes: int) -> dict:
-    """Veredito por classe de máquina, regra do §28: orçamento = total - 8 GiB
-    (piso metade). `folga_gib` acompanha o veredito porque a margem importa: um
-    bundle projetado que passa por 0,4 GiB não passa se a projeção errar 3%."""
+    """Orcamento por maquina: total - 8 GiB, piso de 50% do total.
+
+    MACHINE_TOTAL_GIB lista o TOTAL da maquina; a subtracao dos 8 GiB do SO
+    acontece SO AQUI (anti-regressao: 24 GiB total -> 16 GiB de orcamento,
+    nunca 8 — ver tests/test_residency.py)."""
     need_gib = total_resident_bytes / 2**30 + KV_RUNTIME_RESERVE_GIB
-    ladder = {}
+    classes = {}
     for total in MACHINE_TOTAL_GIB:
-        budget = max(total - 8, total / 2)
-        fits = need_gib <= budget
-        ladder[f"maquina_{total:.0f}gb_orcamento_{budget:.0f}gib"] = {
-            "veredito": "CABE" if fits else "NAO CABE",
-            "folga_gib": round(budget - need_gib, 2),
+        budget = max(total - 8.0, total / 2.0)
+        folga = round(budget - need_gib, 2)
+        classes[f"maquina_{total:.0f}gb"] = {
+            "orcamento_gib": budget,
+            "cabe": need_gib <= budget,
+            "folga_gib": folga,
         }
     return {"resident_gib": round(total_resident_bytes / 2**30, 2),
             "necessario_com_reserva_gib": round(need_gib, 2),
+            # Numerico ao lado do texto: consumidor de JSON nao devia ter de
+            # parsear a frase de regra_orcamento para achar a reserva.
             "kv_runtime_reserve_gib": KV_RUNTIME_RESERVE_GIB,
-            "regra_orcamento": "total - 8 GiB, piso total/2 (contrato §28)",
-            "classes": ladder}
+            "regra_orcamento": "total - 8 GiB (piso: metade do total); "
+                               "reserva KV+runtime = "
+                               f"{KV_RUNTIME_RESERVE_GIB} GiB",
+            "classes": classes}
 
 
 def main() -> int:
@@ -216,40 +212,38 @@ def main() -> int:
                       flush=True)
                 del w
 
-    # Sem fallback raw, um tensor pode sair ABAIXO do gate. Isso tem de aparecer
-    # no resumo: quem consome o bundle não vai varrer 700 tensores procurando
-    # quality_flag, e um bundle com tensor reprovado não é um bundle aprovado.
-    below = [t["name"] for t in manifest["tensors"] if t.get("quality_flag")]
+    below = [t["name"] for t in manifest["tensors"]
+             if t.get("quality_flag")]
     manifest["summary"] = {
+        "all_tensors_passed_gate": not below,
+        "below_gate_tensor_count": len(below),
+        "below_gate_tensors": below,
+        # O bundle precisa ser autodescritivo sobre o invariante que ele rompe:
+        # quem le o manifest pode nao ter lido o MIGRACAO.md (contrato §29.5).
+        "gate_policy": (
+            "sem fallback raw: tensor que reprova o ultimo degrau e gravado "
+            "assim mesmo (RESCUE_LAST_RUNG) com quality_flag. Rompe o "
+            "invariante do conversor v1 de proposito — troca 16 bpw exatos por "
+            "4.5 bpw com perda declarada. Verifique all_tensors_passed_gate "
+            "antes de tratar este bundle como aprovado."
+        ),
         "source_bytes": total_src, "bundle_bytes": total_out,
         "reducao_pct": round(100 * (1 - total_out / total_src), 2),
         "bpw_medio": round(total_out * 8 / (total_src / 2), 3),
         "conversion_seconds": round(time.time() - t0, 1),
         "peak_rss_gib": round(peak[0] / 2**30, 3),
-        "all_tensors_passed_gate": not below,
-        "below_gate_tensor_count": len(below),
-        "below_gate_tensors": below[:20],
-        "gate_policy": (
-            "sem fallback raw: o último degrau é gravado mesmo reprovando o gate "
-            "(RESCUE_LAST_RUNG) e o tensor sai com quality_flag. Rompe o "
-            "invariante do v1 (§29.5) de propósito — verifique end-to-end antes "
-            "de tratar o bundle como aprovado."
-        ),
         "residencia": residency_report(total_out),
     }
     (out / "cascade_manifest.json").write_text(
         json.dumps(manifest, indent=1, ensure_ascii=False))
     s = manifest["summary"]
+    if below:
+        print(f"\nATENCAO: {len(below)} tensor(es) gravados ABAIXO do gate "
+              f"(RESCUE_LAST_RUNG) — bundle NAO aprovado por construcao: "
+              f"{below[:5]}{' ...' if len(below) > 5 else ''}")
     print(f"\nFonte {total_src / 1e9:.2f} GB -> bundle {total_out / 1e9:.2f} GB "
           f"({s['reducao_pct']}%, {s['bpw_medio']} bpw) em "
           f"{s['conversion_seconds']}s | RSS pico {s['peak_rss_gib']} GiB")
-    if below:
-        print(f"ATENCAO: {len(below)} tensor(es) ABAIXO do gate "
-              f"(sem fallback raw): {', '.join(below[:5])}"
-              f"{' ...' if len(below) > 5 else ''}")
-        print("  Valide end-to-end antes de publicar este bundle.")
-    else:
-        print("Gate: todos os tensores 2D passaram")
     print(json.dumps(s["residencia"], indent=1, ensure_ascii=False))
     return 0
 

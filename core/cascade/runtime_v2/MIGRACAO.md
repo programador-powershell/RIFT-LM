@@ -72,3 +72,24 @@ Otimizações sobre o conversor v1 (todas medidas na Muse-Glimmer BF16 real):
    `CHUNK_ROWS`).
 6. Resultado: **2,90 GB → 0,78 GB (73,0%) em 99,7 s** — v1: 69,35% em 198,7 s
    (2× mais rápido, 9,6% menor). Residência por classe de máquina no manifest.
+
+## Correções pós-review (§28/§29.5)
+
+- **Residência**: corrigida a subtração dupla (24 GB total → orçamento 16 GiB,
+  nunca 8). `MACHINE_TOTAL_GIB = (16, 24, 32, 48)` lista o TOTAL da máquina;
+  o `- 8 GiB` acontece só em `residency_report`, que agora grava
+  `folga_gib` (negativa quando não cabe) e `regra_orcamento` no manifest.
+  Anti-regressão: `tests/test_residency.py` (22 asserções, incl. limiar exato
+  14,50/14,51 GiB).
+- **Docstring** do conversor: `LADDER` é a fonte da verdade (2 degraus de
+  4 bits hoje; q5k/q6k = pendência de kernel).
+- **Gate por construção**: o resumo do manifest ganha
+  `all_tensors_passed_gate`, `below_gate_tensor_count`, `below_gate_tensors`,
+  e o console imprime ATENÇÃO quando qualquer tensor grava via
+  RESCUE_LAST_RUNG — o bundle deixa de ser aprovado por construção e isso
+  agora é visível no topo, não escondido em flag por tensor.
+- **Faixa da projeção 24 GB** (no `pct_final.json`): central 15,08 GB
+  (folga +0,46 GiB), worst realista 15,19 (+0,36), worst estrutural 15,67
+  (−0,09). Ponto de ruptura: +3,24% sobre o central (~4,47 bpw médio ⇒ ~96%
+  dos tensores em g32; medido: 5,6%). Rótulo PROJETADO até a conversão
+  integral (~32 min em Colab), que é o que fecha o veredito binário.

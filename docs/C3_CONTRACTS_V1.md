@@ -994,3 +994,55 @@ em 8 GB; `CHUNK_ROWS` menor reduz).
    RAZÃO DE BANDA DE MEMÓRIA e de modelagem de paginação, não de
    `model.generate`. Ficam fora do registro inteiro — nem em `metrics` — para não
    serem confundidas com o tok/s medido das baterias E2E.
+
+## 32. Merge do conversor v2 pós-review e regra de dispersão (19º lote)
+
+O autor do conversor reimplementou as correções do §31 no estilo próprio. Regra
+seguida (a mesma do GEYSER, §18.1): atualização de ciência é MERGE, nunca
+substituição da camada de publicação.
+
+1. FORMA DO RELATÓRIO DE RESIDÊNCIA MUDOU e a nova é melhor: a chave da classe
+   passa a ser `maquina_<total>gb` com `orcamento_gib`, `cabe` (booleano) e
+   `folga_gib` como campos — antes o orçamento estava embutido no nome da chave.
+   A subtração dos 8 GiB acontece em UM lugar só, com anti-regressão versionada
+   em `tests/test_residency.py` (inclui o limiar exato 14,50 GiB CABE / 14,51
+   NÃO CABE). Reposto por cima: `kv_runtime_reserve_gib` NUMÉRICO ao lado da
+   frase `regra_orcamento` (consumidor de JSON não deve parsear texto para achar
+   a reserva) e `gate_policy` no resumo, porque um bundle que rompe o invariante
+   §29.5 precisa ser autodescritivo — quem lê o manifesto pode não ter lido o
+   MIGRACAO.md.
+
+2. DOCSTRING AINDA TINHA DUAS AFIRMAÇÕES VENCIDAS: listava as classes de máquina
+   como `8/16/24/40` (são os ORÇAMENTOS, não os totais — o resíduo exato do bug
+   do §31.5) e dizia "144 B/super-bloco" para todo caso, quando g=64 usa 138 B.
+   Corrigidas.
+
+3. FAIXA DA PROJEÇÃO, e ela responde à objeção do §31.6 melhor do que a minha
+   margem crua: central 15,08 GB (folga +0,46 GiB), worst realista 15,19 (+0,35),
+   worst estrutural 15,67 (−0,09). O ponto de ruptura de +3,24% exigiria bpw
+   médio de ~4,47, isto é ~96% dos tensores em g32 — medido na amostra: 5,6%. O
+   veredito "cabe em 24 GB" sobrevive ao worst realista e cai apenas no worst
+   estrutural, por 0,09 GiB. Só a conversão integral (~32 min) fecha o binário.
+
+4. REGRA NOVA — DISPERSÃO ENTRE RUNS. Três execuções do MESMO benchmark
+   sintético do kernel, sem mudança de código entre elas:
+
+   | run | v2 tok/s | low_mem | default | speedup vs low_mem |
+   | --- | --- | --- | --- | --- |
+   | A | 37,88 | 0,869 | 21,75 | 43,6× |
+   | B | 38,36 | 0,924 | 22,33 | 41,5× |
+   | C | 35,53 | 0,977 | 23,56 | 36,4× |
+
+   Dispersão: 8,0% no tok/s do v2, **19,9% no speedup de manchete**, 15,5% no
+   speedup contra o default. A primeira versão do registro publicou 43,6× e
+   1,74× — o MELHOR dos três — porque era o único run disponível na época.
+
+   Regra: benchmark com mais de um run publica `<metrica>_range` com
+   `{min, max, median}` e `runs`/`runs_detail`; o campo de ponto único carrega a
+   **MEDIANA**, nunca o melhor. O smoke falha se o ponto único voltar a ser o
+   máximo (`speedup_vs_legacy_low_mem_x < max(runs)`), e `dispersion_note`
+   registra a dispersão medida.
+
+   Consequência sobre o §30.5: o ganho de cosseno do F1 (+3e-5) é uma ordem de
+   grandeza MENOR que os 8% de dispersão do próprio benchmark — naquele stack o
+   F1 é indistinguível de ruído, e a nota do registro passou a dizer isso.
