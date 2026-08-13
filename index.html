@@ -1221,20 +1221,32 @@ function renderConvertedModels(){
       ? Object.entries(c.selected_rungs).map(([k,v])=>`<span class="badge">${esc(k)}: ${esc(String(v))}</span>`).join("")
       :"";
     const total=allInRam(c);
+    // Conversão parcial NUNCA pode parecer completa: amostra de camadas ganha
+    // selo próprio e a projeção do modelo inteiro fica rotulada PROJETADO.
+    const amostra=c.sample_scope&&c.sample_scope.label?String(c.sample_scope.label):"";
+    const proj=c.projection||null;
+    const projCentral=proj?n(proj.bundle_default_policy_bytes?.central):null;
     // Redução REAL: TOTAL em RAM contra a fonte. Um bundle pequeno que depende
     // do checkpoint não reduziu nada — o external entra na conta.
     const real=(baseline&&total!=null)?(1-total/baseline)*100:null;
     const externo=n(c.external_source_bytes);
     const dep=c.bundle_requires_source===true;
+    // Sem alvo medido não existe veredito: "não cabe" seria uma afirmação que o
+    // dado não sustenta (o antigo `null` virava "não cabe em null GB").
+    const temVeredito=c.fits_resident_in_target!=null&&n(c.target_ram_gb)!=null;
+    const veredito=temVeredito
+      ? `<span class="badge ${c.fits_resident_in_target?"":"warn"}">${
+          c.fits_resident_in_target?"cabe em":"não cabe em"} ${esc(String(c.target_ram_gb))} GB</span>`
+      : `<span class="badge" title="A conversão não declarou máquina alvo, então não há veredito de residência">alvo não declarado</span>`;
     return `<div class="card chart convertedCard">
-      <h3>${esc(model)}<span class="badge ${c.fits_resident_in_target?"":"warn"}">${
-        c.fits_resident_in_target?"cabe em":"não cabe em"} ${esc(String(c.target_ram_gb))} GB</span></h3>
+      <h3>${esc(model)}${veredito}</h3>
       <div class="badges">${machine}
         <span class="badge">${esc(String(c.codec_ladder||"—"))}</span>
         ${c.f0_effective_bits_per_weight!=null?`<span class="badge">${Number(c.f0_effective_bits_per_weight).toFixed(2)} bpw</span>`:""}
         ${c.source_format?`<span class="badge">${esc(String(c.source_format))}</span>`:""}
         <span class="badge">${esc(String(c.converted_tensor_count??"—"))} convertidos</span>
         ${dep?`<span class="badge warn" title="Tensores em SOURCE_EXTERNAL: o bundle não é autocontido e o checkpoint de origem não pode ser apagado">depende da fonte</span>`:""}
+        ${amostra?`<span class="badge warn" title="${esc(String(c.sample_scope.why||""))}">${esc(amostra)}</span>`:""}
         ${rungs}</div>
       <div class="metrics">
         <div class="metric"><span class="mLabel">TOTAL em RAM</span><b>${fmtBytes(total)}</b></div>
@@ -1243,6 +1255,7 @@ function renderConvertedModels(){
         <div class="metric"><span class="mLabel">Paginável (F1)</span><b>${fmtBytes(c.pageable_warm_bytes)}</b></div>
         <div class="metric"><span class="mLabel">Passthrough exato</span><b>${fmtBytes(c.raw_passthrough_bytes)}</b></div>
         ${dep?`<div class="metric"><span class="mLabel">Fora do bundle (na fonte)</span><b>${fmtBytes(externo)}</b></div>`:""}
+        ${projCentral!=null?`<div class="metric"><span class="mLabel">Modelo inteiro <span class="badge warn">PROJETADO</span></span><b>${fmtBytes(projCentral)}</b></div>`:""}
       </div>
       <div class="bitsTable">${bitsTable(c.memory_by_bits,c.resident_hot_bytes,
         c.f0_effective_bits_per_weight,c.fits_resident_in_target)}</div>

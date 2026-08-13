@@ -841,3 +841,41 @@ move `attn_output`; a conversão frequentemente AUMENTA bytes contra a fonte IQ2
 
     Regra: toda política que depende de nome de tensor precisa cobrir HF e ggml,
     e o smoke tem anti-regressão para `attn_output` continuar elegível.
+
+11. CONVERSÃO PARCIAL NUNCA PARECE COMPLETA (teste BF16 do Muse-Glimmer-30B).
+    O shard 1 do BF16 tem 49,95 GB — maior que o disco livre da máquina de teste
+    —, então a medição foi por AMOSTRA: camadas 0, 25 e 51 lidas por HTTP Range
+    (2,90 GB) e convertidas de fato. Regras para registrar isso:
+
+    - Os campos de comparação (`baseline_disk_bytes`, `candidate_disk_bytes`,
+      `gains.*`) carregam SOMENTE a amostra medida. A extrapolação do modelo
+      inteiro vive em `metrics.converter.projection` com `label: "PROJETADO"` e
+      não entra em campo de topo (§28.2). O smoke checa a ordem de grandeza:
+      `candidate_disk_bytes < 1 GB` contra os ~20 GB da projeção.
+    - `metrics.converter.sample_scope` declara `layers_measured`,
+      `layers_total`, o `why` (por que houve amostragem) e a
+      `extrapolation_basis`. O card exibe o selo de aviso com o `label`.
+    - `measurement_scope` diz em texto que é amostra e NÃO o modelo inteiro.
+    - Número não derivável fica `null`, nunca estimado: `f0_effective_bits_per_
+      weight` é null porque os 3 raw e os 12 norms entram nos bytes de estágio
+      sem separação por tensor. O agregado auditável vai em
+      `aggregate_bits_per_weight` (4,7482 bpw na amostra).
+    - VEREDITO DE RESIDÊNCIA EXIGE ALVO. Sem `fits_resident_in_target` E
+      `target_ram_gb`, o card mostra "alvo não declarado" — antes renderizava
+      "não cabe em null GB", afirmando o que o dado não sustenta.
+    - Tamanhos de outros formatos entram como `external_reference_bytes`:
+      referência publicada de terceiros, nunca medição deste pipeline.
+
+    `LOCAL_WEIGHT_GATE_PASS` foi acrescentado a `KNOWN_STATUSES` de
+    `scripts/validate_data.mjs`: o conversor emite esse status desde sempre e o
+    validador o rejeitava, então NENHUM registro de conversão publicado passaria
+    pelo `npm test`. Mapear para `PASS` superestimaria (lê como certificado) e
+    para `EXPERIMENTAL_PASS` perderia a distinção que o protocolo preserva.
+
+    Evidência medida que o registro guarda em `ladder_evidence`, porque decide o
+    roadmap do codec: INT2 min-max uniforme NÃO passa o gate nem em fonte BF16
+    (melhor cosseno 0,9139 contra gate 0,995) — o degrau int2 da escada compact é
+    peso morto sem calibração por ativação. E o F1 não engajou porque o resíduo
+    capturou 0,064 contra os 0,190 exigidos pelo gate (§29.4): o early-abort
+    derivado disparou corretamente em produção, e o formato efetivo é INT4
+    groupwise puro (~4,75 bpw agregado).

@@ -4678,5 +4678,172 @@
     },
     "measurement_scope": "comparação e2e real com 168 Linear patchadas; PPL/top1/KL medidos; tetos são PROJETADOS",
     "notes": "residual INT8 apenas nas colunas salientes; em miss computa so com a base (qualidade cede, latencia nao)."
+  },
+  {
+    "schema_version": 2,
+    "timestamp_utc": "2026-08-13T18:20:00Z",
+    "run_id": "cascade-convert-bf16sample-muse30b",
+    "spec": "CASCADE v0.3 / Converter v0.1",
+    "technology": "CASCADE",
+    "model_id": "meta-models/Muse-Glimmer-30B:bf16-sample-3of52",
+    "battery_id": "CASCADE_MODEL_CONVERSION",
+    "benchmark_protocol": "CONVERTER_STATIC_V1",
+    "comparison_role": null,
+    "comparison_group_id": "cmp-608e04c8b3439abb75b6e009",
+    "comparison_context": {
+      "protocol": "CONVERTER_STATIC_V1",
+      "model_id": "meta-models/Muse-Glimmer-30B:bf16-sample-3of52",
+      "device": "cpu",
+      "torch": null,
+      "transformers": null,
+      "python": null,
+      "numpy": null
+    },
+    "implementation": {
+      "kind": "REFERENCE_MEASURED",
+      "native": false,
+      "simulated": false,
+      "eligible_for_primary_ranking": false
+    },
+    "eligible_for_primary_ranking": false,
+    "status": "LOCAL_WEIGHT_GATE_PASS",
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": 2903666688,
+    "candidate_disk_bytes": 890034563,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": 70.32358446783269,
+      "disk_reduction_pct": 69.3479087431677,
+      "disk_compression_ratio_x": 3.2624201449129564,
+      "overall_gain_pct": null
+    },
+    "metrics": {
+      "memory": {
+        "estimated_baseline_bytes": 2903666688,
+        "estimated_candidate_bytes": 861704192,
+        "method": null,
+        "note": "Estimativas aritméticas de tamanho de representação; nenhuma medição de RSS de inferência. O candidato é all_in_ram_bytes (F0 + passthrough exato + F1). Pico de RSS de CONVERSÃO medido em 0,427 GiB."
+      },
+      "converter": {
+        "codec_ladder": "auto",
+        "codec_ladder_resolved": {
+          "compact": 24
+        },
+        "ladder_rungs": [
+          "int2/g64",
+          "int4/g64",
+          "int4/g32"
+        ],
+        "selected_rungs": {
+          "int4/g32": 20,
+          "int4/g64": 1,
+          "raw": 3,
+          "n/a": 12
+        },
+        "bundle_requires_source": false,
+        "external_source_bytes": 0,
+        "all_in_ram_bytes": 861704192,
+        "bundle_bytes": 890034563,
+        "required_disk_bytes": 890034563,
+        "headline_metric": "all_in_ram_bytes",
+        "f0_effective_bits_per_weight": null,
+        "aggregate_bits_per_weight": 4.7482,
+        "resident_hot_bytes": 861704192,
+        "pageable_warm_bytes": 0,
+        "raw_passthrough_bytes": null,
+        "converted_tensor_count": 21,
+        "passthrough_tensor_count": 15,
+        "source_format": "safetensors",
+        "conversion_peak_rss_bytes": 458487759,
+        "conversion_seconds": 198.7,
+        "target_ram_gb": null,
+        "target_source": null,
+        "machine_total_ram_bytes": null,
+        "fits_resident_in_target": null,
+        "memory_by_bits": null,
+        "sample_scope": {
+          "kind": "LAYER_SAMPLE",
+          "layers_measured": [
+            0,
+            25,
+            51
+          ],
+          "layers_total": 52,
+          "label": "amostra 3/52 camadas",
+          "why": "shard 1 do BF16 tem 49,95 GB — maior que o disco livre da máquina de teste; leitura remota por HTTP Range dos tensores das camadas 0, 25 e 51 (2,90 GB) e montagem de mini-checkpoint safetensors.",
+          "extrapolation_basis": "as 52 camadas têm assinatura de shapes/dtype idêntica (verificado no header remoto dos 2 shards), o que torna a extrapolação ×52 aritmética por papel de tensor."
+        },
+        "projection": {
+          "label": "PROJETADO",
+          "scope": "modelo de linguagem completo (52 camadas + embeddings + lm_head)",
+          "source_lm_bytes": 55710000000,
+          "layers_only_bytes": {
+            "best": 14160000000,
+            "central": 14940000000,
+            "worst": 16470000000
+          },
+          "bundle_default_policy_bytes": {
+            "best": 19540000000,
+            "central": 20320000000,
+            "worst": 21850000000
+          },
+          "bundle_include_embeddings_bytes": {
+            "best": 15680000000,
+            "central": 16450000000,
+            "worst": 17980000000
+          },
+          "conversion_minutes": 64,
+          "colab_peak_disk_bytes": 67000000000,
+          "note": "Extrapolação ×52 a partir da amostra; a variante com --include-embeddings é aritmética, não medida."
+        },
+        "ladder_evidence": {
+          "int2_never_passed": {
+            "best_cosine": 0.9139,
+            "worst_cosine": 0.8712,
+            "gate_cosine": 0.995
+          },
+          "int2_verdict": "INT2 min-max uniforme sem calibração não passa o gate nem em fonte BF16 — o degrau int2 da escada compact é peso morto até existir calibração por ativação (imatrix/AWQ/GPTQ).",
+          "f1_captured_fraction": 0.064,
+          "f1_required_fraction": 0.19,
+          "f1_verdict": "o resíduo pós-F0 é ruído de posto alto: 0,064 capturado contra 0,190 exigido pelo gate (§29.4) — o abort do F1 disparou corretamente e o formato efetivo é INT4 groupwise puro.",
+          "raw_tensors": [
+            {
+              "name": "layers.51.self_attn.k_proj",
+              "cosine": 0.9929
+            },
+            {
+              "name": "layers.51.self_attn.v_proj",
+              "cosine": 0.9922
+            },
+            {
+              "name": "layers.51.self_attn.o_proj",
+              "cosine": 0.9947
+            }
+          ],
+          "raw_verdict": "os 3 passthrough exatos são todos da camada 51, por pouco abaixo do gate — as últimas camadas são as mais difíceis.",
+          "min_approved_cosine": 0.99501
+        },
+        "external_reference_bytes": {
+          "BF16 fonte (LM)": 55710000000,
+          "GGUF Q8_0": 29600000000,
+          "GGUF UD-Q4_K_XL": 15870000000,
+          "GGUF UD-IQ2_XXS": 10730000000
+        },
+        "prior_gguf_recompression": {
+          "UD-Q4_K_XL": -1.2,
+          "UD-IQ2_XXS": -6.5,
+          "note": "redução REAL (all_in_ram) ao recomprimir GGUF: negativa. Fonte de alta precisão é o único caminho com ganho para este conversor."
+        }
+      }
+    },
+    "measurement_scope": "AMOSTRA de 3 das 52 camadas (0, 25, 51) da fonte BF16, convertida de fato — NÃO é o modelo inteiro. Os campos de comparação referem-se somente a essa amostra; a extrapolação para o modelo completo está em metrics.converter.projection com rótulo PROJETADO. Conversão de representação de pesos apenas: tok/s não medido, *_ram_bytes de topo null (o pico de RSS medido é o da conversão, não da inferência).",
+    "quality": {
+      "local_weight_metrics_only": true,
+      "end_to_end_certified": false
+    },
+    "notes": "Gate local por tensor (cosseno/NRMSE) não é qualidade end-to-end: o bundle marca CALIBRATION_REQUIRED / NOT YET CERTIFIED. A arquitetura muse-glimmer não carrega em transformers nem no llama.cpp 0.3.34, então não houve perplexity/geração para validar. Vision tower (3,84 GB BF16) fora da conta, como nos GGUF."
   }
 ]

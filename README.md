@@ -54,13 +54,17 @@ Pesos calibrados para o objetivo declarado do score: identificar a melhor tecnol
 
 ## :new: Releases Notes
 
-### :up: V.3.1.2
+### :up: V.3.2
+
+### :warning: Latest Changes
+
+- **Teste BF16 do Muse-Glimmer-30B no histórico** (contrato §29.11): registro `CASCADE_MODEL_CONVERSION` para `meta-models/Muse-Glimmer-30B:bf16-sample-3of52` — **MEDIDO** na amostra convertida de fato (camadas 0, 25 e 51 lidas por HTTP Range, 2,90 GB → bundle 890 MB, **70,3% de redução real**, bundle autocontido, pico de RSS de conversão 0,427 GiB em 198,7 s). A extrapolação do modelo de linguagem inteiro (20,32 GB central) fica em `metrics.converter.projection` rotulada **PROJETADO**, fora dos campos de comparação; o card exibe o selo "amostra 3/52 camadas" e a linha "Modelo inteiro PROJETADO". Contraste com o mesmo modelo em GGUF: 70,3% contra 6,5%, e sem `bundle_requires_source`.
+- **`ladder_evidence` no registro**: INT2 min-max uniforme não passa o gate nem em fonte BF16 (melhor cosseno **0,9139** contra gate 0,995) — o degrau `int2` da escada `compact` é peso morto sem calibração por ativação; e o F1 não engajou porque o resíduo capturou **0,064** contra os **0,190** exigidos pelo gate, ou seja o early-abort derivado do §29.4 disparou corretamente em produção. Formato efetivo: INT4 groupwise puro, 4,7482 bpw agregado na amostra.
 
 ### :pushpin: Fixes
 
-- **Política Fase-1 era inerte em entrada GGUF** (contrato §29.10): `eligible_matrix` testava por substring com nomes SOMENTE de HF (`embed_tokens`, `lm_head`, `expert`, `.moe`), e nenhum casa o esquema do ggml — em `.gguf` os dois maiores tensores do modelo (`token_embd.weight`, `output.weight`) e os `ffn_*_exps` de MoE entravam como **elegíveis**, sem nada da política sendo aplicado. Medido: `token_embd` do Muse-Glimmer-30B é 202048 × 6656 = 1,34 G elementos; no IQ2 a guarda de expansão o mandou para raw por acidente (F0 INT4/g32 projetado em 0,76 GB contra 0,45 GB de fonte), mas numa fonte BF16 o tensor tem 2,69 GB contra os mesmos 0,76 GB — a guarda não dispara e ele é convertido, exatamente o pico de RSS/disco que a Fase-1 existe para evitar. Agora `EMBEDDING_NAME_RE` (`embed_tokens|embeddings?|token_embd|tok_embeddings|wte`), `OUTPUT_HEAD_NAME_RE` (`lm_head|output_projection` por segmento **mais** `^output(\.weight|\.bias)?$`) e `MOE_NAME_RE` (`experts?|moe` mais o sufixo `_exps`) cobrem os dois esquemas, com razões distintas no manifesto (`embedding_passthrough_phase1` · `output_head_passthrough_phase1` · `moe_passthrough_phase1`).
-- O padrão da cabeça de saída é **ancorado no início** de propósito: `blk.N.attn_output.weight` contém "output" e é um linear legítimo — um teste por substring mataria todas as projeções de atenção do modelo. `output_norm.weight` também não casa (sai por dimensão, sendo 1D). Anti-regressão no smoke para os três casos.
-- `DEFAULT_EXCLUDE` removido: era código morto com aparência de política oficial — definido no topo do arquivo, referenciado em lugar nenhum.
+- **Veredito de residência era afirmado sem alvo declarado**: quando a conversão não define máquina alvo, o card renderizava literalmente `não cabe em null GB`. Agora exige `fits_resident_in_target` **e** `target_ram_gb`; sem os dois mostra "alvo não declarado".
+- **Nenhum registro do conversor passaria pelo `npm test`**: `scripts/validate_data.mjs` não tinha `LOCAL_WEIGHT_GATE_PASS` no enum de status — que é justamente o status que o conversor emite desde sempre, então `--publish` seguido de commit reprovaria na validação. Adicionado ao enum, sem rebaixar para `PASS` (leria como certificado) nem para `EXPERIMENTAL_PASS` (perderia a distinção "gate local de peso, não end-to-end").
 
 ## :wrench: Instalação
 

@@ -3039,6 +3039,48 @@ for (const marker of [
 }
 assert.ok(/return ra-rb;/.test(legacyHtml),
   "converterRows precisa ordenar pelo TOTAL em RAM (menor primeiro), não por data (§29.9)");
+
+// §29.11 — conversão PARCIAL não pode parecer completa, e veredito de
+// residência não pode ser afirmado sem alvo declarado.
+for (const marker of [
+  "sample_scope", "amostra", "PROJETADO", "alvo não declarado",
+  "Modelo inteiro", "projection",
+]) {
+  assert.ok(legacyHtml.includes(marker), `index.html sem marcador da conversão parcial (§29.11): ${marker}`);
+}
+assert.ok(legacyHtml.includes("const temVeredito=c.fits_resident_in_target!=null&&n(c.target_ram_gb)!=null"),
+  "o veredito só pode ser afirmado com fits_resident_in_target E target_ram_gb (§29.11)");
+assert.ok(!/c\.fits_resident_in_target\?"cabe em":"não cabe em"\} \$\{esc\(String\(c\.target_ram_gb\)\)\} GB<\/span><\/h3>/.test(legacyHtml),
+  "REGRESSÃO §29.11: veredito voltado a renderizar sem guarda (gerava 'não cabe em null GB')");
+
+// O registro do teste BF16 no histórico precisa continuar rotulado como AMOSTRA
+// e manter as projeções FORA dos campos de comparação (§28.2).
+const bf16Record = publishedHistory.find((r) => String(r.run_id || "").includes("bf16sample"));
+if (bf16Record) {
+  const conv = bf16Record.metrics?.converter || {};
+  assert.match(bf16Record.measurement_scope, /AMOSTRA de 3 das 52 camadas/,
+    "o registro BF16 precisa declarar no measurement_scope que é amostra, não o modelo inteiro");
+  assert.ok(conv.sample_scope?.layers_measured?.length === 3 && conv.sample_scope?.layers_total === 52,
+    "sample_scope do registro BF16 precisa dizer quantas camadas foram medidas");
+  assert.equal(conv.projection?.label, "PROJETADO",
+    "a extrapolação do modelo inteiro precisa vir rotulada PROJETADO");
+  // Os campos de topo referem-se à AMOSTRA: nenhum deles pode carregar a
+  // projeção do modelo inteiro (ordem de grandeza 20 GB vs 890 MB).
+  assert.ok(bf16Record.candidate_disk_bytes < 1e9,
+    "candidate_disk_bytes do registro BF16 precisa ser o da amostra medida, nunca a projeção (§28.2)");
+  assert.equal(bf16Record.candidate_disk_bytes, conv.bundle_bytes + conv.external_source_bytes,
+    "candidate_disk_bytes precisa ser bundle + externo também neste registro (§29.9)");
+  assert.equal(bf16Record.metrics.memory.estimated_candidate_bytes, conv.all_in_ram_bytes,
+    "estimated_candidate_bytes precisa ser all_in_ram_bytes também neste registro (§29.9)");
+  assert.equal(bf16Record.implementation.eligible_for_primary_ranking, false,
+    "registro de conversão nunca é elegível para ranking primário");
+  assert.equal(bf16Record.candidate_tok_s, null,
+    "o conversor não mede tok/s: o campo de topo tem de ser null");
+  assert.equal(bf16Record.candidate_ram_bytes, null,
+    "RAM de topo é só RSS de inferência medido; a conversão não mede isso");
+  assert.ok(conv.f0_effective_bits_per_weight === null,
+    "bpw do F0 não é derivável deste relatório: precisa ser null, não um número inventado");
+}
 // argparse interpola o help com %-formatting: um "%" literal não escapado faz
 // `convert --help` levantar TypeError. Vale para todos os CLIs Python do repo.
 const pythonCliFiles = [
