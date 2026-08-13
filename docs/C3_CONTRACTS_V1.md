@@ -1241,3 +1241,63 @@ resumo do manifesto versionado ao lado.
    1–3 recuperam o perdido e não passam do piso" valia para os itens 1–3, não
    para a receita v2.1, que tem um quarto lever. E a PPL da Muse — a que decide
    se o bundle de 16,30 GB presta — continua pendente.
+
+## 36. Execução do bundle real da Muse: 0,911 tok/s e um comparativo assimétrico (23º lote)
+
+Bateria `P1_CASCADE_WEIGHTPATH_MUSE`, protocolo `WEIGHTPATH_MEASURED_V1`, grupo
+"P1 · Motor de execução". Caminho de PESOS por token sobre o bundle real de
+16,30 GB, kernels q4k/q8r reais, 12 passes, 4 núcleos.
+
+1. MEDIDO: **1097,7 ms/token = 0,911 tok/s** a **14,16 GB/s** efetivos, tocando
+   15,54 GB por token. Com o motor, o relatório estima 0,79–0,87 tok/s.
+
+   Coerência interna impecável, conferida: os 417 tensores do caminho
+   (320 + 97) são os 418 com cosseno do manifesto MENOS o embedding, e os
+   15,539 GB são o bundle 16,298 menos o embedding 0,756 — porque o embedding é
+   lookup de UMA linha por token, não GEMV. **Pesa em RAM, não em banda.**
+   Latência, tok/s e banda reconciliam das duas fases.
+
+2. DUAS RESSALVAS DE MÉTODO que o relatório não declara.
+
+   (a) O número é **RECONSTRUÍDO**, não medido no alvo: o bundle não cabe
+   residente na VM de 15,7 GiB do teste, então o token foi medido em duas
+   metades (10,918 + 4,621 GB) e somado. Cada metade tem working set MENOR que o
+   todo, o que tende a ser **otimista em localidade**. Era a única forma de medir
+   naquela VM, e o registro carrega `method_caveat`.
+
+   (b) O comparativo com GGUF é **DERIVADO e não simétrico**. A régua de
+   18,0 GB/s foi medida no Qwen3B Q4_K_M de **1,93 GB** — working set pequeno, o
+   MESMO regime em que o CASCADE mediu 16,55 GB/s. Aplicar 18,0 a um working set
+   de 15,87 GB, enquanto o CASCADE é julgado pelos 14,16 que mediu em 15,5 GB,
+   concede ao llama.cpp imunidade à degradação de TLB/cache que o próprio
+   relatório usa para explicar a queda do CASCADE.
+
+   | derivação | llama.cpp Q4_K_XL | gap vs CASCADE |
+   | --- | --- | --- |
+   | do relatório (18,0 GB/s) | 1,134 tok/s | −19,7% |
+   | simétrica (18,0 × 85,6%) | 0,970 tok/s | **−6,1%** |
+
+   Regra: o gap honesto é a FAIXA **−6,1% a −19,7%**, e ela não é estreitável
+   nesta máquina — exigiria rodar o GGUF da Muse, que não carrega. Qualquer
+   número único dentro da faixa é escolha de premissa, não medição. Vale a mesma
+   regra do §33.2: comparar um valor medido contra um derivado sob condição mais
+   favorável não produz manchete.
+
+3. LEITURA PRÁTICA. Os dois formatos ficam em torno de **1 tok/s** num 30B com 4
+   núcleos — ~1,1 s por token. A diferença de 6% ou 20% é entre duas velocidades
+   inutilizáveis para uso interativo: nesta escala o gargalo é banda de memória,
+   não formato. A escolha de formato não muda a usabilidade neste tamanho.
+
+4. O FATO DECISIVO NÃO PRECISA DE DERIVAÇÃO: nesta máquina o **CASCADE roda a
+   Muse e o GGUF não** (llama.cpp 0.3.34 rejeita `muse-glimmer`). Esse é o
+   argumento de substituição — não os 6–20% de banda.
+
+5. A REGRESSÃO DE BANDA ESTÁ BEM DIAGNOSTICADA e o backlog é coerente: 16,55 →
+   14,16 GB/s (−14,4%) ao sair de 1,6 GB para 15,5 GB de working set, por pressão
+   de TLB/cache de página mais 80 `k_proj`/`v_proj` de 0,9–1,7 MB onde o wake-up
+   do OMP não amortiza. Caminhos: fusão por camada (1 região OMP para 8 GEMVs),
+   unroll de 2 linhas, VNNI.
+
+6. ROTULAGEM: `_WEIGHTPATH` entra no grupo "P1 · Motor de execução" junto com
+   `_RUNTIME_V\d+_`, e o nome amigável é "Caminho de pesos por token" — o
+   fallback humanizava como "Weightpath muse" e agrupava como codec.

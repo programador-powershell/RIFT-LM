@@ -5638,5 +5638,142 @@
       "note": "gate local aprovou 627/627 com cosseno mínimo 0,996257. Isso é PRÉ-FILTRO: na rodada anterior um gate 100% aprovado conviveu com +29,1% de PPL. A PPL da Muse é a medição que falta."
     },
     "notes": "Primeiro drop do projeto em que TODO número de manchete reconcilia a partir dos artefatos brutos. Resultado central: com a receita ditada pela PPL (piso g32, cabeça q8r, ativações g32), a Muse-Glimmer-30B ocupa 16,30 GB e precisa de 16,68 GiB — NÃO cabe no orçamento de 16 GiB da máquina de 24 GB, falta 0,68 GiB. O condicional do §33.3 fecha CONTRA o projeto: o piso g32 que a qualidade exigiu custou exatamente o fit. Alvo prático: classe de 32 GB (folga 7,32 GiB)."
+  },
+  {
+    "schema_version": 2,
+    "timestamp_utc": "2026-08-14T00:20:00Z",
+    "run_id": "cascade-exec-muse30b-weightpath",
+    "spec": "CASCADE-Q4K/2.1 bundle 16,30 GB / kernels q4k+q8r reais",
+    "technology": "CASCADE",
+    "model_id": "meta-models/Muse-Glimmer-30B:cascade-v21-lm",
+    "battery_id": "P1_CASCADE_WEIGHTPATH_MUSE",
+    "benchmark_protocol": "WEIGHTPATH_MEASURED_V1",
+    "comparison_role": null,
+    "comparison_group_id": "cmp-46cc040503a5d3129fc70cc4",
+    "comparison_context": {
+      "protocol": "WEIGHTPATH_MEASURED_V1",
+      "model_id": "meta-models/Muse-Glimmer-30B:cascade-v21-lm",
+      "device": "cpu",
+      "threads": 4,
+      "torch": null,
+      "transformers": null,
+      "python": null,
+      "numpy": null,
+      "passes": 12,
+      "note": "o bundle de 16,30 GB não cabe residente na VM de 15,7 GiB do teste: o token foi medido em DUAS FASES (A com 320 tensores/10,918 GB, B com 97/4,621 GB) e somado."
+    },
+    "implementation": {
+      "kind": "REFERENCE_MEASURED",
+      "native": true,
+      "simulated": false,
+      "eligible_for_primary_ranking": false
+    },
+    "eligible_for_primary_ranking": false,
+    "status": "EXPERIMENTAL_PASS",
+    "baseline_tok_s": null,
+    "candidate_tok_s": null,
+    "baseline_ram_bytes": null,
+    "candidate_ram_bytes": null,
+    "baseline_disk_bytes": null,
+    "candidate_disk_bytes": null,
+    "gains": {
+      "tok_s_gain_pct": null,
+      "ram_reduction_pct": null,
+      "disk_reduction_pct": null,
+      "disk_compression_ratio_x": null,
+      "overall_gain_pct": null
+    },
+    "metrics": {
+      "runtime": {
+        "scope": "WEIGHT_PATH_ONLY",
+        "scope_note": "mede o caminho de PESOS por token — 52 camadas + lm_head com kernels reais sobre o bundle de 16,30 GB. NÃO inclui atenção, KV-cache, sampling nem tokenizer. Não é comparável com o tok/s de model.generate das baterias E2E.",
+        "phase_a": {
+          "tensors": 320,
+          "gb": 10.918,
+          "ms_median": 796.5,
+          "ms_best": 758.6,
+          "bw": 13.71,
+          "rss": 10.53
+        },
+        "phase_b": {
+          "tensors": 97,
+          "gb": 4.621,
+          "ms_median": 301.2,
+          "ms_best": 282.9,
+          "bw": 15.34,
+          "rss": 4.66
+        },
+        "latency_ms_per_token": 1097.7,
+        "tok_s_weight_path": 0.911,
+        "gb_touched_per_token": 15.54,
+        "effective_bandwidth_gbs": 14.16,
+        "coherence_check": "417 tensores no caminho (320+97) = os 418 com cosseno do manifesto MENOS o embedding, e 15,539 GB = bundle 16,298 menos o embedding 0,756. O embedding é lookup de UMA linha por token, não GEMV: pesa em RAM, não em banda.",
+        "with_engine_estimated": {
+          "min": 0.79,
+          "max": 0.87,
+          "basis": "overhead de 5–15% medido no 0.5B"
+        },
+        "method_caveat": "RECONSTRUÍDO, não medido no alvo: a soma de duas metades medidas separadamente numa VM de 15,7 GiB não é o mesmo que um passe único numa máquina de 32 GB onde tudo é residente. Cada metade tem working set MENOR que o todo, então a soma tende a ser OTIMISTA em localidade. Era a única forma de medir naquela VM.",
+        "bandwidth_regression": {
+          "synthetic_gbs": 16.55,
+          "synthetic_working_set_gb": 1.6,
+          "real_gbs": 14.16,
+          "real_working_set_gb": 15.54,
+          "degradation_pct": -14.4,
+          "causes_reported": [
+            "pressão de TLB e cache de página cheio (13 GB de buff/cache)",
+            "80 k_proj/v_proj de 0,9–1,7 MB na fase A onde o wake-up do OMP não amortiza"
+          ],
+          "backlog": [
+            "fusão por camada (1 região OMP para 8 GEMVs)",
+            "unroll de 2 linhas",
+            "VNNI"
+          ]
+        }
+      },
+      "gguf_comparison": {
+        "status": "DERIVADO — não medido",
+        "why_not_measured": "llama.cpp 0.3.34 rejeita a arquitetura muse-glimmer (unknown model architecture). O GGUF da Muse não executa nesta máquina.",
+        "ruler_source": {
+          "q4_k (Qwen3B Q4_K_M)": {
+            "tok_s": 9.341,
+            "file_gb": 1.93,
+            "bw_gbs": 18
+          },
+          "q2 (Qwen3B IQ2_M)": {
+            "tok_s": 5.263,
+            "file_gb": 1.14,
+            "bw_gbs": 6
+          }
+        },
+        "reported_derivation": {
+          "Q4_K_XL 15.87 GB": 1.134,
+          "IQ2_XXS 10.73 GB": 0.559,
+          "delta_vs_cascade_pct": -19.7
+        },
+        "asymmetry_finding": "a régua de 18,0 GB/s foi medida no Qwen3B Q4_K_M de 1,93 GB — working set PEQUENO, o mesmo regime em que o CASCADE mediu 16,55. Aplicar 18,0 a um working set de 15,87 GB, enquanto o CASCADE é avaliado com os 14,16 que ele mediu em 15,5 GB, concede ao llama.cpp imunidade à degradação de TLB/cache que o próprio relatório usa para explicar a queda do CASCADE. Não é comparação de mesmo método.",
+        "symmetric_derivation": {
+          "note": "aplicando ao llama.cpp a MESMA degradação medida no CASCADE (14,16/16,55 = 85,6%)",
+          "gguf_bw_gbs_large_working_set": 15.4,
+          "Q4_K_XL 15.87 GB": 0.97,
+          "delta_vs_cascade_pct": -6.1
+        },
+        "honest_gap_range_pct": {
+          "min": -19.7,
+          "max": -6.1
+        },
+        "honest_gap_note": "o gap real está entre −6,1% e −19,7%, e NÃO é estreitável nesta máquina: exigiria rodar o GGUF da Muse, que não carrega. Qualquer número único nessa faixa é escolha de premissa, não medição.",
+        "practical_read": "os dois formatos ficam em torno de 1 tok/s num 30B com 4 núcleos — ~1,1 s por token. A diferença de 6% ou 20% é entre duas velocidades inutilizáveis para uso interativo; nesta escala o gargalo é banda de memória, não formato.",
+        "decisive_fact": "o que a máquina do teste mostra sem derivação: o CASCADE RODA a Muse e o GGUF NÃO. Esse é o argumento de substituição, não os 6–20%."
+      }
+    },
+    "measurement_scope": "Caminho de PESOS por token do bundle REAL de 16,30 GB, com kernels q4k/q8r reais, 12 passes, 4 núcleos: 1097,7 ms/token = 0,911 tok/s a 14,16 GB/s efetivos. NÃO inclui atenção, KV-cache, sampling nem tokenizer — com o motor o próprio relatório estima 0,79–0,87 tok/s. O número é RECONSTRUÍDO de duas metades medidas separadamente, porque o bundle não cabe residente na VM de 15,7 GiB do teste. O comparativo com GGUF é DERIVADO de régua de banda medida em OUTRO modelo, e a derivação do relatório não é simétrica.",
+    "quality": {
+      "local_weight_metrics_only": true,
+      "end_to_end_certified": false,
+      "end_to_end_measured": false,
+      "note": "este teste mede VELOCIDADE. A PPL da Muse continua não medida — o gate de 627/627 é pré-filtro (§33.1)."
+    },
+    "notes": "Coerência interna impecável: 417 tensores no caminho = 418 do manifesto menos o embedding; 15,539 GB = bundle menos o embedding; latência, tok/s e banda reconciliam das duas fases. Duas ressalvas de método que o relatório não declara: (1) o número é soma de duas metades numa VM que não cabe o bundle, o que tende a ser otimista em localidade; (2) o gap de −19,7% contra o Q4_K_XL aplica 18,0 GB/s a um working set de 15,87 GB quando essa régua veio de um arquivo de 1,93 GB — com a mesma degradação que o CASCADE mediu em si, o gap cai para −6,1%."
   }
 ]

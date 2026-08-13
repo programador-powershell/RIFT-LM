@@ -3066,6 +3066,52 @@ for (const marker of ["Folga em 24 GB", "break_even_note", "projRes"]) {
 assert.ok(legacyHtml.includes("typeof projRaw===\"object\"?projRaw.central:projRaw"),
   "a projeção precisa aceitar número OU {best,central,worst} (§31.6)");
 
+// §36 — caminho de pesos da Muse: medido é medido, derivado é derivado, e o gap
+// contra o GGUF é FAIXA porque a derivação do relatório não era simétrica.
+const wp = publishedHistory.find((r) => r.battery_id === "P1_CASCADE_WEIGHTPATH_MUSE");
+if (wp) {
+  const rt = wp.metrics.runtime;
+  assert.equal(wp.benchmark_protocol, "WEIGHTPATH_MEASURED_V1");
+  assert.equal(rt.scope, "WEIGHT_PATH_ONLY");
+  // Caminho de pesos não é geração: sem par sob protocolo idêntico, topo é null.
+  assert.equal(wp.baseline_tok_s, null);
+  assert.equal(wp.candidate_tok_s, null);
+  // As duas fases têm de reconciliar a latência e os bytes declarados.
+  const ms = rt.phase_a.ms_median + rt.phase_b.ms_median;
+  assert.ok(Math.abs(ms - rt.latency_ms_per_token) < 0.05,
+    "a latência por token tem de ser a soma das duas fases (§36.1)");
+  const gb = rt.phase_a.gb + rt.phase_b.gb;
+  assert.ok(Math.abs(gb - rt.gb_touched_per_token) < 0.01,
+    "os bytes por token têm de somar as duas fases (§36.1)");
+  assert.ok(Math.abs(1000 / ms - rt.tok_s_weight_path) < 0.001,
+    "tok/s tem de derivar da latência medida (§36.1)");
+  assert.ok(Math.abs(gb / (ms / 1000) - rt.effective_bandwidth_gbs) < 0.02,
+    "a banda efetiva tem de derivar de bytes/latência (§36.1)");
+  // Ressalvas de método obrigatórias.
+  assert.match(rt.method_caveat, /RECONSTRUÍDO/,
+    "o número é soma de duas metades: tem de estar declarado (§36.2a)");
+  assert.ok(rt.bandwidth_regression.degradation_pct < 0,
+    "a regressão de banda (16,55 -> 14,16) tem de ficar registrada (§36.5)");
+  // Comparativo GGUF: derivado, assimétrico, e reportado como FAIXA.
+  const g = wp.metrics.gguf_comparison;
+  assert.match(g.status, /DERIVADO/, "o comparativo com GGUF não é medido (§36.2b)");
+  assert.match(g.why_not_measured, /unknown model architecture|rejeita/,
+    "precisa dizer POR QUE não foi medido (§36.2b)");
+  assert.ok(g.symmetric_derivation && g.honest_gap_range_pct,
+    "o gap tem de vir como faixa, com a derivação simétrica ao lado (§36.2b)");
+  assert.ok(g.honest_gap_range_pct.min < g.honest_gap_range_pct.max,
+    "faixa do gap invertida (§36.2b)");
+  assert.equal(g.honest_gap_range_pct.min, g.reported_derivation.delta_vs_cascade_pct,
+    "o pior extremo da faixa é o número do relatório (§36.2b)");
+  assert.ok(g.symmetric_derivation.delta_vs_cascade_pct > g.reported_derivation.delta_vs_cascade_pct,
+    "a derivação simétrica tem de ser MENOS desfavorável que a do relatório (§36.2b)");
+  assert.match(g.decisive_fact, /CASCADE RODA|roda a Muse/i,
+    "o fato decisivo (GGUF não carrega a Muse) tem de estar no registro (§36.4)");
+  // O embedding fica FORA do caminho de pesos: lookup, não GEMV.
+  assert.match(rt.coherence_check, /embedding/,
+    "a conferência de coerência do caminho de pesos precisa citar o embedding (§36.1)");
+}
+
 // §35 — conversão INTEGRAL da Muse: medição substitui projeção, e o veredito de
 // 24 GB caiu. Nada disso pode ser suavizado depois.
 const museReal = publishedHistory.find((r) => r.run_id === "cascade-convert-v21-muse30b-integral");

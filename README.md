@@ -54,20 +54,21 @@ Pesos calibrados para o objetivo declarado do score: identificar a melhor tecnol
 
 ## :new: Releases Notes
 
-### :up: V.3.6
+### :up: V.3.6.1
 
 ### :warning: Latest Changes
 
-- **Muse-Glimmer-30B convertida INTEGRALMENTE** (contrato §35): 627 de 627 tensores do LM, streaming por HTTP Range direto dos shards BF16 no Hugging Face — **a fonte de 55,71 GB nunca tocou o disco**. Receita v2.1 versionada em `core/cascade/runtime_v2/recipes/`. Medido: bundle **16,30 GB** (redução 70,74%, **4,681 bpw**) em 107 min, gates **627/627** com cosseno mínimo 0,996257, e **pico de RSS de 0,537 GiB** — converter um 30B em meio GiB de RAM, 5,8× melhor que os 3,14 GiB do conversor anterior. É a capacidade que o pipeline GGUF não tem: ele exige o intermediário BF16 em disco.
-- **Primeiro drop em que TODO número de manchete reconcilia a partir dos artefatos brutos**: bundle, fonte, redução, bpw, cosseno mínimo e mediana, contagem por degrau e tempo foram recomputados dos 627 registros de tensor e batem com o `summary` ao último dígito. Não havia acontecido em nenhuma rodada anterior.
+- **Execução do bundle real da Muse-30B medida** (contrato §36): bateria `P1_CASCADE_WEIGHTPATH_MUSE` — caminho de pesos por token sobre o bundle de 16,30 GB com kernels q4k/q8r reais, 12 passes, 4 núcleos. Medido: **1097,7 ms/token = 0,911 tok/s** a **14,16 GB/s** efetivos, tocando 15,54 GB por token; com o motor, 0,79–0,87 tok/s. Coerência interna conferida: os 417 tensores do caminho são os 418 do manifesto **menos o embedding**, e os 15,539 GB são o bundle menos o embedding — porque o embedding é lookup de uma linha por token, não GEMV. **Pesa em RAM, não em banda.**
 
 ### :pushpin: Fixes
 
-- **O veredito de 24 GB caiu — e caiu pela causa prevista** (§35.2): a Muse v2.1 precisa de **16,68 GiB** contra orçamento de 16 GiB, falta **0,68 GiB**. O condicional do §33.3 resolve **contra o projeto**: o **piso g32 ditado pela PPL** (o degrau g64 custava +1,44) custou exatamente o fit. A projeção de 15,08 GB valia para a receita ladder-g64, cujo degrau a medição de qualidade reprovou. Alvo prático: **classe de 32 GB**, com 7,32 GiB de folga. A projeção errou por +8,1%, e a diferença não é erro de extrapolação — é mudança de receita por ordem da PPL.
-- **Projeção superada não pode outranquear a medição** (§35.5): a ordenação por RAM colocava as amostras de ~800 MB à frente da conversão integral de 15,18 GB, então o leitor via "Folga em 24 GB PROJETADO +0,46 GiB" **antes** do "não cabe em 24 GB" medido. Registro com `projection.superseded_by` vai para o fim da lista, com selo "projeção SUPERADA por medição"; a conversão integral ganha selo "627/627 tensores · MEDIDO".
-- **§34.4 resolvido no conversor, aberto no executor**: `embed_tokens` é gravado em q4k/g32 (0,756 GB, cosseno 0,996976) e `lm_head` em q8r (1,345 GB, cosseno 0,999939). Mas o executor testado no 0.5B mantinha o embedding em FP32 no lookup; se repetir aqui, os 0,756 GB viram 5,38 GB e o bundle vai a 20,92 GB — continua cabendo em 32 GB e encerra qualquer volta aos 24 GB. O custo em PPL de um embedding quantizado **segue não medido**.
-- **Correção ao §34.1**: eu escrevi que "os itens 1–3 do backlog recuperam o perdido e não passam do piso data-free de 21,3122". Isso valia para os itens 1–3; a receita v2.1 tem um **quarto lever** — `v_proj` promovido a q8r — que não estava em nenhuma das 5 configs da ablação. É o que torna plausível o 19,89 relatado no 0.5B, que veio **sem artefato** neste drop e está registrado como não verificado.
+- **O gap contra o GGUF não era simétrico** (§36.2b): a régua de 18,0 GB/s foi medida no Qwen3B Q4_K_M de **1,93 GB** — working set pequeno, o mesmo regime em que o CASCADE mediu 16,55. Aplicá-la a um working set de 15,87 GB, enquanto o CASCADE é julgado pelos 14,16 que mediu em 15,5 GB, concede ao llama.cpp imunidade à degradação de TLB/cache que o próprio relatório usa para explicar a queda do CASCADE. Com a mesma degradação nos dois (85,6%), o llama.cpp faria 0,970 tok/s e o gap cai de **−19,7% para −6,1%**. O registro passa a trazer a **faixa** −6,1% a −19,7%, que não é estreitável nesta máquina: exigiria rodar o GGUF da Muse, que não carrega.
+- **O número é reconstruído, não medido no alvo** (§36.2a): o bundle não cabe residente na VM de 15,7 GiB do teste, então o token foi medido em duas metades (10,918 + 4,621 GB) e somado. Cada metade tem working set menor que o todo, o que tende a ser **otimista em localidade**. Era a única forma de medir naquela VM, e o registro carrega `method_caveat`.
+- **Rótulo técnico cru no card** (§36.6): `P1_CASCADE_WEIGHTPATH_MUSE` era humanizado como "Weightpath muse" e agrupado em "P1 · Codec principal". Passou a "Caminho de pesos por token" no grupo "P1 · Motor de execução", com fixture travando.
 
+### :construction_worker: Refactors
+
+- **Leitura prática registrada** (§36.3): os dois formatos ficam em torno de **1 tok/s** num 30B com 4 núcleos — ~1,1 s por token. A diferença de 6% ou 20% é entre duas velocidades inutilizáveis para uso interativo; nesta escala o gargalo é banda de memória, não formato. O fato que não precisa de derivação: nesta máquina o **CASCADE roda a Muse e o GGUF não** (llama.cpp 0.3.34 rejeita `muse-glimmer`) — esse é o argumento de substituição, não os 6–20%.
 
 ## :wrench: Instalação
 
