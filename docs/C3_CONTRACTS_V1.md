@@ -814,3 +814,30 @@ move `attn_output`; a conversão frequentemente AUMENTA bytes contra a fonte IQ2
 
    Princípio: um bundle que DEPENDE do checkpoint de origem não reduziu o
    footprint — apenas mudou onde os bytes moram.
+
+10. POLÍTICA FASE-1 VALE NOS DOIS ESQUEMAS DE NOME (bug real, reportado no teste
+    do Muse-Glimmer-30B). `eligible_matrix` testava por substring com nomes
+    SOMENTE de HF (`embed_tokens`, `embedding`, `lm_head`, `expert`, `.moe`).
+    Nenhum deles casa o esquema do ggml, então em entrada `.gguf` a política era
+    **100% inerte** — `token_embd.weight`, `output.weight` e `ffn_*_exps` entravam
+    como elegíveis. Medido: `token_embd` do Muse é 202048 × 6656 = 1,34 G
+    elementos; no IQ2 a guarda de expansão o mandou para raw por acidente, mas
+    numa fonte BF16 (2,69 GB no tensor contra 0,76 GB de F0 INT4/g32) a guarda
+    NÃO dispara e os dois maiores tensores do modelo entram no pipeline F0/F1.
+
+    - `EMBEDDING_NAME_RE`: `embed_tokens|embeddings?|token_embd|tok_embeddings|wte`
+    - `OUTPUT_HEAD_NAME_RE`: `lm_head|output_projection` por segmento **mais**
+      `^output(\.weight|\.bias)?$` ANCORADO NO INÍCIO. O ancoramento é
+      obrigatório: `blk.N.attn_output.weight` contém "output" e é um linear
+      legítimo — um teste por substring mataria todas as projeções de atenção.
+      `output_norm.weight` também não pode casar (sai por dimensão, sendo 1D).
+    - `MOE_NAME_RE`: `experts?|moe` por segmento mais o sufixo `_exps`.
+    - `--include-embeddings` cobre embeddings E cabeça de saída (comportamento
+      anterior preservado); `--include-moe` cobre só MoE.
+    - Razões renomeadas para distinguir a decisão: `embedding_passthrough_phase1`,
+      `output_head_passthrough_phase1`, `moe_passthrough_phase1`.
+    - `DEFAULT_EXCLUDE` foi REMOVIDO: era código morto com aparência de política
+      oficial (definido no topo, referenciado em lugar nenhum).
+
+    Regra: toda política que depende de nome de tensor precisa cobrir HF e ggml,
+    e o smoke tem anti-regressão para `attn_output` continuar elegível.

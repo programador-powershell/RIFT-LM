@@ -267,6 +267,24 @@ direto para um caminho do cache do Hugging Face
 (`.../snapshots/<rev>/model.gguf`), cujo alvo real é um blob sem extensão.
 Nenhum hardlink ou renomeação é necessário.
 
+### Política Fase-1 (o que NÃO é convertido)
+
+Embeddings, cabeça de saída e MoE ficam em passthrough. Os nomes mudam por
+formato e a política cobre os dois:
+
+| papel | HF | ggml/GGUF | liberado por |
+| --- | --- | --- | --- |
+| embeddings | `embed_tokens`, `wte` | `token_embd` | `--include-embeddings` |
+| cabeça de saída | `lm_head`, `output_projection` | `output.weight` | `--include-embeddings` |
+| MoE | `experts`, `moe` | `ffn_*_exps` | `--include-moe` |
+
+O padrão da cabeça de saída é **ancorado no início**: `blk.N.attn_output.weight`
+contém "output" e é um linear legítimo — precisa continuar elegível.
+
+São os maiores tensores do modelo (no Muse-Glimmer-30B o `token_embd` tem 1,34 G
+elementos), então incluí-los é o principal risco de pico de RSS e de disco. Em
+modelo grande, combine com `--keep-source-passthrough` para não copiá-los.
+
 ## Escada de codecs (`--codec-ladder`)
 
 Por tensor, tenta do mais barato ao mais caro e fica no **primeiro degrau que

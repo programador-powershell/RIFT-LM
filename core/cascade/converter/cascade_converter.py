@@ -1097,9 +1097,29 @@ def write_raw_stage(source: Source, desc: TensorDesc, out_dir: Path, reason: str
 # Conversion policy
 # ------------------------------------------------------------------------------
 
-DEFAULT_EXCLUDE = re.compile(
-    r"(?:^|\.)(?:embed_tokens|embeddings?|lm_head)(?:\.|$)|"
-    r"(?:^|\.)(?:experts?|moe)(?:\.|$)",
+# Política Fase-1 (embeddings, cabeça de saída e MoE ficam em passthrough).
+#
+# Os nomes mudam por FORMATO e o padrão HF não casa nada no ggml: HF usa
+# `model.embed_tokens.weight` / `lm_head.weight` / `...mlp.experts.N...`,
+# enquanto o GGUF usa `token_embd.weight` / `output.weight` / `ffn_*_exps`.
+# Sem estas alternativas a política era silenciosamente IGNORADA em entrada
+# .gguf — os dois maiores tensores do modelo entravam como elegíveis (medido no
+# Muse-Glimmer-30B: token_embd 202k x 6656 = 1,35 G elementos), com o risco de
+# pico de RSS/disco que a Fase-1 existe para evitar.
+EMBEDDING_NAME_RE = re.compile(
+    r"(?:^|\.)(?:embed_tokens|embeddings?|token_embd|tok_embeddings|wte)(?:\.|$)",
+    re.IGNORECASE,
+)
+# ATENÇÃO ao ancoramento: `output.weight` do ggml é a cabeça de saída, mas
+# `blk.N.attn_output.weight` é um linear LEGÍTIMO e não pode ser excluído — por
+# isso a alternativa do ggml casa somente no início do nome.
+OUTPUT_HEAD_NAME_RE = re.compile(
+    r"(?:^|\.)(?:lm_head|output_projection)(?:\.|$)"
+    r"|^output(?:\.weight|\.bias)?$",
+    re.IGNORECASE,
+)
+MOE_NAME_RE = re.compile(
+    r"(?:^|\.)(?:experts?|moe)(?:\.|$)|_exps(?:\.|$)",
     re.IGNORECASE,
 )
 
@@ -1121,12 +1141,12 @@ def eligible_matrix(
     if exclude_regex and exclude_regex.search(desc.name):
         return False, "excluded_by_user_regex"
 
-    lname = desc.name.lower()
-    if not include_embeddings and (
-        "embed_tokens" in lname or "embedding" in lname or "lm_head" in lname
-    ):
-        return False, "embedding_or_lm_head_passthrough"
-    if not include_moe and ("expert" in lname or ".moe" in lname):
+    name = desc.name
+    if not include_embeddings and EMBEDDING_NAME_RE.search(name):
+        return False, "embedding_passthrough_phase1"
+    if not include_embeddings and OUTPUT_HEAD_NAME_RE.search(name):
+        return False, "output_head_passthrough_phase1"
+    if not include_moe and MOE_NAME_RE.search(name):
         return False, "moe_passthrough_phase1"
 
     return True, "eligible_linear_matrix"
@@ -2669,8 +2689,19 @@ def build_parser():
     c.add_argument("--min-elements", type=int, default=4096)
     c.add_argument("--cosine-min", type=float, default=DEFAULT_COSINE_MIN)
     c.add_argument("--nrmse-max", type=float, default=DEFAULT_NRMSE_MAX)
-    c.add_argument("--include-embeddings", action="store_true")
-    c.add_argument("--include-moe", action="store_true")
+    c.add_argument(
+        "--include-embeddings", action="store_true",
+        help="converte embeddings e a cabeça de saída, que a política Fase-1 "
+             "mantém em passthrough. Reconhece os dois esquemas de nome: HF "
+             "(embed_tokens, lm_head) e ggml (token_embd, output.weight). São "
+             "os maiores tensores do modelo — incluí-los é o principal risco de "
+             "pico de RSS/disco na conversão",
+    )
+    c.add_argument(
+        "--include-moe", action="store_true",
+        help="converte tensores de MoE (HF: experts/moe; ggml: *_exps), que a "
+             "política Fase-1 mantém em passthrough",
+    )
     c.add_argument("--include-regex", default=None)
     c.add_argument("--exclude-regex", default=None)
     c.add_argument("--force", action="store_true")

@@ -2992,6 +2992,25 @@ assert.ok(/return m\["cosine"\] >= cosine_min and m\["nrmse"\] <= nrmse_max/.tes
 assert.ok(/kind = sniff_container\(input_path\) or input_path\.suffix/.test(converterSource),
   "make_source precisa despachar por magic bytes antes do sufixo (§29.8)");
 
+// §29.10 — política Fase-1 nos DOIS esquemas de nome. O padrão HF não casa nada
+// no ggml: sem as alternativas token_embd/output.weight/_exps a política era
+// silenciosamente inerte em entrada .gguf.
+for (const marker of [
+  "EMBEDDING_NAME_RE", "OUTPUT_HEAD_NAME_RE", "MOE_NAME_RE",
+  "token_embd", "_exps", "embedding_passthrough_phase1",
+  "output_head_passthrough_phase1", "moe_passthrough_phase1",
+]) {
+  assert.ok(converterSource.includes(marker), `cascade_converter.py sem marcador §29.10: ${marker}`);
+}
+// A cabeça de saída do ggml é ANCORADA no início: `blk.N.attn_output.weight` é
+// um linear legítimo e não pode cair na política.
+assert.ok(converterSource.includes("|^output(?:\\.weight|\\.bias)?$"),
+  "OUTPUT_HEAD_NAME_RE precisa ancorar `output.weight` no início, senão exclui attn_output (§29.10)");
+assert.ok(!/"(?:embed_tokens|lm_head)" in lname/.test(converterSource),
+  "REGRESSÃO §29.10: eligible_matrix voltou ao teste por substring só-HF");
+assert.ok(!converterSource.includes("DEFAULT_EXCLUDE"),
+  "DEFAULT_EXCLUDE era código morto com aparência de política oficial (§29.10)");
+
 // §29.9 — footprint honesto: os campos de comparação do registro publicado NÃO
 // podem ser bundle-vs-fonte quando parte dos tensores ficou em SOURCE_EXTERNAL
 // (medido no Muse-Glimmer-30B: "85,51%" de bundle contra 6,5% reais).
