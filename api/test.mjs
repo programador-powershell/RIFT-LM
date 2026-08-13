@@ -232,6 +232,16 @@ function normalizeConverterPublish(value) {
   return mode;
 }
 
+// keep_source=on repassa --keep-source-passthrough (§29.3): os tensores fora do
+// CASCADE não são copiados e o bundle passa a depender do checkpoint de origem.
+function normalizeConverterKeepSource(value) {
+  const mode = String(value || "off").trim().toLowerCase();
+  if (!["on", "off"].includes(mode)) {
+    throw new ApiError("keep_source precisa ser on ou off na rota do conversor");
+  }
+  return mode;
+}
+
 function normalizeQuant(value) {
   const quant = String(value || "").trim();
   if (!quant) return GGUF_DEFAULT_QUANT;
@@ -1531,6 +1541,7 @@ function buildConverterLauncher({
   origin,
   hfRepo = null,
   publish = "off",
+  keepSource = "off",
   repo = resolveRepo(),
   ref = resolveRef(),
 }) {
@@ -1561,6 +1572,7 @@ SOURCE_REF = ${JSON.stringify(ref)}
 MODEL_ID = ${JSON.stringify(model.modelId)}
 HF_REPO = ${hfRepo === null ? "None" : JSON.stringify(hfRepo)}
 PUBLISH_MODE = ${JSON.stringify(publish)}
+KEEP_SOURCE_MODE = ${JSON.stringify(keepSource)}
 PIP_PACKAGES = json.loads(r'''${JSON.stringify(CONVERTER_PIP_PACKAGES)}''')
 COMPATIBILITY = json.loads(r'''${JSON.stringify(compatibility)}''')
 RUNNER_LOCAL_PATH = ${JSON.stringify(CONVERTER_RUNNER_LOCAL_PATH)}
@@ -1642,6 +1654,12 @@ if HF_REPO:
     ARGS += ["--hf-repo", HF_REPO]
 if PUBLISH_MODE == "on":
     ARGS += ["--publish", "on"]
+if KEEP_SOURCE_MODE == "on":
+    # Não copia os tensores que ficam fora do CASCADE (embeddings, lm_head,
+    # MoE): eles seguem apontando para o checkpoint baixado. Evita o pico de
+    # RAM/disco da cópia em modelo grande — o bundle passa a DEPENDER do
+    # checkpoint, que por isso não pode ser apagado depois.
+    ARGS += ["--keep-source-passthrough"]
 print("[CONVERTER] executando o runner:", " ".join([str(runner_path), *ARGS]))
 return_code = subprocess.call(
     [sys.executable, str(runner_path), *ARGS],
@@ -1692,12 +1710,14 @@ function requestParameters(request) {
   if (battery === "converter") {
     // Conversor CASCADE (§26.2): não é uma bateria de benchmark de tecnologia —
     // technology/target_layer/device/arch não se aplicam. Parâmetros próprios:
-    // hf_repo (opcional, org/nome validado — 400 se inválido) e publish on|off.
+    // hf_repo (opcional, org/nome validado — 400 se inválido), publish on|off e
+    // keep_source on|off (§29.3).
     return {
       technology: null,
       model: normalizeModel(url.searchParams.get("model")),
       hfRepo: normalizeHfRepo(url.searchParams.get("hf_repo")),
       publish: normalizeConverterPublish(url.searchParams.get("publish")),
+      keepSource: normalizeConverterKeepSource(url.searchParams.get("keep_source")),
       battery,
       origin: url.origin,
     };
@@ -1875,6 +1895,7 @@ export const _test = {
   buildMicrolmLauncher,
   ggufRuntimeModel,
   normalizeBattery,
+  normalizeConverterKeepSource,
   normalizeConverterPublish,
   normalizeDevice,
   normalizeHfRepo,

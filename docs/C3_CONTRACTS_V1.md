@@ -638,3 +638,134 @@ ENVIAR o modelo convertido de volta ao Hugging Face Hub (repo do usuário).
    escrita, upload torna o repo público/privado conforme a conta, orçamento de disco).
    Card operacional — isento da regra §24.3.
 4. Segurança: nenhum token em código/URL; upload é ação do usuário no ambiente dele.
+
+## 27. Conversor: entrada GGUF + escada de codecs (15º lote, 2026-08-10)
+
+Objetivo declarado: rodar modelos MAIORES em PC convencional (4 núcleos, 8 GB
+livres, sem GPU) **sem perder inteligência**. A evidência medida do próprio
+projeto (data/compare_generations_report.json) mostra que 2-bit PTQ uniforme
+destrói o modelo (ternário → PPL 41,5M; INT2 → 22k; INT4 → 55,9 vs 49,1 do
+original), então a compressão precisa ser DECIDIDA POR MEDIÇÃO, tensor a
+tensor, e nunca imposta uniformemente.
+
+1. `GGUFSource` em `core/cascade/converter/cascade_converter.py`: entrada
+   `.gguf` com streaming por blocos de linhas (pico = chunk × colunas × 4 B,
+   não o tensor inteiro). Shape lógico = shape do ggml invertido. Passthrough
+   exato copia os blocos GGUF originais e rotula `source_dtype=GGUF_<QTYPE>`.
+   Dependência OPCIONAL `gguf>=0.10,<1` (só para entrada .gguf) — sujeita à
+   homologação de TI/SI como as demais.
+2. Escada de codecs por tensor (`--codec-ladder`): `safe` (padrão) =
+   int4/g64 → int4/g32 → raw; `compact` = int2/g64 → int4/g64 → int4/g32 → raw;
+   `int4` = comportamento anterior. INVARIANTE: o gate de qualidade
+   (`--cosine-min`/`--nrmse-max`) é idêntico em TODOS os degraus; um degrau só
+   é escolhido se passar, e se nenhum passar o tensor cai em passthrough exato.
+   A escada reduz bytes sem afrouxar qualidade — nunca degrada em silêncio.
+   O degrau `int4/g32` existe para RESGATAR tensores que hoje caem em raw
+   (16 bpw → 4,5 bpw).
+3. Codec INT2: groupwise ASSIMÉTRICO min-max, 4 níveis, escala+mínimo FP16 por
+   grupo (`INT2_GROUP_ASYMMETRIC_MINMAX`, 2 + 32/group bpw), arquivos
+   `f0.int2` + `f0.scales.f16` + `f0.mins.f16`. Todo stage 0 declara `codec`,
+   `bits` e `effective_bits_per_weight`; leitores DEVEM despachar por
+   `representation` e nunca assumir INT4.
+4. `summary.residency`: HOT (F0+raw, residente) vs WARM (F1, paginável), bpw
+   médio medido e veredito `fits_resident_in_target` contra `--target-ram-gb`
+   (padrão 8,0) descontando 1,5 GiB de reserva para KV-cache/ativações.
+   `summary.conversion_peak_rss_bytes` registra o pico de RSS medido.
+5. `--ram-budget-mb` (padrão 16) reduz `--chunk-rows` em tensores muito largos.
+6. NÃO adotado: o formato WINR-F0 2-bit uniforme (`convert_gguf_to_winr_f0.py`).
+   Motivos medidos/verificados: limiar `0.5×absmax` com escala `absmax` zera
+   ~99% dos pesos (cosine ≈ 0,26 em simulação com estatística de LLM); sem gate
+   de qualidade; grava container versão 0x0200 que o leitor C++ do repo rejeita
+   (exige 0x0100); desquantiza o tensor inteiro (pico de GBs). O que foi
+   aproveitado da proposta: a ENTRADA GGUF e a disciplina de empacotar por
+   blocos de linhas.
+
+## 28. Orçamento de RAM pela máquina + RAM por largura de bits (16º lote)
+
+1. ORÇAMENTO AUTOMÁTICO. `--target-ram-gb 0` (novo padrão) = detecta a RAM
+   física e reserva 8 GiB para SO/apps, com piso de 50% do total:
+   16 GiB→8 · 24 GiB→16 · 32 GiB→24 · 64 GiB→56 · 8 GiB→4 (piso).
+   Sem detecção, cai no alvo canônico de 8 GiB. Detecção sem dependências
+   novas: `/proc/meminfo` → `os.sysconf` → `GlobalMemoryStatusEx` (Windows).
+   `--ram-budget-mb 0` (novo padrão) escala a fatia de conversão com a
+   máquina: `clamp(total/512, 16 MB, 128 MB)`. Ambos os flags aceitam valor
+   explícito, que sempre vence o automático (`target_source` registra qual foi).
+2. RAM POR LARGURA DE BITS (estilo cartão de modelo do Hugging Face).
+   `summary.residency.memory_by_bits` traz, para 1/2/3/4/5/6/8 bits e fp16, os
+   bytes residentes e `fits_in_target`. É PROJEÇÃO: recalcula apenas o estágio
+   base com cada largura hipotética (mantendo o overhead de escala por grupo) e
+   soma o passthrough exato REAL, que não é quantizado. A linha `medido` é a
+   residência real da conversão (`resident_hot_bytes` + bpw da escada).
+   Rotulagem obrigatória `PROJETADO` + a nota de que 1–2 bits uniformes NÃO
+   preservam qualidade neste projeto (medido: PPL 41,5M em ternário e 22k em
+   INT2 contra 49,1 do original).
+3. CARD "Modelos convertidos" (index.html, `renderConvertedModels`): lê os
+   registros `battery_id=CASCADE_MODEL_CONVERSION` e `metrics.converter`
+   (bloco novo do `dashboard_battery.json`), mais recente por modelo. Mostra
+   residente/paginável/passthrough, bpw médio, degraus escolhidos, veredito
+   contra o orçamento da máquina e a tabela por bits com barras verde/vermelho.
+   Card operacional/informativo — ISENTO da regra §24.3 (um único modelo
+   convertido já é informação útil).
+
+## 29. Conversor: decisões auditáveis por tensor (17º lote)
+
+Origem: bateria real no Muse Glimmer (fonte GGUF IQ2). Achados medidos que
+motivam esta seção — INT2/g64 nunca passou o gate (cosine 0,91–0,92); INT4/g64
+serve Q e gate (~0,997), K/V (~0,994) e `attn_output` (~0,992); F1 rank 8→32 não
+move `attn_output`; a conversão frequentemente AUMENTA bytes contra a fonte IQ2.
+
+1. ESCADA AUTOMÁTICA PELA FONTE (`--codec-ladder auto`, novo padrão).
+   `source_is_low_bit(desc)` = `^GGUF_` exceto F32/F16/BF16. Fonte low-bit →
+   `safe` (não tenta INT2, que nunca passa e cujo raw custa 2,66 bpw e não 16);
+   BF16/F16/F32 → `compact`. Modo explícito sempre vence o auto.
+   `ladder.mode` e `ladder.requested_mode` registram os dois.
+
+2. GUARDA DE EXPANSÃO DE BYTES (padrão ligado; `--allow-byte-expansion`
+   desliga). Antes de escrever cada F0, `projected_f0_bytes()` compara com
+   `desc.nbytes`: se o degrau ficaria ≥ à fonte, o degrau é PULADO sem gravar
+   (`attempts[].skipped = "projected_byte_expansion"`) e a escada é interrompida
+   (`ladder.stopped_by = "byte_expansion_guard"`), porque a escada é crescente em
+   bpw. A checagem se repete no total F0+F1 (`byte_expansion_with_f1`). O
+   fallback é o passthrough exato, com `reason` explicando a decisão. Medido em
+   `o_proj` 256×512 com fonte a 2,66 bpw: 43 581 B exatos contra 69 632 B com
+   perda se a guarda for desligada.
+
+3. PASSTHROUGH SEM CÓPIA (`--keep-source-passthrough`). Tensores não elegíveis
+   viram `SOURCE_EXTERNAL`: `files: {}`, `bytes: 0`, `external_bytes` = tamanho
+   real, `requires_source_file: true`. Substitui a cópia byte a byte que estourava
+   RAM/disco em embedding grande. `residency` soma `external_bytes` no HOT —
+   economiza DISCO, não RAM de execução — e marca
+   `bundle_requires_source: true`; o bundle deixa de ser autocontido.
+   `verify_tensor_outputs` valida a existência do checkpoint em vez do arquivo de
+   estágio; `estimate_tensor_output_peak(..., keep_source=True)` projeta 0 bytes.
+
+4. PISO DE ENERGIA DO F1 DERIVADO DO GATE (sem constante mágica).
+   `required_capture_fraction(f0_metrics, cosine_min, nrmse_max)` =
+   `max(1 − (nrmse_max/nrmse_f0)², 1 − (1−cosine_min)/(1−cosine_f0))`. O F1 é
+   abortado quando a energia capturada pelos ranks disponíveis fica abaixo de
+   `F1_ENERGY_SAFETY = 0.75` desse mínimo (`trigger: below_gate_requirement`),
+   evitando o passe de avaliação e a gravação. A margem existe porque o vínculo
+   do cosseno usa `1−cos ≈ nrmse²/2` (2ª ordem) — na dúvida, NÃO abortar.
+   `--f1-min-energy` (padrão 0) é piso absoluto adicional
+   (`trigger: below_explicit_floor`). Medido: resíduo INT4 entrega
+   `captured_fraction ≈ 0,247` com rank ≤ 32, enquanto `attn_output` precisaria
+   de 0,375 — o que explica o rank 8→32 não mover a métrica.
+
+5. INVARIANTE MANTIDO: nenhuma das quatro mudanças afrouxa o gate de qualidade.
+   Todas atuam sobre CUSTO (bytes, disco, CPU) ou sobre trabalho comprovadamente
+   inútil. Quando nada passa, o resultado continua sendo passthrough exato.
+
+6. RELATÓRIO NÃO PODE MENTIR SOBRE A ESCADA. Com `auto`, a escada é decidida
+   POR TENSOR: `summary.codec_ladder` guarda o modo PEDIDO e
+   `summary.codec_ladder_resolved` conta os modos realmente usados
+   (`{"safe": 168}`); `ladder_rungs` segue o modo dominante. O bloco
+   `metrics.converter` publicado no dashboard leva os dois, mais
+   `bundle_requires_source` e `external_source_bytes`.
+
+7. EXPOSIÇÃO NO COLAB. `--keep-source-passthrough` chega ao caminho que o
+   usuário realmente usa: `keep_source=on|off` na rota `/converter/<modelo>`
+   (validado com 400 em valor inválido) → `KEEP_SOURCE_MODE` na célula →
+   `--keep-source-passthrough` no runner. Checkbox "Não copiar tensores fora do
+   CASCADE" no card do conversor, desligado por padrão, com o custo (bundle
+   deixa de ser autocontido) no ⓘ. O runner local também repassa
+   `--codec-ladder`, `--include-regex` e `--target-ram-gb`.

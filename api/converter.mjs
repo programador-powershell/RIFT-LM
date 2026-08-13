@@ -111,6 +111,19 @@ def parse_args():
                         help="passthrough para o conversor (default do conversor: 64)")
     parser.add_argument("--ranks", default=None,
                         help="passthrough para o conversor, ex.: 8,16,32")
+    parser.add_argument("--codec-ladder", default=None,
+                        help="passthrough: auto (default) | safe | compact | int4")
+    parser.add_argument("--include-regex", default=None,
+                        help="passthrough: converte só os tensores que casam")
+    parser.add_argument("--target-ram-gb", type=float, default=None,
+                        help="passthrough: máquina alvo (default: derivado da RAM)")
+    parser.add_argument(
+        "--keep-source-passthrough", action="store_true",
+        help="passthrough: não COPIA os tensores que ficam fora do CASCADE "
+             "(embeddings, lm_head, MoE, fora do --include-regex). Evita o pico "
+             "de RAM/disco da cópia em modelo grande; o bundle passa a depender "
+             "do checkpoint de origem",
+    )
     parser.set_defaults(resume=True)
     return parser.parse_args()
 
@@ -246,6 +259,14 @@ def main():
         command += ["--group-size", str(args.group_size)]
     if args.ranks:
         command += ["--ranks", args.ranks]
+    if args.codec_ladder:
+        command += ["--codec-ladder", args.codec_ladder]
+    if args.include_regex:
+        command += ["--include-regex", args.include_regex]
+    if args.target_ram_gb is not None:
+        command += ["--target-ram-gb", str(args.target_ram_gb)]
+    if args.keep_source_passthrough:
+        command += ["--keep-source-passthrough"]
     if args.publish == "on":
         command += ["--publish"]
 

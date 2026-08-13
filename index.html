@@ -135,6 +135,14 @@ details{margin-top:18px}.help{color:var(--muted);font-size:13px;line-height:1.6}
 .infoPop p{margin:0 0 8px}.infoPop p:last-child{margin-bottom:0}
 .infoBadge.popRight .infoPop{left:auto;right:0}
 summary .infoBadge{font-weight:400}
+
+.convertedCard h3{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bitsTable{display:flex;flex-direction:column;gap:4px;margin-top:10px}
+.bitsRow{display:grid;grid-template-columns:74px 1fr 88px auto auto;align-items:center;gap:8px;font-size:12px}
+.bitsLabel{color:var(--muted);font-variant-numeric:tabular-nums}
+.bitsVal{text-align:right;font-variant-numeric:tabular-nums}
+.fill.fitFill{background:linear-gradient(90deg,#10b981,#059669)}
+.fill.noFitFill{background:linear-gradient(90deg,#f87171,#dc2626)}
 </style>
 </head>
 <body>
@@ -294,6 +302,7 @@ summary .infoBadge{font-weight:400}
       <input id="converterHfRepoInput" value="" placeholder="seu-usuario/&lt;modelo&gt;-cascade" autocomplete="off">
     </div>
     <label class="check wide"><input id="converterPublishInput" type="checkbox"> Publicar registro no dashboard<span class="infoBadge"><button type="button" class="infoBtn" data-info-toggle aria-expanded="false" aria-label="O que publicar registro faz" title="O que publicar registro faz">ⓘ</button><span class="infoPop" hidden role="note">Liga <code>publish=on</code> na célula (repassa <code>--publish</code> ao conversor): o registro da conversão entra no histórico deste painel. Exige o Secret <code>RIFT_INGEST_TOKEN</code> (≥32 caracteres) no Colab. Desligado por padrão.</span></span></label>
+    <label class="check wide"><input id="converterKeepSourceInput" type="checkbox"> Não copiar tensores fora do CASCADE<span class="infoBadge"><button type="button" class="infoBtn" data-info-toggle aria-expanded="false" aria-label="O que não copiar tensores faz" title="O que não copiar tensores faz">ⓘ</button><span class="infoPop" hidden role="note"><p>Liga <code>keep_source=on</code> (repassa <code>--keep-source-passthrough</code>): embeddings, <code>lm_head</code> e MoE ficam apontando para o checkpoint baixado em vez de serem copiados byte a byte. Evita o pico de RAM/disco da cópia em modelo grande.</p><p><strong>Custo</strong>: o bundle deixa de ser autocontido — o checkpoint de origem não pode ser apagado, e é por isso que esta opção é incompatível com apagar shards de origem. Economiza disco, <strong>não</strong> RAM de execução.</p></span></span></label>
   </div>
   <div class="actions">
     <button class="primary" id="converterCopyCellBtn" type="button" title="Gera e copia a célula curta do Colab (Secrets + exec da rota do conversor no servidor)">Copiar célula Colab</button>
@@ -306,6 +315,11 @@ summary .infoBadge{font-weight:400}
      inteira (título + grade) é renderizada por renderMeasurementCharts(); cada
      gráfico só existe no DOM com ≥2 modelos/tecnologias (§24.3), sem estado vazio. -->
 <section id="measurementCharts" aria-label="Gráficos de medição"></section>
+
+<!-- Modelos convertidos (contrato §28): residência medida + RAM por largura de
+     bits. Card operacional/informativo — isento da regra de ≥2 modelos (§24.3),
+     porque um único modelo convertido já é a informação útil. -->
+<section id="convertedModels" aria-label="Modelos convertidos"></section>
 
 <div class="sectionTitle">Capacidades <small>• Intelligence · Coding · Agentic · DeepSearch QA · MCP-Atlas · τ³-Bench · SWE-Bench</small><span class="infoBadge"><button type="button" class="infoBtn" data-info-toggle aria-expanded="false" aria-label="Sobre o probe de capacidades" title="Sobre o probe de capacidades">ⓘ</button><span class="infoPop" hidden role="note"><p>Probe de capacidades por modelo (protocolo CAPABILITY_PROBE_V1). Registros <code>technology="CAP"</code> (baterias <code>CAP_INTELLIGENCE</code> · <code>CAP_CODING</code> · <code>CAP_AGENTIC</code> · <code>CAP_DEEPSEARCH_QA</code> · <code>CAP_MCP_ATLAS</code> · <code>CAP_TAU3_BENCH</code> · <code>CAP_SWE_BENCH</code>, score 0–100). Ficam FORA dos rankings de tecnologia e da política do WINNER.</p><p>Rotulagem honesta: probe leve embutido — não é MMLU/HumanEval/SWE-bench completos; as categorias novas são probes inspirados em DeepSearch QA, MCP-Atlas, τ³-Bench e SWE-Bench (não são os benchmarks oficiais completos). Célula gerada pela rota <code>/cap/&lt;modelo&gt;</code> (mesmo padrão de segurança dos demais launchers).</p></span></span></div>
 <section class="card rankingCard capabilitiesCard" id="capabilitiesCard">
@@ -1147,6 +1161,74 @@ function measureChartLatencia(){
 // Seção "Gráficos" (§24.1): título + grade injetados SOMENTE quando existe ao
 // menos um gráfico renderizável — caso contrário a seção fica vazia no DOM
 // (sem estado vazio, §24.3).
+// ===== Modelos convertidos (§28) =====
+// Alimentado pelos registros do conversor (battery_id CASCADE_MODEL_CONVERSION,
+// metrics.converter). Mostra o que decide a compra: quanto o modelo ocupa
+// residente, se cabe no alvo e a RAM projetada por largura de bits.
+const CONVERTER_BATTERY_ID="CASCADE_MODEL_CONVERSION";
+function converterRows(){
+  const out=new Map();
+  for(const r of state.records){
+    if(String(r.battery||"").toUpperCase()!==CONVERTER_BATTERY_ID)continue;
+    const c=r.raw?.metrics?.converter;if(!c)continue;
+    const prev=out.get(r.model);
+    if(!prev||String(r.timestamp||"")>String(prev.timestamp||""))
+      out.set(r.model,{model:r.model,timestamp:r.timestamp,c});
+  }
+  return [...out.values()].sort((a,b)=>String(b.timestamp||"").localeCompare(String(a.timestamp||"")));
+}
+function bitsTable(rows,hotBytes,achieved,fits){
+  if(!Array.isArray(rows)||!rows.length)return "";
+  const max=Math.max(...rows.map(r=>Number(r.resident_bytes)||0),Number(hotBytes)||0,1);
+  const line=(label,bytes,ok,extra="")=>{
+    const pct=Math.max(2,100*(Number(bytes)||0)/max);
+    return `<div class="bitsRow"><span class="bitsLabel">${esc(label)}</span>`
+      +`<span class="track"><i class="fill ${ok?"fitFill":"noFitFill"}" style="width:${pct.toFixed(1)}%"></i></span>`
+      +`<span class="bitsVal">${fmtBytes(bytes)}</span>`
+      +`<span class="badge ${ok?"":"warn"}">${ok?"cabe":"não cabe"}</span>${extra}</div>`;
+  };
+  const body=rows.map(r=>line(r.label,r.resident_bytes,r.fits_in_target)).join("");
+  const measured=hotBytes!=null
+    ? line(`medido${achieved!=null?` (${Number(achieved).toFixed(2)} bpw)`:""}`,hotBytes,!!fits,
+           `<span class="badge">escada real</span>`)
+    : "";
+  return body+measured;
+}
+function renderConvertedModels(){
+  const root=$("convertedModels");if(!root)return;
+  const rows=converterRows();
+  if(!rows.length){root.innerHTML="";return}
+  const cards=rows.map(({model,timestamp,c})=>{
+    const machine=c.machine_total_ram_bytes
+      ? `<span class="badge">máquina ${fmtBytes(c.machine_total_ram_bytes)}</span>`:"";
+    const rungs=c.selected_rungs&&typeof c.selected_rungs==="object"
+      ? Object.entries(c.selected_rungs).map(([k,v])=>`<span class="badge">${esc(k)}: ${esc(String(v))}</span>`).join("")
+      :"";
+    return `<div class="card chart convertedCard">
+      <h3>${esc(model)}<span class="badge ${c.fits_resident_in_target?"":"warn"}">${
+        c.fits_resident_in_target?"cabe em":"não cabe em"} ${esc(String(c.target_ram_gb))} GB</span></h3>
+      <div class="badges">${machine}
+        <span class="badge">${esc(String(c.codec_ladder||"—"))}</span>
+        ${c.f0_effective_bits_per_weight!=null?`<span class="badge">${Number(c.f0_effective_bits_per_weight).toFixed(2)} bpw</span>`:""}
+        ${c.source_format?`<span class="badge">${esc(String(c.source_format))}</span>`:""}
+        <span class="badge">${esc(String(c.converted_tensor_count??"—"))} convertidos</span>
+        ${rungs}</div>
+      <div class="metrics">
+        <div class="metric"><span class="mLabel">Residente</span><b>${fmtBytes(c.resident_hot_bytes)}</b></div>
+        <div class="metric"><span class="mLabel">Paginável (F1)</span><b>${fmtBytes(c.pageable_warm_bytes)}</b></div>
+        <div class="metric"><span class="mLabel">Passthrough exato</span><b>${fmtBytes(c.raw_passthrough_bytes)}</b></div>
+      </div>
+      <div class="bitsTable">${bitsTable(c.memory_by_bits,c.resident_hot_bytes,
+        c.f0_effective_bits_per_weight,c.fits_resident_in_target)}</div>
+      <div class="note">RAM por largura de bits • <span class="badge warn">PROJETADO</span> • ${esc(fmtDate(timestamp))}</div>
+    </div>`;
+  }).join("");
+  root.innerHTML=`<div class="sectionTitle">Modelos convertidos${infoBadge(
+    "Modelos processados pelo conversor CASCADE (registros CASCADE_MODEL_CONVERSION). Residente = estágio base + passthrough exato, o que precisa estar em RAM; Paginável = residual F1, que pode ficar em disco. O veredito compara o residente com o orçamento da máquina alvo (RAM total menos 8 GiB de reserva para SO/apps, piso de 50%: 16 GiB→8, 24→16, 32→24) descontando 1,5 GiB para KV-cache e ativações.",
+    "Sobre os modelos convertidos")}<span class="infoBadge"><button type="button" class="infoBtn" data-info-toggle aria-expanded="false" aria-label="Sobre a tabela por bits" title="Sobre a tabela por bits">ⓘ</button><span class="infoPop" hidden role="note"><p>A tabela por largura de bits é PROJETADA: recalcula apenas o estágio base com cada largura hipotética (mantendo o overhead de escala por grupo) e soma o passthrough real, que não é quantizado. A linha <code>medido</code> é a residência real da conversão.</p><p>1–2 bits uniformes NÃO preservam qualidade neste projeto: medido em ternário PPL 41,5M e em INT2 PPL 22k, contra 49,1 do original. A escada de codecs só desce de bits nos tensores em que o gate de qualidade aprova.</p></span></span></div>
+    <div class="measureCharts">${cards}</div>`;
+}
+
 function renderMeasurementCharts(){
   const root=$("measurementCharts");
   if(!root)return;
@@ -1211,12 +1293,13 @@ function wireSeriesButtons(){
 // código/URL (§26.4); HF_TOKEN (ESCRITA) e RIFT_INGEST_TOKEN vêm dos Secrets.
 // -----------------------------------------------------------------------------
 const HF_REPO_PATTERN=/^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9_.-]+$/;
-function buildConverterCell(model,hfRepo,publish){
+function buildConverterCell(model,hfRepo,publish,keepSource){
   const repo=String(hfRepo||"").trim();
   const path=String(model||"").trim().split("/").map(encodeURIComponent).join("/");
   const params=new URLSearchParams();
   if(repo)params.set("hf_repo",repo);
   params.set("publish",publish?"on":"off");
+  if(keepSource)params.set("keep_source","on");
   const lines=[
     "# Observatório LLM — conversor de modelos (célula curta)",
     "from google.colab import userdata",
@@ -1264,12 +1347,13 @@ async function copyConverterCell(){
     return;
   }
   const publish=Boolean($("converterPublishInput")?.checked);
-  const code=buildConverterCell(model,hfRepo,publish);
+  const keepSource=Boolean($("converterKeepSourceInput")?.checked);
+  const code=buildConverterCell(model,hfRepo,publish,keepSource);
   const oldLabel=btn?btn.textContent:"";
   try{
     await navigator.clipboard.writeText(code);
     if(btn){btn.textContent="Copiado! Cole no Colab";btn.disabled=true;setTimeout(()=>{btn.disabled=false;btn.textContent=oldLabel},2500)}
-    if(status){status.innerHTML=`✅ Célula do conversor copiada para <strong>${esc(model)}</strong>${hfRepo?` → upload em <strong>${esc(hfRepo)}</strong> (exige Secret HF_TOKEN de ESCRITA)`:" (sem upload — repo de destino vazio)"} • publish=${publish?"on (exige Secret RIFT_INGEST_TOKEN)":"off"}. Cole no Colab (Ctrl+V / ⌘V).`;status.className="note good"}
+    if(status){status.innerHTML=`✅ Célula do conversor copiada para <strong>${esc(model)}</strong>${hfRepo?` → upload em <strong>${esc(hfRepo)}</strong> (exige Secret HF_TOKEN de ESCRITA)`:" (sem upload — repo de destino vazio)"} • publish=${publish?"on (exige Secret RIFT_INGEST_TOKEN)":"off"}${keepSource?" • keep_source=on (bundle depende do checkpoint de origem)":""}. Cole no Colab (Ctrl+V / ⌘V).`;status.className="note good"}
   }catch(err){
     if($("commandOutput"))$("commandOutput").textContent=code;
     const details=document.querySelector(".launcherDisclosure");
@@ -1694,7 +1778,7 @@ $("batteries").innerHTML=!state.selectedModels.length
   :(selectedRows.length
     ?groupRowsByModel(selectedRows).map(renderModelGroup).join("")
     :'<div class="card empty">Os modelos selecionados na comparação não têm baterias que correspondam aos filtros atuais (ou ainda não publicaram registros).</div>');
-renderModelList(rows);renderTable(rows);renderRanking();renderCompare();renderTokSeries();renderMeasurementCharts();renderCapabilities();
+renderModelList(rows);renderTable(rows);renderRanking();renderCompare();renderTokSeries();renderMeasurementCharts();renderConvertedModels();renderCapabilities();
 const overlay=$("compareModalOverlay");if(overlay&&!overlay.hidden)renderCompareModal()}
 
 function normalizeModelInput(value){const raw=String(value||"").trim();try{const url=new URL(raw);if(!["huggingface.co","www.huggingface.co"].includes(url.hostname.toLowerCase()))throw new Error();const parts=url.pathname.split("/").filter(Boolean);if(parts.length<2)throw new Error();return `${parts[0]}/${parts[1]}`}catch{if(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(raw))return raw;return null}}

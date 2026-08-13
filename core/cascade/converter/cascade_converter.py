@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import hashlib
 import json
 import math
@@ -198,6 +199,38 @@ def quality_pass(m: Dict[str, float], cosine_min: float, nrmse_max: float) -> bo
     return m["cosine"] >= cosine_min and m["nrmse"] <= nrmse_max
 
 
+# Margem do early-abort do F1: só desiste quando a energia capturada fica
+# claramente abaixo do necessário (1.00 = exatamente no limite teórico). O
+# vínculo cosseno usa 1-cos ~ nrmse^2/2, que é aproximação de 2ª ordem — a
+# margem existe para essa aproximação nunca descartar um tensor resgatável.
+F1_ENERGY_SAFETY = 0.75
+
+
+def required_capture_fraction(
+    m: Dict[str, float], cosine_min: float, nrmse_max: float
+) -> float:
+    """
+    Fração MÍNIMA da energia do resíduo que o F1 precisa capturar para o tensor
+    ter chance de passar o gate. Derivada do próprio gate, sem constante mágica:
+
+      nrmse  : ||E'|| <= (nrmse_max/nrmse_f0)·||E||  ->  1 - (razão)^2   [exato]
+      cosseno: (1-cos) escala com ||E||^2            ->  1 - (1-cos_min)/(1-cos_f0)
+
+    O gate exige as duas condições, então vale o maior dos dois pisos. Zero
+    significa "o F0 já satisfaz esta métrica": nesse caso o F1 não é obrigado a
+    capturar nada por ela.
+    """
+    need = 0.0
+    nrmse = float(m.get("nrmse") or 0.0)
+    if nrmse_max > 0 and nrmse > nrmse_max:
+        need = max(need, 1.0 - (nrmse_max / nrmse) ** 2)
+    gap_f0 = 1.0 - float(m.get("cosine") or 0.0)
+    gap_gate = 1.0 - float(cosine_min)
+    if gap_f0 > 0 and gap_gate < gap_f0:
+        need = max(need, 1.0 - max(gap_gate, 0.0) / gap_f0)
+    return min(max(need, 0.0), 1.0)
+
+
 # ------------------------------------------------------------------------------
 # Source descriptors
 # ------------------------------------------------------------------------------
@@ -283,6 +316,143 @@ class NPZSource(Source):
             a = np.asarray(z[desc.name])
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.write_bytes(a.tobytes(order="C"))
+
+
+# ------------------------------------------------------------------------------
+# GGUF source (streaming por blocos de linhas)
+# ------------------------------------------------------------------------------
+
+def _require_gguf():
+    try:
+        import gguf  # type: ignore
+    except ImportError:
+        raise SystemExit(
+            "Entrada .gguf exige o pacote 'gguf'. Instale com:\n"
+            "    pip install 'gguf>=0.10,<1'"
+        )
+    return gguf
+
+
+class GGUFSource(Source):
+    """
+    Lê checkpoints GGUF (llama.cpp) SEM materializar o tensor inteiro.
+
+    A quantização do ggml é por blocos ao longo de ne0 (a dimensão contígua) e
+    nenhum bloco cruza a fronteira de uma linha lógica, então é possível
+    desquantizar apenas a faixa de linhas pedida por iter_rows(). O pico de RAM
+    fica em chunk_rows x cols x 4 bytes, e não no tensor completo — é a
+    diferença entre ~2 MB e vários GB numa embedding grande.
+
+    Orientação: o ggml guarda shape como [ne0, ne1] com ne0 contíguo; a matriz
+    lógica (linhas, colunas) é o shape invertido.
+    """
+
+    def __init__(self, path: Path, model_id: Optional[str] = None):
+        self.gguf = _require_gguf()
+        self.path = path
+        self.model_id = model_id or path.stem
+        self._reader = self.gguf.GGUFReader(str(path))
+        self._by_name: Dict[str, Any] = {}
+        self._descs: List[TensorDesc] = []
+        for t in self._reader.tensors:
+            shape = [int(x) for x in t.shape]
+            if len(shape) == 2:
+                logical = [shape[1], shape[0]]  # (rows, cols) = shape invertido
+            else:
+                logical = shape
+            self._by_name[t.name] = t
+            self._descs.append(
+                TensorDesc(
+                    name=t.name,
+                    shape=logical,
+                    dtype=f"GGUF_{t.tensor_type.name}",
+                    nbytes=int(np.asarray(t.data).nbytes),
+                    source_file=str(path),
+                    source_kind="gguf",
+                )
+            )
+
+    def tensors(self) -> List[TensorDesc]:
+        return self._descs
+
+    def metadata(self) -> Dict[str, Any]:
+        """Campos escalares do KV do GGUF (arrays grandes, como o tokenizer,
+        ficam de fora para o sidecar não explodir)."""
+        out: Dict[str, Any] = {}
+        for key, field in self._reader.fields.items():
+            name = key if isinstance(key, str) else str(key)
+            try:
+                parts = field.parts[-1]
+                if len(parts) == 1:
+                    value = parts[0]
+                    out[name] = int(value) if float(value).is_integer() else float(value)
+            except Exception:
+                continue
+        return out
+
+    def _raw_rows(self, desc: TensorDesc):
+        """Vista (rows, bytes_por_linha) do payload bruto do tensor."""
+        t = self._by_name[desc.name]
+        rows = int(desc.shape[0])
+        raw = np.asarray(t.data)
+        flat = raw.reshape(-1)
+        if flat.nbytes % rows:
+            raise ValueError(
+                f"payload de {desc.name} não divide por {rows} linhas "
+                f"({flat.nbytes} bytes) — streaming por linha indisponível"
+            )
+        per_row = flat.size // rows
+        return t, flat.reshape(rows, per_row)
+
+    def iter_rows(self, desc: TensorDesc, chunk_rows: int):
+        if desc.ndim != 2:
+            raise ValueError("iter_rows suporta somente tensor 2D")
+        t, view = self._raw_rows(desc)
+        rows, cols = int(desc.shape[0]), int(desc.shape[1])
+        qtype = t.tensor_type
+        gg = self.gguf
+        simple = {
+            gg.GGMLQuantizationType.F32: np.float32,
+            gg.GGMLQuantizationType.F16: np.float16,
+        }
+        for start in range(0, rows, chunk_rows):
+            end = min(start + chunk_rows, rows)
+            block = view[start:end]
+            if qtype in simple:
+                w = np.asarray(block, dtype=np.float32).reshape(end - start, cols)
+            elif qtype == gg.GGMLQuantizationType.BF16:
+                u = np.ascontiguousarray(block).view(np.uint16).astype(np.uint32)
+                w = (u << 16).view(np.float32).reshape(end - start, cols)
+            else:
+                deq = gg.dequantize(np.ascontiguousarray(block), qtype)
+                w = np.asarray(deq, dtype=np.float32).reshape(end - start, cols)
+            yield start, w
+            del block, w
+
+    def copy_raw_tensor(self, desc: TensorDesc, dst: Path) -> None:
+        """
+        Passthrough exato: copia os bytes do bloco GGUF como estão. O
+        `source_dtype` do estágio (GGUF_<QTYPE>) diz ao leitor como decodificar.
+
+        A cópia é EM BLOCOS a partir do memmap do reader: materializar o tensor
+        inteiro (`.tobytes()`) estourava a RAM em token_embd/output.weight de
+        modelos grandes (~1 GB no arquivo, 2x em pico).
+        """
+        t = self._by_name[desc.name]
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        flat = np.asarray(t.data).reshape(-1).view(np.uint8)
+        step = max(1, (8 * 1024 * 1024) // max(flat.itemsize, 1))
+        with dst.open("wb") as f:
+            for start in range(0, flat.size, step):
+                f.write(flat[start:start + step].tobytes())
+
+    def copy_sidecars(self, output_dir: Path) -> List[str]:
+        meta = self.metadata()
+        if not meta:
+            return []
+        target = output_dir / "gguf_metadata.json"
+        json_dump_atomic(target, {"source_gguf": str(self.path), "kv": meta})
+        return [target.name]
 
 
 # ------------------------------------------------------------------------------
@@ -423,6 +593,83 @@ class SafeTensorSource(Source):
 # INT4 F0
 # ------------------------------------------------------------------------------
 
+def quantize_int2_rows(
+    x: np.ndarray, group_size: int
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    INT2 groupwise ASSIMÉTRICO (min-max, 4 níveis) — mesmo esquema do ZDC do
+    GEYSER: w ~= q*scale + wmin, q em {0,1,2,3}, escala e mínimo FP16 por grupo
+    (2 + 32/group bits por peso). Assimétrico porque com só 4 níveis um
+    quantizador simétrico desperdiça faixa em grupos não centrados em zero.
+
+    Retorna packed uint8 (4 códigos/byte), scales FP16, mins FP16, recon FP32.
+    """
+    x = np.asarray(x, dtype=np.float32)
+    rows, cols = x.shape
+    groups = math.ceil(cols / group_size)
+    padded_cols = groups * group_size
+
+    if padded_cols != cols:
+        xp = np.pad(x, ((0, 0), (0, padded_cols - cols)))
+    else:
+        xp = x
+
+    g = xp.reshape(rows, groups, group_size)
+    wmin32 = g.min(axis=2)
+    wmax32 = g.max(axis=2)
+    scale32 = (wmax32 - wmin32) / 3.0
+    scale32[scale32 <= 0] = 1.0
+
+    # Quantiza contra os valores EXATOS que serão gravados (FP16).
+    scales16 = scale32.astype(np.float16)
+    mins16 = wmin32.astype(np.float16)
+    scales = scales16.astype(np.float32)
+    mins = mins16.astype(np.float32)
+    scales[scales == 0] = 1.0
+
+    q = np.rint((g - mins[:, :, None]) / scales[:, :, None]).clip(0, 3).astype(np.uint8)
+    qflat = q.reshape(rows, padded_cols)
+
+    packed_cols = math.ceil(cols / 4)
+    pad4 = packed_cols * 4 - cols
+    codes = qflat[:, :cols]
+    if pad4:
+        codes = np.pad(codes, ((0, 0), (0, pad4)))
+    c = codes.reshape(rows, packed_cols, 4)
+    packed = (c[:, :, 0] | (c[:, :, 1] << 2) | (c[:, :, 2] << 4) | (c[:, :, 3] << 6)).astype(np.uint8)
+
+    recon_groups = q.astype(np.float32) * scales[:, :, None] + mins[:, :, None]
+    recon = recon_groups.reshape(rows, padded_cols)[:, :cols]
+    return packed, scales16, mins16, recon
+
+
+def dequant_int2_rows(
+    packed: np.ndarray,
+    scales16: np.ndarray,
+    mins16: np.ndarray,
+    cols: int,
+    group_size: int,
+) -> np.ndarray:
+    rows = packed.shape[0]
+    wide = packed.shape[1] * 4
+    codes = np.empty((rows, wide), dtype=np.uint8)
+    codes[:, 0::4] = packed & 0x03
+    codes[:, 1::4] = (packed >> 2) & 0x03
+    codes[:, 2::4] = (packed >> 4) & 0x03
+    codes[:, 3::4] = (packed >> 6) & 0x03
+    codes = codes[:, :cols]
+
+    groups = math.ceil(cols / group_size)
+    padded_cols = groups * group_size
+    if padded_cols != cols:
+        codes = np.pad(codes, ((0, 0), (0, padded_cols - cols)))
+    qg = codes.reshape(rows, groups, group_size).astype(np.float32)
+    scales = scales16.astype(np.float32)
+    mins = mins16.astype(np.float32)
+    recon = qg * scales[:, :, None] + mins[:, :, None]
+    return recon.reshape(rows, padded_cols)[:, :cols]
+
+
 def quantize_int4_rows(x: np.ndarray, group_size: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Signed two's-complement INT4, groupwise on last dimension.
@@ -491,60 +738,145 @@ def dequant_int4_rows(
     return recon.reshape(rows, padded_cols)[:, :cols]
 
 
+@dataclass(frozen=True)
+class F0Codec:
+    """Codec do estágio base. `overhead_bits` são os bits de metadado por grupo
+    (escala FP16, mais o mínimo FP16 quando o codec é assimétrico)."""
+    name: str
+    bits: int
+    representation: str
+    packed_file: str
+    has_mins: bool
+
+    @property
+    def overhead_bits(self) -> int:
+        return 32 if self.has_mins else 16
+
+    def bpw(self, group_size: int) -> float:
+        return self.bits + self.overhead_bits / float(group_size)
+
+    def packed_row_bytes(self, cols: int) -> int:
+        per_byte = 8 // self.bits
+        return math.ceil(cols / per_byte)
+
+
+F0_CODECS: Dict[str, F0Codec] = {
+    "int4": F0Codec(
+        "int4", 4, "INT4_GROUP_SYMMETRIC_TWOS_COMPLEMENT", "f0.int4", False
+    ),
+    "int2": F0Codec(
+        "int2", 2, "INT2_GROUP_ASYMMETRIC_MINMAX", "f0.int2", True
+    ),
+}
+
+
 def write_f0(
     source: Source,
     desc: TensorDesc,
     out_dir: Path,
     group_size: int,
     chunk_rows: int,
+    codec: F0Codec = F0_CODECS["int4"],
 ) -> Tuple[Dict[str, Any], Dict[str, float]]:
     rows, cols = desc.shape
     groups = math.ceil(cols / group_size)
-    packed_cols = math.ceil(cols / 2)
 
-    packed_path = out_dir / "f0.int4"
+    packed_path = out_dir / codec.packed_file
     scales_path = out_dir / "f0.scales.f16"
+    mins_path = out_dir / "f0.mins.f16"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     metrics = Metrics()
-    with packed_path.open("wb") as fp, scales_path.open("wb") as fs:
+    handles = [packed_path.open("wb"), scales_path.open("wb")]
+    if codec.has_mins:
+        handles.append(mins_path.open("wb"))
+    try:
+        fp, fs = handles[0], handles[1]
+        fm = handles[2] if codec.has_mins else None
         for _, w in source.iter_rows(desc, chunk_rows):
-            packed, scales16, recon = quantize_int4_rows(w, group_size)
+            if codec.name == "int2":
+                packed, scales16, mins16, recon = quantize_int2_rows(w, group_size)
+                fm.write(mins16.tobytes(order="C"))
+            else:
+                packed, scales16, recon = quantize_int4_rows(w, group_size)
             fp.write(packed.tobytes(order="C"))
             fs.write(scales16.tobytes(order="C"))
             metrics.update(w, recon)
+            del packed, scales16, recon, w
+    finally:
+        for h in handles:
+            h.close()
+
+    files = {"packed": packed_path.name, "scales": scales_path.name}
+    digests = {"packed": sha256_file(packed_path), "scales": sha256_file(scales_path)}
+    total = packed_path.stat().st_size + scales_path.stat().st_size
+    if codec.has_mins:
+        files["mins"] = mins_path.name
+        digests["mins"] = sha256_file(mins_path)
+        total += mins_path.stat().st_size
 
     meta = {
         "stage_index": 0,
         "stage_type": "BASE_STAGE",
-        "representation": "INT4_GROUP_SYMMETRIC_TWOS_COMPLEMENT",
+        "representation": codec.representation,
+        "codec": codec.name,
+        "bits": codec.bits,
         "group_size": group_size,
+        "effective_bits_per_weight": round(codec.bpw(group_size), 4),
         "shape": [rows, cols],
-        "packed_row_bytes": packed_cols,
+        "packed_row_bytes": codec.packed_row_bytes(cols),
         "scale_groups_per_row": groups,
         "scale_dtype": "FP16",
         "resident_hint": "HOT",
-        "files": {
-            "packed": str(packed_path.name),
-            "scales": str(scales_path.name),
-        },
-        "bytes": packed_path.stat().st_size + scales_path.stat().st_size,
-        "sha256": {
-            "packed": sha256_file(packed_path),
-            "scales": sha256_file(scales_path),
-        },
+        "files": files,
+        "bytes": total,
+        "sha256": digests,
     }
     return meta, metrics.result()
 
 
-def open_f0_memmaps(out_dir: Path, rows: int, cols: int, group_size: int):
-    packed_cols = math.ceil(cols / 2)
+def open_f0_memmaps(
+    out_dir: Path,
+    rows: int,
+    cols: int,
+    group_size: int,
+    codec: F0Codec = F0_CODECS["int4"],
+) -> Dict[str, np.ndarray]:
     groups = math.ceil(cols / group_size)
-    packed = np.memmap(out_dir / "f0.int4", dtype=np.uint8, mode="r",
-                       shape=(rows, packed_cols))
-    scales = np.memmap(out_dir / "f0.scales.f16", dtype=np.float16, mode="r",
-                       shape=(rows, groups))
-    return packed, scales
+    maps = {
+        "packed": np.memmap(
+            out_dir / codec.packed_file, dtype=np.uint8, mode="r",
+            shape=(rows, codec.packed_row_bytes(cols)),
+        ),
+        "scales": np.memmap(
+            out_dir / "f0.scales.f16", dtype=np.float16, mode="r",
+            shape=(rows, groups),
+        ),
+    }
+    if codec.has_mins:
+        maps["mins"] = np.memmap(
+            out_dir / "f0.mins.f16", dtype=np.float16, mode="r",
+            shape=(rows, groups),
+        )
+    return maps
+
+
+def dequant_f0_chunk(
+    maps: Dict[str, np.ndarray],
+    start: int,
+    end: int,
+    cols: int,
+    group_size: int,
+    codec: F0Codec,
+) -> np.ndarray:
+    if codec.name == "int2":
+        return dequant_int2_rows(
+            maps["packed"][start:end], maps["scales"][start:end],
+            maps["mins"][start:end], cols, group_size,
+        )
+    return dequant_int4_rows(
+        maps["packed"][start:end], maps["scales"][start:end], cols, group_size
+    )
 
 
 # ------------------------------------------------------------------------------
@@ -553,12 +885,14 @@ def open_f0_memmaps(out_dir: Path, rows: int, cols: int, group_size: int):
 
 def residual_chunk(
     source_chunk: np.ndarray,
-    packed_chunk: np.ndarray,
-    scales_chunk: np.ndarray,
+    maps: Dict[str, np.ndarray],
+    start: int,
+    end: int,
     cols: int,
     group_size: int,
+    codec: F0Codec,
 ) -> np.ndarray:
-    f0 = dequant_int4_rows(packed_chunk, scales_chunk, cols, group_size)
+    f0 = dequant_f0_chunk(maps, start, end, cols, group_size, codec)
     return source_chunk - f0
 
 
@@ -572,23 +906,26 @@ def randomized_residual_factors(
     oversample: int,
     power_iters: int,
     seed: int,
+    codec: F0Codec = F0_CODECS["int4"],
 ) -> Tuple[np.ndarray, np.ndarray]:
     rows, cols = desc.shape
     l = min(max_rank + oversample, rows, cols)
     if l <= 0:
         raise ValueError("rank inválido")
 
-    packed, scales = open_f0_memmaps(out_dir, rows, cols, group_size)
+    maps = open_f0_memmaps(out_dir, rows, cols, group_size, codec)
+    residual_energy = 0.0  # ||R||_F^2 acumulado no 1º passe (custo zero)
     rng = np.random.default_rng(seed)
     omega = rng.standard_normal((cols, l), dtype=np.float32) / math.sqrt(max(cols, 1))
 
     y_path = out_dir / ".tmp_random_projection.f32"
     y = np.memmap(y_path, dtype=np.float32, mode="w+", shape=(rows, l))
 
-    # Y = R @ Omega
+    # Y = R @ Omega (e a energia total do resíduo, de graça no mesmo passe)
     for start, w in source.iter_rows(desc, chunk_rows):
         end = start + w.shape[0]
-        r = residual_chunk(w, packed[start:end], scales[start:end], cols, group_size)
+        r = residual_chunk(w, maps, start, end, cols, group_size, codec)
+        residual_energy += float(np.dot(r.reshape(-1), r.reshape(-1)))
         y[start:end] = r @ omega
     y.flush()
 
@@ -600,12 +937,12 @@ def randomized_residual_factors(
         z = np.zeros((cols, q.shape[1]), dtype=np.float32)
         for start, w in source.iter_rows(desc, chunk_rows):
             end = start + w.shape[0]
-            r = residual_chunk(w, packed[start:end], scales[start:end], cols, group_size)
+            r = residual_chunk(w, maps, start, end, cols, group_size, codec)
             z += r.T @ q[start:end]
 
         for start, w in source.iter_rows(desc, chunk_rows):
             end = start + w.shape[0]
-            r = residual_chunk(w, packed[start:end], scales[start:end], cols, group_size)
+            r = residual_chunk(w, maps, start, end, cols, group_size, codec)
             y[start:end] = r @ z
         y.flush()
         q, _ = np.linalg.qr(np.asarray(y), mode="reduced")
@@ -615,7 +952,7 @@ def randomized_residual_factors(
     b = np.zeros((q.shape[1], cols), dtype=np.float32)
     for start, w in source.iter_rows(desc, chunk_rows):
         end = start + w.shape[0]
-        r = residual_chunk(w, packed[start:end], scales[start:end], cols, group_size)
+        r = residual_chunk(w, maps, start, end, cols, group_size, codec)
         b += q[start:end].T @ r
 
     uhat, s, vh = np.linalg.svd(b, full_matrices=False)
@@ -630,7 +967,21 @@ def randomized_residual_factors(
     except Exception:
         pass
 
-    return np.asarray(u, dtype=np.float32), np.asarray(v, dtype=np.float32)
+    # Fração da energia do resíduo capturada pelos rmax primeiros valores
+    # singulares. Perto de zero => o resíduo NÃO é low-rank e nenhum rank
+    # disponível vai fechar o gate (medido no Glimmer: rank 8->32 não moveu o
+    # cosine de attn_output). Serve de early-abort do F1.
+    captured = float(np.dot(s[:rmax], s[:rmax])) if rmax else 0.0
+    info = {
+        "residual_energy": residual_energy,
+        "captured_energy": captured,
+        "captured_fraction": (
+            float(captured / residual_energy) if residual_energy > 0 else 0.0
+        ),
+        "max_rank": int(rmax),
+        "top_singular_values": [float(x) for x in s[: min(4, len(s))]],
+    }
+    return np.asarray(u, dtype=np.float32), np.asarray(v, dtype=np.float32), info
 
 
 def evaluate_rank_candidates(
@@ -642,9 +993,10 @@ def evaluate_rank_candidates(
     u: np.ndarray,
     v: np.ndarray,
     ranks: Sequence[int],
+    codec: F0Codec = F0_CODECS["int4"],
 ) -> Dict[int, Dict[str, float]]:
     rows, cols = desc.shape
-    packed, scales = open_f0_memmaps(out_dir, rows, cols, group_size)
+    maps = open_f0_memmaps(out_dir, rows, cols, group_size, codec)
 
     # Evaluate what will actually be stored: FP16 factors.
     uq = u.astype(np.float16).astype(np.float32)
@@ -657,7 +1009,7 @@ def evaluate_rank_candidates(
 
     for start, w in source.iter_rows(desc, chunk_rows):
         end = start + w.shape[0]
-        pred = dequant_int4_rows(packed[start:end], scales[start:end], cols, group_size)
+        pred = dequant_f0_chunk(maps, start, end, cols, group_size, codec)
         prev = 0
         for r in ranks2:
             pred = pred + uq[start:end, prev:r] @ vq[:, prev:r].T
@@ -695,6 +1047,33 @@ def write_f1(
 # ------------------------------------------------------------------------------
 # Raw passthrough
 # ------------------------------------------------------------------------------
+
+def write_external_stage(desc: TensorDesc, reason: str) -> Dict[str, Any]:
+    """
+    Estágio SEM cópia: o tensor continua vivo APENAS no checkpoint de origem.
+    Economiza disco e RAM de cópia (token_embd/output.weight de modelo grande
+    estouravam a memória), mas o bundle passa a DEPENDER do arquivo de origem —
+    registrado em `requires_source_file` e no resumo do manifesto.
+
+    Atenção: economiza DISCO, não RAM de execução. `external_bytes` entra no
+    residente (HOT) do relatório de residência, porque o peso continua sendo
+    necessário para rodar o modelo.
+    """
+    return {
+        "stage_index": 0,
+        "stage_type": "FULL_STAGE",
+        "representation": "SOURCE_EXTERNAL",
+        "source_dtype": desc.dtype,
+        "shape": desc.shape,
+        "resident_hint": "HOT",
+        "files": {},
+        "bytes": 0,
+        "external_bytes": int(desc.nbytes),
+        "requires_source_file": True,
+        "source_file": desc.source_file,
+        "reason": reason,
+    }
+
 
 def write_raw_stage(source: Source, desc: TensorDesc, out_dir: Path, reason: str):
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -757,15 +1136,299 @@ def eligible_matrix(
 # Converter
 # ------------------------------------------------------------------------------
 
+# Escadas de codec (cheapest-first). Cada degrau é (codec, group_size); o
+# primeiro que passa o gate de qualidade é o escolhido, e só se TODOS falharem
+# o tensor cai em passthrough exato (16 bpw).
+LADDERS: Dict[str, List[Tuple[str, int]]] = {
+    # Sem risco de regressão: mesmo primeiro degrau de sempre (int4/g64) e um
+    # degrau de resgate mais fino antes do raw — troca 16 bpw por 4.5 bpw nos
+    # tensores que hoje caem em raw.
+    "safe": [("int4", 64), ("int4", 32)],
+    # Máxima compressão para o alvo de 8 GB: tenta 2 bits primeiro (2.5 bpw) e
+    # só sobe quando o gate reprova.
+    "compact": [("int2", 64), ("int4", 64), ("int4", 32)],
+    # Compatibilidade estrita com o comportamento anterior a esta versão.
+    "int4": [("int4", 64)],
+}
+
+
+# Fonte já comprimida em baixa precisão: qualquer quant do ggml que não seja
+# F32/F16/BF16. Nesses checkpoints o INT2 medido fica em cosine ~0.91-0.92 e
+# NUNCA passa o gate — tentar é tempo morto.
+LOW_BIT_SOURCE_RE = re.compile(r"^GGUF_(?!F32$|F16$|BF16$)", re.IGNORECASE)
+
+
+def source_is_low_bit(desc: Optional[TensorDesc]) -> bool:
+    return bool(desc and LOW_BIT_SOURCE_RE.match(str(desc.dtype or "")))
+
+
+def resolve_ladder_mode(args, desc: Optional[TensorDesc] = None) -> str:
+    """
+    'auto' escolhe a escada pelo tipo da FONTE:
+      fonte já low-bit (IQ2/Q4_K/...) -> 'safe'    (não tenta int2)
+      fonte BF16/F16/F32              -> 'compact' (int2 vale a tentativa,
+                                                    porque o raw custa 16 bpw)
+    """
+    mode = getattr(args, "codec_ladder", "auto")
+    if mode != "auto":
+        return mode
+    return "safe" if source_is_low_bit(desc) else "compact"
+
+
+def ladder_rungs(args, desc: Optional[TensorDesc] = None) -> List[Tuple[str, int]]:
+    """Degraus da escada, com o --group-size do usuário respeitado no 1º degrau."""
+    mode = resolve_ladder_mode(args, desc)
+    rungs = [tuple(r) for r in LADDERS[mode]]
+    user_group = int(getattr(args, "group_size", 64))
+    first_codec = rungs[0][0]
+    rungs[0] = (first_codec, user_group)
+    out: List[Tuple[str, int]] = []
+    for rung in rungs:
+        if rung not in out:
+            out.append(rung)  # type: ignore[arg-type]
+    return out
+
+
+def projected_f0_bytes(desc: TensorDesc, codec: "F0Codec", group_size: int) -> int:
+    """Bytes do estágio base antes de escrevê-lo (packed + escalas + mínimos)."""
+    rows, cols = int(desc.shape[0]), int(desc.shape[1])
+    groups = math.ceil(cols / group_size)
+    meta_per_group = 4 if codec.has_mins else 2
+    return rows * codec.packed_row_bytes(cols) + rows * groups * meta_per_group
+
+
+def adaptive_chunk_rows(desc: TensorDesc, chunk_rows: int, ram_budget_mb: float) -> int:
+    """
+    Limita a fatia de linhas para o pico de RAM por chunk ficar dentro do
+    orçamento. O pico por fatia é ~ linhas x colunas x 4 bytes (float32) e o
+    pipeline mantém ~3 fatias vivas (fonte, reconstrução, resíduo).
+    """
+    if desc.ndim != 2 or ram_budget_mb <= 0:
+        return chunk_rows
+    cols = max(int(desc.shape[1]), 1)
+    per_row = cols * 4 * 3
+    budget = int(ram_budget_mb * 1024 * 1024)
+    allowed = max(budget // max(per_row, 1), 8)
+    return int(min(chunk_rows, allowed))
+
+
+# Reserva para KV-cache, ativações e runtime no veredito de residência.
+RUNTIME_RESERVE_BYTES = int(1.5 * 1024 ** 3)
+
+# Reserva para SO e aplicativos do usuário ao derivar o orçamento da máquina.
+OS_RESERVE_BYTES = 8 * 1024 ** 3
+
+# Larguras de bits do relatório de RAM (estilo cartão de modelo do Hugging
+# Face). fp16 entra como referência do peso original.
+REPORT_BIT_WIDTHS = (1, 2, 3, 4, 5, 6, 8, 16)
+
+
+def detect_total_ram_bytes() -> Optional[int]:
+    """RAM física total, sem dependências novas. None se indetectável."""
+    try:  # Linux / Colab
+        with open("/proc/meminfo", "r", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("MemTotal:"):
+                    return int(line.split()[1]) * 1024
+    except Exception:
+        pass
+    try:  # POSIX genérico (macOS incluído)
+        pages = os.sysconf("SC_PHYS_PAGES")
+        page = os.sysconf("SC_PAGE_SIZE")
+        if pages > 0 and page > 0:
+            return int(pages) * int(page)
+    except Exception:
+        pass
+    if sys.platform == "win32":  # Windows: GlobalMemoryStatusEx
+        try:
+            import ctypes
+
+            class _MemStatus(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_ulong),
+                    ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong),
+                    ("ullTotalPageFile", ctypes.c_ulonglong),
+                    ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong),
+                    ("ullAvailVirtual", ctypes.c_ulonglong),
+                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+                ]
+
+            st = _MemStatus()
+            st.dwLength = ctypes.sizeof(_MemStatus)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st)):
+                return int(st.ullTotalPhys)
+        except Exception:
+            pass
+    return None
+
+
+def auto_target_ram_bytes(total_ram_bytes: Optional[int]) -> Tuple[int, str]:
+    """
+    Orçamento do MODELO derivado da máquina: total menos 8 GiB para SO e
+    aplicativos, com piso de 50% do total para não zerar em máquinas pequenas.
+
+        16 GiB -> 8 GiB    24 GiB -> 16 GiB    32 GiB -> 24 GiB
+         8 GiB -> 4 GiB (piso de 50%)
+
+    Sem detecção, cai no alvo canônico do projeto (8 GiB livres).
+    """
+    if not total_ram_bytes or total_ram_bytes <= 0:
+        return 8 * 1024 ** 3, "default_conventional_8gb"
+    budget = max(total_ram_bytes - OS_RESERVE_BYTES, total_ram_bytes // 2)
+    return int(budget), "auto_total_minus_os_reserve"
+
+
+def memory_by_bits(
+    tensors: Sequence[Dict[str, Any]], target_bytes: int
+) -> List[Dict[str, Any]]:
+    """
+    Tabela "RAM por largura de bits" no estilo dos cartões de modelo do Hugging
+    Face. PROJEÇÃO: recalcula só o estágio base dos tensores convertidos com
+    cada largura hipotética (mantendo o overhead de escala por grupo) e soma o
+    passthrough REAL, que não é quantizado.
+    """
+    quantized_elements = 0
+    quantized_groups = 0
+    passthrough_bytes = 0
+    for rec in tensors:
+        for stage in rec.get("stages") or []:
+            if stage.get("representation") == "SOURCE_RAW":
+                passthrough_bytes += int(stage.get("bytes") or 0)
+                continue
+            if int(stage.get("stage_index", 0)) != 0:
+                continue
+            shape = stage.get("shape") or []
+            if len(shape) != 2:
+                continue
+            rows, cols = int(shape[0]), int(shape[1])
+            quantized_elements += rows * cols
+            groups = int(stage.get("scale_groups_per_row") or 0)
+            quantized_groups += rows * groups
+
+    out: List[Dict[str, Any]] = []
+    for bits in REPORT_BIT_WIDTHS:
+        # fp16 é a referência densa: sem grupos, sem overhead de escala.
+        overhead = 0 if bits >= 16 else quantized_groups * 2
+        total = quantized_elements * bits // 8 + overhead + passthrough_bytes
+        out.append({
+            "bits": bits,
+            "label": "fp16" if bits == 16 else f"{bits}-bit",
+            "resident_bytes": int(total),
+            "resident_gib": round(total / 1024 ** 3, 3),
+            "fits_in_target": bool(
+                target_bytes and total <= max(target_bytes - RUNTIME_RESERVE_BYTES, 0)
+            ),
+        })
+    return out
+
+
+def residency_report(
+    tensors: Sequence[Dict[str, Any]],
+    target_ram_gb: float,
+    total_ram_bytes: Optional[int] = None,
+    target_source: str = "explicit_flag",
+) -> Dict[str, Any]:
+    """
+    Onde os bytes vão parar em execução e se o modelo cabe na máquina alvo.
+    F0/raw são residentes (HOT); F1 é refinamento paginável (WARM).
+    """
+    hot = warm = raw = external = 0
+    f0_bits = 0
+    f0_elements = 0
+    rungs: Dict[str, int] = {}
+    for rec in tensors:
+        rung = str((rec.get("ladder") or {}).get("selected_rung") or "n/a")
+        rungs[rung] = rungs.get(rung, 0) + 1
+        for stage in rec.get("stages") or []:
+            nbytes = int(stage.get("bytes") or 0)
+            if stage.get("representation") == "SOURCE_EXTERNAL":
+                # Não ocupa disco no bundle, mas o peso continua tendo de estar
+                # em RAM para rodar: conta como residente (HOT).
+                ext = int(stage.get("external_bytes") or 0)
+                external += ext
+                raw += ext
+                hot += ext
+            elif stage.get("representation") == "SOURCE_RAW":
+                raw += nbytes
+                hot += nbytes
+            elif int(stage.get("stage_index", 0)) == 0:
+                hot += nbytes
+                shape = stage.get("shape") or []
+                if len(shape) == 2:
+                    elems = int(shape[0]) * int(shape[1])
+                    f0_elements += elems
+                    f0_bits += nbytes * 8
+            else:
+                warm += nbytes
+
+    target_bytes = int(max(target_ram_gb, 0.0) * 1024 ** 3)
+    usable = max(target_bytes - RUNTIME_RESERVE_BYTES, 0)
+    return {
+        "target_ram_gb": round(float(target_ram_gb), 3),
+        "target_source": target_source,
+        "machine_total_ram_bytes": int(total_ram_bytes) if total_ram_bytes else None,
+        "os_reserve_bytes": OS_RESERVE_BYTES if total_ram_bytes else None,
+        "runtime_reserve_bytes": RUNTIME_RESERVE_BYTES,
+        "memory_by_bits": memory_by_bits(tensors, target_bytes),
+        "resident_hot_bytes": int(hot),
+        "pageable_warm_bytes": int(warm),
+        "raw_passthrough_bytes": int(raw),
+        "external_source_bytes": int(external),
+        "bundle_requires_source": bool(external > 0),
+        "all_in_ram_bytes": int(hot + warm),
+        "f0_effective_bits_per_weight": (
+            round(f0_bits / f0_elements, 4) if f0_elements else None
+        ),
+        "fits_resident_in_target": bool(target_bytes and hot <= usable),
+        "fits_all_in_ram_in_target": bool(target_bytes and (hot + warm) <= usable),
+        "selected_rungs": rungs,
+        "note": (
+            "HOT = F0 + passthrough exato (precisa estar residente); WARM = F1 "
+            "(residual paginável). Veredito desconta "
+            f"{RUNTIME_RESERVE_BYTES / 1024 ** 3:.1f} GiB de reserva para "
+            "KV-cache, ativações e runtime."
+        ),
+    }
+
+
+def read_vmrss_bytes() -> Optional[int]:
+    """Pico/RSS atual do processo (Linux/Colab). None onde /proc não existe."""
+    try:
+        with open("/proc/self/status", "r", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) * 1024
+    except Exception:
+        return None
+    return None
+
+
 def make_source(input_path: Path, model_id: Optional[str]) -> Source:
-    if input_path.suffix.lower() == ".npz":
+    suffix = input_path.suffix.lower()
+    if suffix == ".npz":
         return NPZSource(input_path)
+    if suffix == ".gguf":
+        return GGUFSource(input_path, model_id=model_id)
+    if input_path.is_dir():
+        ggufs = sorted(input_path.glob("*.gguf"))
+        safes = sorted(input_path.glob("*.safetensors"))
+        if ggufs and not safes:
+            if len(ggufs) > 1:
+                raise SystemExit(
+                    f"{len(ggufs)} arquivos .gguf em {input_path}; aponte --input "
+                    "para o arquivo desejado (GGUF multi-parte não é suportado)"
+                )
+            return GGUFSource(ggufs[0], model_id=model_id)
     return SafeTensorSource(input_path, model_id=model_id)
 
 
 def cleanup_cascade_stages(tensor_out: Path):
     for name in (
-        "f0.int4", "f0.scales.f16", "f1.u.f16", "f1.v.f16",
+        "f0.int4", "f0.int2", "f0.scales.f16", "f0.mins.f16",
+        "f1.u.f16", "f1.v.f16",
         ".tmp_random_projection.f32"
     ):
         (tensor_out / name).unlink(missing_ok=True)
@@ -787,6 +1450,7 @@ def estimate_tensor_output_peak(
     group_size: int,
     ranks: Sequence[int],
     oversample: int,
+    keep_source: bool = False,
 ) -> int:
     """
     Pior caso de bytes gravados no disco durante a conversão de um tensor:
@@ -794,16 +1458,34 @@ def estimate_tensor_output_peak(
     """
     raw_bytes = int(desc.nbytes)
     if not eligible or desc.ndim != 2:
-        return raw_bytes
+        # Passthrough sem cópia não consome disco na saída.
+        return 0 if keep_source else raw_bytes
     rows, cols = int(desc.shape[0]), int(desc.shape[1])
-    groups = math.ceil(cols / group_size)
-    f0_bytes = rows * math.ceil(cols / 2) + rows * groups * 2
     effective = [r for r in ranks if r <= min(rows, cols)]
     max_rank = max(effective) if effective else 0
     l = min(max_rank + oversample, rows, cols) if max_rank else 0
     tmp_bytes = rows * l * 4
     f1_bytes = (rows + cols) * max_rank * 2
-    return max(raw_bytes, f0_bytes + tmp_bytes + f1_bytes)
+    # Pior caso entre os degraus da escada (um degrau por vez em disco: o
+    # anterior é limpo antes do próximo).
+    worst_f0 = 0
+    for codec_name, gsize in ladder_rungs(args_like(group_size)):
+        codec = F0_CODECS[codec_name]
+        groups = math.ceil(cols / gsize)
+        meta_per_group = 4 if codec.has_mins else 2
+        worst_f0 = max(
+            worst_f0,
+            rows * codec.packed_row_bytes(cols) + rows * groups * meta_per_group,
+        )
+    return max(raw_bytes, worst_f0 + tmp_bytes + f1_bytes)
+
+
+class args_like:
+    """Adaptador mínimo para reaproveitar ladder_rungs na projeção de disco."""
+
+    def __init__(self, group_size: int, mode: str = "compact"):
+        self.group_size = group_size
+        self.codec_ladder = mode
 
 
 def check_disk_budget(
@@ -849,6 +1531,13 @@ def verify_tensor_outputs(tensor_dir: Path, record: Dict[str, Any]) -> bool:
     if not stages:
         return False
     for stage in stages:
+        # SOURCE_EXTERNAL não tem arquivo no bundle por design: verifica-se que
+        # o checkpoint de origem ainda existe.
+        if stage.get("representation") == "SOURCE_EXTERNAL":
+            src = stage.get("source_file")
+            if not src or not Path(str(src)).is_file():
+                return False
+            continue
         files = stage.get("files") or {}
         if not files:
             return False
@@ -1033,99 +1722,206 @@ def convert_tensor(
     }
 
     if not eligible:
-        stage = write_raw_stage(source, desc, tensor_out, reason)
+        if getattr(args, "keep_source_passthrough", False):
+            stage = write_external_stage(desc, reason)
+        else:
+            stage = write_raw_stage(source, desc, tensor_out, reason)
         record["stages"] = [stage]
         record["output_bytes"] = stage["bytes"]
         return record
 
-    # F0
-    f0, f0_metrics = write_f0(
-        source, desc, tensor_out, args.group_size, args.chunk_rows
+    chunk_rows = adaptive_chunk_rows(
+        desc, int(args.chunk_rows), float(getattr(args, "ram_budget_mb", 0.0) or 0.0)
     )
-    record["local_quality"]["f0"] = f0_metrics
+    if chunk_rows != int(args.chunk_rows):
+        record["chunk_rows_effective"] = chunk_rows
 
-    if quality_pass(f0_metrics, args.cosine_min, args.nrmse_max):
-        record["stages"] = [f0]
-        record["output_bytes"] = f0["bytes"]
-        record["gate"] = {
-            "status": "F0_LOCAL_GATE_PASS",
-            "safe_policy": "F0_ONLY",
-        }
-        record["local_quality"]["selected"] = f0_metrics
-        record["local_quality"]["selected_local_pass"] = True
-        return record
-
-    # F1 low-rank
-    effective_ranks = [r for r in ranks if r <= min(desc.shape)]
-    if not effective_ranks:
-        cleanup_cascade_stages(tensor_out)
-        stage = write_raw_stage(source, desc, tensor_out, "rank_not_applicable_fallback")
-        record["stages"] = [stage]
-        record["output_bytes"] = stage["bytes"]
-        record["local_quality"]["selected_local_pass"] = True
-        record["local_quality"]["fallback_exact_raw"] = True
-        return record
-
-    u, v = randomized_residual_factors(
-        source=source,
-        desc=desc,
-        out_dir=tensor_out,
-        group_size=args.group_size,
-        chunk_rows=args.chunk_rows,
-        max_rank=max(effective_ranks),
-        oversample=args.oversample,
-        power_iters=args.power_iters,
-        seed=args.seed + idx,
-    )
-
-    rank_metrics = evaluate_rank_candidates(
-        source=source,
-        desc=desc,
-        out_dir=tensor_out,
-        group_size=args.group_size,
-        chunk_rows=args.chunk_rows,
-        u=u,
-        v=v,
-        ranks=effective_ranks,
-    )
-    record["local_quality"]["rank_candidates"] = {
-        str(k): val for k, val in rank_metrics.items()
+    rungs = ladder_rungs(args, desc)
+    source_bytes = int(desc.nbytes)
+    guard_expansion = not getattr(args, "allow_byte_expansion", False)
+    record["ladder"] = {
+        "mode": resolve_ladder_mode(args, desc),
+        "requested_mode": getattr(args, "codec_ladder", "auto"),
+        "source_low_bit": source_is_low_bit(desc),
+        "rungs": [f"{c}/g{g}" for c, g in rungs],
+        "source_bytes": source_bytes,
+        "attempts": [],
     }
+    effective_ranks = [r for r in ranks if r <= min(desc.shape)]
 
-    chosen = None
-    for r in effective_ranks:
-        m = rank_metrics.get(r)
-        if m and quality_pass(m, args.cosine_min, args.nrmse_max):
-            chosen = r
+    for rung_idx, (codec_name, group_size) in enumerate(rungs):
+        codec = F0_CODECS[codec_name]
+        last_rung = rung_idx == len(rungs) - 1
+        attempt: Dict[str, Any] = {
+            "rung": f"{codec_name}/g{group_size}",
+            "bpw_f0": round(codec.bpw(group_size), 4),
+        }
+
+        # Guarda de expansão: se este degrau já ficaria >= a fonte, ele não
+        # interessa nem passando o gate — o passthrough exato é menor E sem
+        # perda. Como a escada é crescente em bpw, os degraus seguintes também
+        # expandem: vai direto para o raw. (Caso real: fonte GGUF IQ2 ~2.66 bpw
+        # contra INT4/g64 4.25 bpw.)
+        projected = projected_f0_bytes(desc, codec, group_size)
+        if guard_expansion and source_bytes > 0 and projected >= source_bytes:
+            attempt["skipped"] = "projected_byte_expansion"
+            attempt["projected_f0_bytes"] = int(projected)
+            record["ladder"]["attempts"].append(attempt)
+            record["ladder"]["stopped_by"] = "byte_expansion_guard"
             break
 
-    if chosen is None:
-        cleanup_cascade_stages(tensor_out)
-        stage = write_raw_stage(
-            source, desc, tensor_out,
-            "cascade_local_quality_failed_fallback_exact_raw"
+        f0, f0_metrics = write_f0(
+            source, desc, tensor_out, group_size, chunk_rows, codec
         )
-        record["stages"] = [stage]
-        record["output_bytes"] = stage["bytes"]
+        attempt["f0"] = f0_metrics
+        if rung_idx == 0:
+            record["local_quality"]["f0"] = f0_metrics
+
+        if quality_pass(f0_metrics, args.cosine_min, args.nrmse_max):
+            attempt["selected"] = "F0_ONLY"
+            record["ladder"]["attempts"].append(attempt)
+            record["stages"] = [f0]
+            record["output_bytes"] = f0["bytes"]
+            record["gate"] = {"status": "F0_LOCAL_GATE_PASS", "safe_policy": "F0_ONLY"}
+            record["local_quality"]["selected"] = f0_metrics
+            record["local_quality"]["selected_local_pass"] = True
+            record["ladder"]["selected_rung"] = attempt["rung"]
+            return record
+
+        # F1 low-rank sobre este F0. Numa escada, um F0 muito distante do gate
+        # dificilmente é resgatado por rank <= 32: pular o SVD nesse caso evita
+        # trabalho inútil (heurística; --ladder-f0-min-cosine 0 desliga).
+        skip_floor = float(getattr(args, "ladder_f0_min_cosine", 0.0) or 0.0)
+        hopeless = (
+            not last_rung
+            and skip_floor > 0.0
+            and f0_metrics["cosine"] < skip_floor
+        )
+        if not effective_ranks or hopeless:
+            attempt["skipped_f1"] = (
+                "rank_not_applicable" if not effective_ranks else "f0_below_ladder_floor"
+            )
+            record["ladder"]["attempts"].append(attempt)
+            if last_rung:
+                break
+            cleanup_cascade_stages(tensor_out)
+            continue
+
+        u, v, f1_info = randomized_residual_factors(
+            source=source,
+            desc=desc,
+            out_dir=tensor_out,
+            group_size=group_size,
+            chunk_rows=chunk_rows,
+            max_rank=max(effective_ranks),
+            oversample=args.oversample,
+            power_iters=args.power_iters,
+            seed=args.seed + idx,
+            codec=codec,
+        )
+        # Early-abort: resíduo sem estrutura low-rank não é resgatável por rank
+        # <= max(ranks). Evita o passe de avaliação e a gravação do F1. O piso
+        # sai do PRÓPRIO gate (quanta energia o F1 teria de capturar para o
+        # tensor passar); --f1-min-energy é um piso absoluto adicional.
+        captured = float(f1_info["captured_fraction"])
+        needed = required_capture_fraction(f0_metrics, args.cosine_min, args.nrmse_max)
+        energy_floor = float(getattr(args, "f1_min_energy", 0.0) or 0.0)
+        attempt["f1_spectrum"] = {
+            "captured_fraction": round(captured, 6),
+            "required_fraction": round(needed, 6),
+            "safety_margin": F1_ENERGY_SAFETY,
+            "max_rank": f1_info["max_rank"],
+        }
+        hopeless_energy = needed > 0 and captured < needed * F1_ENERGY_SAFETY
+        below_floor = energy_floor > 0 and captured < energy_floor
+        if hopeless_energy or below_floor:
+            attempt["skipped_f1"] = "residual_not_low_rank"
+            attempt["f1_spectrum"]["trigger"] = (
+                "below_gate_requirement" if hopeless_energy else "below_explicit_floor"
+            )
+            record["ladder"]["attempts"].append(attempt)
+            del u, v
+            if last_rung:
+                break
+            cleanup_cascade_stages(tensor_out)
+            continue
+
+        rank_metrics = evaluate_rank_candidates(
+            source=source,
+            desc=desc,
+            out_dir=tensor_out,
+            group_size=group_size,
+            chunk_rows=chunk_rows,
+            u=u,
+            v=v,
+            ranks=effective_ranks,
+            codec=codec,
+        )
+        attempt["rank_candidates"] = {str(k): val for k, val in rank_metrics.items()}
+        if rung_idx == 0:
+            record["local_quality"]["rank_candidates"] = attempt["rank_candidates"]
+
+        chosen = None
+        for r in effective_ranks:
+            m = rank_metrics.get(r)
+            if m and quality_pass(m, args.cosine_min, args.nrmse_max):
+                chosen = r
+                break
+
+        if chosen is None:
+            attempt["selected"] = None
+            record["ladder"]["attempts"].append(attempt)
+            del u, v
+            if last_rung:
+                break
+            cleanup_cascade_stages(tensor_out)
+            continue
+
+        f1 = write_f1(tensor_out, u, v, chosen)
+        # Guarda de expansão também no total F0+F1: o passthrough exato é menor
+        # e sem perda, então vence.
+        if guard_expansion and source_bytes > 0 and (f0["bytes"] + f1["bytes"]) >= source_bytes:
+            attempt["skipped"] = "byte_expansion_with_f1"
+            attempt["f0_plus_f1_bytes"] = int(f0["bytes"] + f1["bytes"])
+            record["ladder"]["attempts"].append(attempt)
+            record["ladder"]["stopped_by"] = "byte_expansion_guard"
+            del u, v
+            break
+
+        attempt["selected"] = f"F0_PLUS_F1_RANK_{chosen}"
+        record["ladder"]["attempts"].append(attempt)
+        record["ladder"]["selected_rung"] = attempt["rung"]
+        record["stages"] = [f0, f1]
+        record["output_bytes"] = f0["bytes"] + f1["bytes"]
+        record["local_quality"]["selected"] = rank_metrics[chosen]
         record["local_quality"]["selected_local_pass"] = True
-        record["local_quality"]["fallback_exact_raw"] = True
         record["gate"] = {
-            "status": "NOT_APPLICABLE",
-            "safe_policy": "F0_ONLY_RAW",
+            "status": "CALIBRATION_REQUIRED",
+            "safe_policy": "F1_ALWAYS",
+            "stage_1_rank": chosen,
+            "candidate_features": ["RMS(X)", "max_abs(X)", "variance(X)"],
         }
         return record
 
-    f1 = write_f1(tensor_out, u, v, chosen)
-    record["stages"] = [f0, f1]
-    record["output_bytes"] = f0["bytes"] + f1["bytes"]
-    record["local_quality"]["selected"] = rank_metrics[chosen]
+    # Nenhum degrau da escada passou o gate: passthrough exato (nunca degrada
+    # a qualidade em silêncio — é o contrato do conversor).
+    cleanup_cascade_stages(tensor_out)
+    if record["ladder"].get("stopped_by") == "byte_expansion_guard":
+        reason_raw = "cascade_would_expand_bytes_source_is_smaller_and_exact"
+    elif not effective_ranks:
+        reason_raw = "rank_not_applicable_fallback"
+    else:
+        reason_raw = "cascade_local_quality_failed_fallback_exact_raw"
+    if getattr(args, "keep_source_passthrough", False):
+        stage = write_external_stage(desc, reason_raw)
+    else:
+        stage = write_raw_stage(source, desc, tensor_out, reason_raw)
+    record["stages"] = [stage]
+    record["output_bytes"] = stage["bytes"]
     record["local_quality"]["selected_local_pass"] = True
-    record["gate"] = {
-        "status": "CALIBRATION_REQUIRED",
-        "safe_policy": "F1_ALWAYS",
-        "stage_1_rank": chosen,
-        "candidate_features": ["RMS(X)", "max_abs(X)", "variance(X)"],
-    }
+    record["local_quality"]["fallback_exact_raw"] = True
+    record["ladder"]["selected_rung"] = "raw"
+    record["gate"] = {"status": "NOT_APPLICABLE", "safe_policy": "F0_ONLY_RAW"}
     return record
 
 
@@ -1226,7 +2022,32 @@ def convert(args) -> Dict[str, Any]:
     if isinstance(prev_source, dict) and prev_source.get("deleted_shards"):
         manifest["source"]["deleted_shards"] = list(prev_source["deleted_shards"])
 
+    # Orçamento de RAM derivado da máquina (§28): --target-ram-gb 0 = auto.
+    machine_ram = detect_total_ram_bytes()
+    requested_target = float(getattr(args, "target_ram_gb", 0.0) or 0.0)
+    if requested_target > 0:
+        target_ram_gb = requested_target
+        target_source = "explicit_flag"
+    else:
+        auto_bytes, target_source = auto_target_ram_bytes(machine_ram)
+        target_ram_gb = auto_bytes / 1024 ** 3
+    if machine_ram:
+        print(
+            f"RAM da máquina: {machine_ram / 1024 ** 3:.1f} GiB | "
+            f"orçamento do modelo: {target_ram_gb:.1f} GiB ({target_source})"
+        )
+    else:
+        print(f"RAM da máquina: indetectável | orçamento do modelo: {target_ram_gb:.1f} GiB")
+
+    # Fatia de conversão também acompanha a máquina (16 MB em 8 GiB, teto 128 MB).
+    if float(getattr(args, "ram_budget_mb", 0.0) or 0.0) <= 0 and machine_ram:
+        slice_mb = min(max(machine_ram / (512 * 1024 * 1024), 16.0), 128.0)
+        args.ram_budget_mb = float(round(slice_mb))
+        print(f"Fatia de conversão: {args.ram_budget_mb:.0f} MB (auto)")
+
     start_time = time.time()
+
+    peak_rss = read_vmrss_bytes() or 0
     total_original = 0
     total_stage_bytes = 0
     converted = 0
@@ -1326,7 +2147,8 @@ def convert(args) -> Dict[str, Any]:
             )
 
             projected = estimate_tensor_output_peak(
-                desc, eligible, args.group_size, ranks, args.oversample
+                desc, eligible, args.group_size, ranks, args.oversample,
+                keep_source=bool(getattr(args, "keep_source_passthrough", False)),
             )
             check_disk_budget(
                 out, manifest, manifest_path, budget_bytes,
@@ -1350,6 +2172,13 @@ def convert(args) -> Dict[str, Any]:
 
         manifest["tensors"].append(record)
         account_record(record)
+
+        # Amostra de RSS por tensor + coleta: mantém o pico visível e o
+        # working-set baixo em máquinas de 8 GB.
+        rss_now = read_vmrss_bytes()
+        if rss_now:
+            peak_rss = max(peak_rss, rss_now)
+        gc.collect()
 
         # Manifesto incremental (tmp + rename atômico): estado retomável por tensor.
         json_dump_atomic(manifest_path, manifest)
@@ -1377,6 +2206,16 @@ def convert(args) -> Dict[str, Any]:
 
     # Write preliminary manifest, then compute actual bundle directory size.
     elapsed = time.time() - start_time
+    resolved_ladder_modes: Dict[str, int] = {}
+    for rec in manifest["tensors"]:
+        mode_used = (rec.get("ladder") or {}).get("mode")
+        if mode_used:
+            resolved_ladder_modes[mode_used] = resolved_ladder_modes.get(mode_used, 0) + 1
+    dominant_ladder_mode = (
+        max(resolved_ladder_modes.items(), key=lambda kv: kv[1])[0]
+        if resolved_ladder_modes
+        else resolve_ladder_mode(args, None)
+    )
     summary = {
         "source_weight_tensor_bytes": int(total_original),
         "cascade_stage_bytes": int(total_stage_bytes),
@@ -1390,7 +2229,24 @@ def convert(args) -> Dict[str, Any]:
         "resumed_tensor_count": resumed,
         "carried_over_tensor_count": carried_count,
         "conversion_seconds": elapsed,
+        "codec_ladder": getattr(args, "codec_ladder", "auto"),
+        # Com --codec-ladder auto a escada é decidida POR TENSOR (pela fonte):
+        # reportar só o pedido mentiria. `codec_ladder_resolved` conta os modos
+        # realmente usados e `ladder_rungs` segue o modo dominante.
+        "codec_ladder_resolved": resolved_ladder_modes,
+        "ladder_rungs": [
+            f"{c}/g{g}"
+            for c, g in ladder_rungs(
+                args_like(int(args.group_size), dominant_ladder_mode)
+            )
+        ],
     }
+    summary["residency"] = residency_report(
+        manifest["tensors"], target_ram_gb, machine_ram, target_source
+    )
+    if peak_rss:
+        summary["conversion_peak_rss_bytes"] = int(peak_rss)
+        summary["conversion_peak_rss_method"] = "proc_vmrss_per_tensor_sampling_v1"
     manifest["summary"] = summary
 
     # Development CASCADE-IR inventory. Full operation DAG is intentionally not
@@ -1495,6 +2351,46 @@ def convert(args) -> Dict[str, Any]:
                     "nenhuma medição de RSS neste conversor estático."
                 ),
             },
+            # Card "Modelos convertidos" do painel (§28): residência medida +
+            # tabela de RAM por largura de bits (projeção rotulada).
+            "converter": {
+                "codec_ladder": manifest["summary"]["codec_ladder"],
+                "codec_ladder_resolved": manifest["summary"]["codec_ladder_resolved"],
+                "ladder_rungs": manifest["summary"]["ladder_rungs"],
+                "selected_rungs": manifest["summary"]["residency"]["selected_rungs"],
+                "bundle_requires_source": (
+                    manifest["summary"]["residency"]["bundle_requires_source"]
+                ),
+                "external_source_bytes": (
+                    manifest["summary"]["residency"]["external_source_bytes"]
+                ),
+                "f0_effective_bits_per_weight": (
+                    manifest["summary"]["residency"]["f0_effective_bits_per_weight"]
+                ),
+                "resident_hot_bytes": (
+                    manifest["summary"]["residency"]["resident_hot_bytes"]
+                ),
+                "pageable_warm_bytes": (
+                    manifest["summary"]["residency"]["pageable_warm_bytes"]
+                ),
+                "raw_passthrough_bytes": (
+                    manifest["summary"]["residency"]["raw_passthrough_bytes"]
+                ),
+                "target_ram_gb": manifest["summary"]["residency"]["target_ram_gb"],
+                "target_source": manifest["summary"]["residency"]["target_source"],
+                "machine_total_ram_bytes": (
+                    manifest["summary"]["residency"]["machine_total_ram_bytes"]
+                ),
+                "fits_resident_in_target": (
+                    manifest["summary"]["residency"]["fits_resident_in_target"]
+                ),
+                "memory_by_bits": manifest["summary"]["residency"]["memory_by_bits"],
+                "memory_by_bits_label": "PROJETADO",
+                "converted_tensor_count": int(converted),
+                "passthrough_tensor_count": int(passthrough),
+                "source_format": descs[0].source_kind if descs else None,
+                "conversion_peak_rss_bytes": int(peak_rss) if peak_rss else None,
+            },
         },
         "measurement_scope": (
             "Weight representation conversion only. RAM is static representation "
@@ -1524,6 +2420,59 @@ def convert(args) -> Dict[str, Any]:
     print(f"Disk reduction      : {manifest['summary']['bundle_disk_reduction_pct']:.2f}%")
     print(f"Tensores retomados  : {resumed}")
     print(f"Output              : {out}")
+
+    res = manifest["summary"]["residency"]
+    gib = 1024 ** 3
+    print("-" * 78)
+    resolved_desc = ", ".join(
+        f"{mode}×{count}"
+        for mode, count in sorted(
+            manifest["summary"]["codec_ladder_resolved"].items(),
+            key=lambda kv: -kv[1],
+        )
+    )
+    print(f"Escada de codecs    : {manifest['summary']['codec_ladder']} "
+          f"({' -> '.join(manifest['summary']['ladder_rungs'])} -> raw)"
+          + (f" | resolvida: {resolved_desc}" if resolved_desc else ""))
+    print(f"Degraus escolhidos  : {res['selected_rungs']}")
+    if res["f0_effective_bits_per_weight"] is not None:
+        print(f"F0 médio (bpw)      : {res['f0_effective_bits_per_weight']:.3f}")
+    print(f"Residente (HOT)     : {res['resident_hot_bytes'] / gib:.3f} GiB "
+          f"(raw exato: {res['raw_passthrough_bytes'] / gib:.3f} GiB)")
+    if res.get("bundle_requires_source"):
+        print(f"Fora do bundle      : {res['external_source_bytes'] / gib:.3f} GiB "
+              f"em SOURCE_EXTERNAL — o bundle DEPENDE do checkpoint de origem")
+    guard_hits = sum(
+        1 for t in manifest["tensors"]
+        if (t.get("ladder") or {}).get("stopped_by") == "byte_expansion_guard"
+    )
+    if guard_hits:
+        print(f"Guarda de expansão  : {guard_hits} tensor(es) mantidos na fonte "
+              f"(CASCADE ficaria maior que o original, sem ganho de qualidade)")
+    print(f"Paginável (WARM F1) : {res['pageable_warm_bytes'] / gib:.3f} GiB")
+    verdict = "CABE" if res["fits_resident_in_target"] else "NAO CABE"
+    print(f"Alvo {res['target_ram_gb']:.1f} GB livres  : {verdict} residente "
+          f"(reserva de {res['runtime_reserve_bytes'] / gib:.1f} GiB p/ KV+runtime)")
+    if peak_rss:
+        print(f"Pico de RSS medido  : {peak_rss / gib:.3f} GiB (conversão)")
+
+    print("-" * 78)
+    print("RAM NECESSÁRIA POR LARGURA DE BITS (projeção)")
+    achieved = res["f0_effective_bits_per_weight"]
+    for row in res["memory_by_bits"]:
+        mark = "cabe" if row["fits_in_target"] else "não cabe"
+        star = ""
+        if achieved is not None and row["bits"] <= achieved < row["bits"] + 1:
+            star = "  <- largura média desta conversão"
+        print(f"  {row['label']:>6} : {row['resident_gib']:8.2f} GiB   [{mark}]{star}")
+    if achieved is not None:
+        print(f"  MEDIDO : {res['resident_hot_bytes'] / gib:8.2f} GiB   "
+              f"[{'cabe' if res['fits_resident_in_target'] else 'não cabe'}]"
+              f"  (escada real, {achieved:.3f} bpw)")
+    print("  Projeção recalcula só o estágio base; passthrough exato entra como está.")
+    print("  1-2 bits uniformes NÃO preservam qualidade neste projeto (medido: PPL")
+    print("  41,5M em ternário e 22k em INT2 vs 49,1 do original) — a escada só")
+    print("  desce de bits onde o gate de qualidade aprova.")
     print("Gate                : CALIBRATION_REQUIRED")
     print("End-to-end quality  : NOT YET CERTIFIED")
 
@@ -1583,6 +2532,13 @@ def self_test(root: Path):
         delete_source_shards=False,
         resume=False,
         publish=False,
+        codec_ladder="compact",
+        ladder_f0_min_cosine=0.98,
+        ram_budget_mb=384.0,
+        target_ram_gb=8.0,
+        allow_byte_expansion=False,
+        keep_source_passthrough=False,
+        f1_min_energy=0.0,
     )
 
     # O self-test opta explicitamente pela limpeza local do seu próprio
@@ -1671,6 +2627,64 @@ def build_parser():
         "--publish", action="store_true",
         help="Publica dashboard_battery.json em RIFT_RESULTS_ENDPOINT "
              "(HTTPS obrigatório + Bearer RIFT_INGEST_TOKEN >=32 chars)",
+    )
+    c.add_argument(
+        "--allow-byte-expansion", action="store_true",
+        help="Desliga a guarda de expansão: aceita estágios CASCADE mesmo quando "
+             "ficam MAIORES que o tensor de origem. Por padrão a guarda prefere "
+             "o passthrough exato nesses casos (menor e sem perda) — relevante "
+             "em fonte GGUF já quantizada, onde INT4 expande os bytes",
+    )
+    c.add_argument(
+        "--keep-source-passthrough", action="store_true",
+        help="Não COPIA tensores que ficam em passthrough (embeddings, lm_head, "
+             "MoE, fora do --include-regex): registra-os como SOURCE_EXTERNAL e "
+             "o bundle passa a depender do checkpoint de origem. Economiza disco "
+             "e evita o pico de RAM da cópia em tensores gigantes; a RAM de "
+             "execução NÃO muda (os bytes continuam contando como residentes)",
+    )
+    c.add_argument(
+        "--f1-min-energy", type=float, default=0.0,
+        help="Piso ABSOLUTO extra para a fração de energia do resíduo capturada "
+             "pelos ranks disponíveis (0 = padrão, usa só o piso derivado do "
+             "gate). O conversor já aborta o F1 quando a energia capturada fica "
+             # %% obrigatório: argparse interpola o help com %-formatting.
+             f"abaixo de {F1_ENERGY_SAFETY * 100:.0f}%% do que o gate exigiria "
+             "— medido: "
+             "resíduo INT4 entrega ~0,25 com rank<=32, e attn_output precisaria "
+             "de ~0,38 para sair de cosine 0,992 e fechar 0,995",
+    )
+    c.add_argument(
+        "--codec-ladder", choices=sorted(set(LADDERS) | {"auto"}), default="auto",
+        help="Escada de codecs por tensor, do mais barato ao mais caro; o "
+             "primeiro degrau que passa o gate de qualidade vence. "
+             "auto (padrão)=escolhe pela fonte: já low-bit (IQ2/Q4_K/...) usa "
+             "safe, BF16/F16/F32 usa compact. "
+             "safe=int4/g64 -> int4/g32 (resgata tensores que cairiam em raw); "
+             "compact=int2/g64 -> int4/g64 -> int4/g32 (menor RAM, alvo 8 GB); "
+             "int4=somente int4/g64 (comportamento das versões anteriores). "
+             "Em TODOS os modos, tensor que reprova em todos os degraus cai em "
+             "passthrough exato — a qualidade nunca degrada em silêncio",
+    )
+    c.add_argument(
+        "--ladder-f0-min-cosine", type=float, default=0.98,
+        help="Heurística de custo: num degrau intermediário cujo F0 fique com "
+             "cosine abaixo deste valor, pula o SVD do residual e vai direto "
+             "ao próximo degrau (0 desliga a heurística e sempre tenta F1)",
+    )
+    c.add_argument(
+        "--ram-budget-mb", type=float, default=0.0,
+        help="Orçamento de RAM por fatia de linhas. 0 = automático pela RAM da "
+             "máquina (16 MB em 8 GiB, teto 128 MB). O pipeline já é streaming, "
+             "então em larguras típicas isso não muda nada; em tensores muito "
+             "largos (ex.: FFN de 70B com 28k colunas) reduz --chunk-rows "
+             "automaticamente e mantém o pico baixo",
+    )
+    c.add_argument(
+        "--target-ram-gb", type=float, default=0.0,
+        help="Orçamento de RAM do MODELO na máquina alvo. 0 = automático: RAM "
+             "total menos 8 GiB de reserva para SO/apps, com piso de 50%% "
+             "(16 GiB->8, 24->16, 32->24, 8->4). Sem detecção, usa 8 GiB",
     )
 
     i = sub.add_parser("inspect", help="Inspecionar bundle CASCADE-DIR")

@@ -95,3 +95,72 @@ Qualidade:
 Próximo formato:
     Bundle M0 binário deve substituir CASCADE-DIR após Header, Stage Table,
     Gate Table e checksums serem congelados.
+
+Codecs do estágio 0 (escada por tensor)
+---------------------------------------
+O stage 0 declara seu próprio codec; um leitor deve despachar por
+`representation` (nunca assumir INT4):
+
+  INT4_GROUP_SYMMETRIC_TWOS_COMPLEMENT
+      arquivos: f0.int4 (2 códigos/byte, nibbles two's complement),
+                f0.scales.f16 (1 escala FP16 por grupo)
+      bits efetivos: 4 + 16/group_size
+
+  INT2_GROUP_ASYMMETRIC_MINMAX
+      arquivos: f0.int2 (4 códigos/byte, códigos 0..3),
+                f0.scales.f16, f0.mins.f16 (escala e mínimo FP16 por grupo)
+      dequant:  w = code * scale + min
+      bits efetivos: 2 + 32/group_size
+
+  SOURCE_RAW
+      passthrough exato; `source_dtype` diz o formato de origem (inclui
+      GGUF_<QTYPE> quando a entrada foi um .gguf).
+      arquivos: f0.raw
+
+  SOURCE_EXTERNAL
+      passthrough SEM cópia: o tensor vive apenas no checkpoint de origem.
+      arquivos: {} (vazio) e `bytes: 0`
+      campos:   external_bytes       tamanho real no arquivo de origem
+                requires_source_file true
+                source_file          caminho do checkpoint
+      Um leitor deve abrir `source_file` para esse tensor. O bundle NÃO é
+      autocontido: `summary.residency.bundle_requires_source` fica true.
+
+Cada tensor registra em `ladder` os degraus tentados, as métricas de cada um e
+o degrau escolhido. O gate de qualidade (cosine_min/nrmse_max) é o MESMO em
+todos os degraus: um degrau só é escolhido se passar, e se nenhum passar o
+tensor vai para passthrough exato. Ou seja, a escada reduz bytes sem afrouxar
+a qualidade.
+
+Campos de decisão da escada:
+  ladder.mode / requested_mode  modo efetivo e o pedido ("auto" resolve pela
+                                fonte: low-bit -> safe, BF16/F16/F32 -> compact)
+  ladder.source_low_bit         fonte já quantizada
+  ladder.stopped_by             "byte_expansion_guard" quando o degrau ficaria
+                                >= a fonte em bytes (o passthrough exato é
+                                menor E sem perda, então ganha)
+  attempts[].skipped            "projected_byte_expansion" (antes de escrever o
+                                F0) ou "byte_expansion_with_f1" (no total)
+  attempts[].f1_spectrum        captured_fraction (energia do resíduo nos ranks
+                                disponíveis), required_fraction (mínimo que o
+                                gate exigiria) e safety_margin
+  attempts[].skipped_f1         "residual_not_low_rank" quando a energia fica
+                                abaixo de safety_margin x required_fraction
+                                (trigger below_gate_requirement) ou abaixo do
+                                piso manual --f1-min-energy (below_explicit_floor)
+
+summary.residency
+-----------------
+Onde os bytes vão parar em execução, para julgar a máquina alvo:
+  resident_hot_bytes    F0 + passthrough (precisa estar residente); inclui
+                        external_bytes, que economiza DISCO e não RAM
+  pageable_warm_bytes   F1 (residual paginável)
+  raw_passthrough_bytes total em passthrough exato (copiado + externo)
+  external_source_bytes parcela que ficou no checkpoint de origem
+  bundle_requires_source  true se algum tensor é SOURCE_EXTERNAL
+  f0_effective_bits_per_weight  bpw médio medido do estágio base
+  memory_by_bits        projeção de RAM por largura de bits (1..16), estilo
+                        cartão de modelo do Hugging Face
+  fits_resident_in_target  veredito vs alvo de RAM menos a reserva de runtime
+                           (KV-cache/ativações). Alvo derivado da máquina
+                           (total - 8 GiB, piso metade) ou --target-ram-gb

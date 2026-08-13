@@ -2,3 +2,5 @@ numpy>=1.26
 safetensors>=0.4
 # torch is required for Safetensors numeric conversion, but install the
 # build appropriate for your CPU/CUDA environment separately.
+# Opcional: entrada .gguf (llama.cpp). Só necessário para --input model.gguf.
+gguf>=0.10,<1

@@ -2471,6 +2471,27 @@ assert.ok(microlmDiagramSvg.includes("<svg"), "engines/microlm/diagram.svg sem m
   });
   assert.ok(converterCellNoUpload.includes("HF_REPO = None"));
   assert.ok(converterCellNoUpload.includes('PUBLISH_MODE = "off"'));
+  // §29.3 — keep_source=on repassa --keep-source-passthrough; default é off e a
+  // guarda em runtime (`if KEEP_SOURCE_MODE == "on":`) precisa continuar lá.
+  assert.ok(converterCellNoUpload.includes('KEEP_SOURCE_MODE = "off"'),
+    "célula do conversor sem keep_source precisa declarar KEEP_SOURCE_MODE = off (§29.3)");
+  assert.ok(converterCellLauncher.includes('if KEEP_SOURCE_MODE == "on":'),
+    "célula do conversor precisa da guarda de runtime do keep_source (§29.3)");
+  const converterCellKeepSource = launcherApi.buildConverterLauncher({
+    model: launcherApi.normalizeModel("Qwen/Qwen2.5-0.5B"),
+    origin: SMOKE_ORIGIN,
+    hfRepo: null,
+    publish: "off",
+    keepSource: "on",
+    ref: "main",
+  });
+  assert.ok(converterCellKeepSource.includes('KEEP_SOURCE_MODE = "on"'));
+  assert.ok(converterCellKeepSource.includes('ARGS += ["--keep-source-passthrough"]'),
+    "keep_source=on precisa repassar --keep-source-passthrough ao conversor (§29.3)");
+  assert.equal(launcherApi.normalizeConverterKeepSource(null), "off");
+  assert.equal(launcherApi.normalizeConverterKeepSource("ON"), "on");
+  assert.throws(() => launcherApi.normalizeConverterKeepSource("auto"),
+    /keep_source precisa ser on ou off/);
   // O repasse de --hf-repo é guardado em runtime por `if HF_REPO:` — sem repo
   // de destino a célula NÃO pode bakear um destino literal.
   assert.ok(!converterCellNoUpload.includes('HF_REPO = "'), "célula sem hf_repo não pode bakear destino literal");
@@ -2511,6 +2532,7 @@ assert.ok(microlmDiagramSvg.includes("<svg"), "engines/microlm/diagram.svg sem m
     'id="converterModelInput"',
     'id="converterHfRepoInput"',
     'id="converterPublishInput"',
+    'id="converterKeepSourceInput"',
     'id="converterCopyCellBtn"',
     'id="converterDownloadBtn"',
     'id="converterNote"',
@@ -2524,6 +2546,9 @@ assert.ok(microlmDiagramSvg.includes("<svg"), "engines/microlm/diagram.svg sem m
     "syncConverterModelField",
     "HF_REPO_PATTERN",
     "--disk-budget-gb 75",
+    // §29.3: o controle do keep_source e o repasse na URL da célula curta.
+    "Não copiar tensores fora do CASCADE",
+    'params.set("keep_source","on")',
   ]) {
     assert.ok(legacyHtml.includes(marker), `index.html sem marcador do card do conversor: ${marker}`);
   }
@@ -2907,6 +2932,88 @@ assert.equal(
   undefined,
   "vercel.json não pode ter bloco functions (o .vercelignore remove *.py; o launcher vem do GitHub raw)",
 );
+
+// §28: orçamento de RAM pela máquina + tabela por largura de bits + card.
+const converterSource = await readFile(new URL("../core/cascade/converter/cascade_converter.py", import.meta.url), "utf8");
+for (const marker of [
+  "detect_total_ram_bytes", "auto_target_ram_bytes", "OS_RESERVE_BYTES",
+  "memory_by_bits", "REPORT_BIT_WIDTHS", "GGUFSource", "LADDERS",
+  "INT2_GROUP_ASYMMETRIC_MINMAX", "residency_report",
+  "RAM NECESSÁRIA POR LARGURA DE BITS", '"converter": {',
+]) {
+  assert.ok(converterSource.includes(marker), `cascade_converter.py sem marcador §27/§28: ${marker}`);
+}
+assert.ok(/--target-ram-gb", type=float, default=0.0/.test(converterSource),
+  "--target-ram-gb precisa ter default 0 (auto pela RAM da máquina, §28)");
+assert.ok(/--ram-budget-mb", type=float, default=0.0/.test(converterSource),
+  "--ram-budget-mb precisa ter default 0 (auto pela RAM da máquina, §28)");
+for (const marker of [
+  "renderConvertedModels", "CONVERTER_BATTERY_ID", "CASCADE_MODEL_CONVERSION",
+  "convertedModels", "bitsTable", "converterRows", "Modelos convertidos",
+  "memory_by_bits", "noFitFill",
+]) {
+  assert.ok(legacyHtml.includes(marker), `index.html sem marcador do card de convertidos (§28): ${marker}`);
+}
+assert.ok(legacyHtml.includes("renderMeasurementCharts();renderConvertedModels();"),
+  "renderConvertedModels precisa estar no pipeline de render (§28)");
+
+// §29: decisões auditáveis por tensor (escada auto, guarda de bytes,
+// passthrough sem cópia, piso de energia do F1 derivado do gate).
+for (const marker of [
+  "LOW_BIT_SOURCE_RE", "source_is_low_bit", "resolve_ladder_mode",
+  "projected_f0_bytes", "byte_expansion_guard", "projected_byte_expansion",
+  "byte_expansion_with_f1", "write_external_stage", "SOURCE_EXTERNAL",
+  "external_bytes", "requires_source_file", "bundle_requires_source",
+  "required_capture_fraction", "F1_ENERGY_SAFETY", "residual_not_low_rank",
+  "below_gate_requirement", "below_explicit_floor", "captured_fraction",
+  "required_fraction",
+  // Com auto a escada é por tensor: o relatório precisa dizer o que foi USADO.
+  "codec_ladder_resolved", "dominant_ladder_mode",
+]) {
+  assert.ok(converterSource.includes(marker), `cascade_converter.py sem marcador §29: ${marker}`);
+}
+assert.ok(/--codec-ladder", choices=sorted\(set\(LADDERS\) \| \{"auto"\}\), default="auto"/.test(converterSource),
+  "--codec-ladder precisa ter default auto (escolhe a escada pela fonte, §29.1)");
+assert.ok(/--f1-min-energy", type=float, default=0\.0/.test(converterSource),
+  "--f1-min-energy precisa ter default 0 (o piso padrão vem do gate, §29.4)");
+for (const flag of ["--allow-byte-expansion", "--keep-source-passthrough"]) {
+  assert.ok(converterSource.includes(`"${flag}", action="store_true"`),
+    `${flag} precisa existir como flag opt-in (§29.2/§29.3)`);
+}
+// A guarda e o abort não podem afrouxar o gate: quality_pass segue exigindo as
+// duas métricas e o fallback continua sendo passthrough exato (§29.5).
+assert.ok(/return m\["cosine"\] >= cosine_min and m\["nrmse"\] <= nrmse_max/.test(converterSource),
+  "quality_pass não pode ser afrouxado pelas otimizações de custo (§29.5)");
+// argparse interpola o help com %-formatting: um "%" literal não escapado faz
+// `convert --help` levantar TypeError. Vale para todos os CLIs Python do repo.
+const pythonCliFiles = [
+  "../core/cascade/converter/cascade_converter.py",
+  "../batteries/gguf_e2e_auto_batteries.py",
+];
+for (const relPath of pythonCliFiles) {
+  const src = await readFile(new URL(relPath, import.meta.url), "utf8");
+  for (const block of src.match(/add_argument\([\s\S]*?\n {4}\)/g) || []) {
+    const code = block.split("\n").filter((line) => !/^\s*#/.test(line)).join("\n");
+    const bad = code.replace(/%%/g, "").match(/%(?!\(default\)s)/);
+    assert.ok(!bad, `${relPath}: "%" não escapado em help do argparse (use %%):\n${block}`);
+  }
+}
+
+const converterReadme = await readFile(new URL("../core/cascade/converter/README.md", import.meta.url), "utf8");
+for (const marker of [
+  "Guarda de expansão de bytes", "--keep-source-passthrough",
+  "Piso de energia do F1", "`auto` (padrão)",
+]) {
+  assert.ok(converterReadme.includes(marker), `README do conversor sem seção §29: ${marker}`);
+}
+const dirFormatDoc = await readFile(new URL("../core/cascade/converter/CASCADE_DIR_FORMAT_v0.1.txt", import.meta.url), "utf8");
+for (const marker of [
+  "SOURCE_EXTERNAL", "requires_source_file", "bundle_requires_source",
+  "byte_expansion_guard", "f1_spectrum", "memory_by_bits",
+]) {
+  assert.ok(dirFormatDoc.includes(marker), `CASCADE_DIR_FORMAT sem campo novo (§29): ${marker}`);
+}
+
 const geyserApiSource = await readFile(new URL("../api/geyser.mjs", import.meta.url), "utf8");
 for (const marker of ["rawBaseUrl(resolveRepo(), resolveRef())", "LAUNCHER_REPO_PATH", "GitHub raw"]) {
   assert.ok(geyserApiSource.includes(marker), `api/geyser.mjs sem fallback GitHub raw: ${marker}`);

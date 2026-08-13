@@ -243,3 +243,112 @@ O resultado é um **modelo CASCADE compilado em formato de desenvolvimento**,
 não um modelo diretamente carregável por `AutoModelForCausalLM`.
 
 Para torná-lo executável como LLM é necessário o CASCADE Runtime C++/CPU/GPU.
+
+## Entrada GGUF (llama.cpp)
+
+```bash
+python core/cascade/converter/cascade_converter.py convert \
+  --input modelo.gguf --output modelo-cascade --codec-ladder compact
+```
+
+Requer `pip install 'gguf>=0.10,<1'`. A leitura é **streaming por blocos de
+linhas**: o conversor desquantiza apenas a fatia pedida (o ggml não deixa um
+bloco cruzar a fronteira de uma linha), então o pico de RAM fica em
+`chunk_rows × colunas × 4 bytes` em vez do tensor inteiro — a diferença entre
+alguns MB e vários GB numa embedding grande. Um GGUF já quantizado (IQ2/Q4_K…)
+é desquantizado para float32 por fatia antes de entrar no codec, então
+converter de IQ2 quantiza duas vezes: prefira a origem de maior precisão
+disponível quando ela existir.
+
+GGUF multi-parte não é suportado (aponte `--input` para o arquivo).
+
+## Escada de codecs (`--codec-ladder`)
+
+Por tensor, tenta do mais barato ao mais caro e fica no **primeiro degrau que
+passa o gate de qualidade**; se nenhum passa, o tensor vai para passthrough
+exato. O gate é o mesmo em todos os degraus, então a escada reduz bytes sem
+afrouxar qualidade.
+
+| modo | degraus | quando usar |
+| --- | --- | --- |
+| `auto` (padrão) | escolhe pela fonte | fonte já low-bit (IQ2/Q4_K/…) → `safe`; BF16/F16/F32 → `compact` |
+| `safe` | int4/g64 → int4/g32 → raw | mesmo primeiro degrau de sempre, com um resgate mais fino antes do raw (troca 16 bpw por 4.5 bpw nos tensores que hoje caem em passthrough) |
+| `compact` | int2/g64 → int4/g64 → int4/g32 → raw | alvo 8 GB: tenta 2.5 bpw primeiro |
+| `int4` | int4/g64 → raw | compatibilidade estrita com versões anteriores |
+
+`auto` existe porque o INT2 só compensa quando o raw é caro. Medido no Muse
+Glimmer (fonte IQ2): INT2/g64 nunca passou o gate (cosine 0.91–0.92) e o raw
+custa 2.66 bpw, não 16 — tentar INT2 ali é só custo de CPU. Numa fonte BF16 o
+mesmo degrau vale a tentativa.
+
+`--ladder-f0-min-cosine` (padrão 0.98) é uma heurística de custo: num degrau
+intermediário cujo F0 fique muito longe do gate, o SVD do residual é pulado.
+Use 0 para sempre tentar o F1.
+
+## Guarda de expansão de bytes
+
+Um degrau que ficaria **maior ou igual à fonte** não interessa nem passando o
+gate: o passthrough exato é menor *e* sem perda. Antes de escrever cada F0 o
+conversor projeta os bytes e, se houver expansão, pula direto para o raw
+(`ladder.stopped_by = "byte_expansion_guard"`); a checagem se repete no total
+F0+F1. Medido em `o_proj` 256×512 com fonte IQ2 ~2.66 bpw:
+
+| decisão | bytes | perda |
+| --- | --- | --- |
+| guarda ativa → passthrough | 43 581 | nenhuma (bit a bit) |
+| `--allow-byte-expansion` → INT4/g64 | 69 632 | quantização |
+
+`--allow-byte-expansion` desliga a guarda (útil para medir a alternativa).
+
+## Passthrough sem cópia (`--keep-source-passthrough`)
+
+Tensores que não entram no CASCADE (embeddings, `lm_head`, MoE, fora do
+`--include-regex`) são copiados byte a byte por padrão. Em modelo grande essa
+cópia é o pico de disco e de RAM da conversão. Com a flag eles viram
+`SOURCE_EXTERNAL`: ficam **apenas** no checkpoint de origem, com `bytes: 0` no
+bundle e `external_bytes` registrando o tamanho real.
+
+O manifesto marca `residency.bundle_requires_source = true` — o bundle passa a
+depender do arquivo de origem, e `verify` recusa o tensor se o checkpoint
+desapareceu. **Economiza disco, não RAM de execução**: `external_bytes` continua
+somando no residente (HOT), porque o peso ainda precisa estar em memória para
+rodar.
+
+## Piso de energia do F1
+
+Antes de avaliar os ranks, o conversor mede que fração da energia do resíduo os
+ranks disponíveis capturam e compara com o **mínimo que o gate exigiria**:
+
+```
+nrmse   : 1 - (nrmse_max / nrmse_f0)²                 (exato)
+cosseno : 1 - (1 - cosine_min) / (1 - cosine_f0)      (1-cos ~ nrmse²/2)
+```
+
+Vale o maior dos dois. Se a energia capturada fica abaixo de 75% desse mínimo, o
+F1 é abortado (`f1_spectrum.trigger = "below_gate_requirement"`) e o tensor segue
+para o próximo degrau ou para o raw — o SVD de avaliação e a gravação do F1 não
+acontecem. Medido: o resíduo INT4 entrega ~0.25 com rank ≤ 32, enquanto
+`attn_output` precisaria de ~0.38 para sair de cosine 0.992 e fechar 0.995 — daí
+o F1 rank 8→32 não mover a métrica.
+
+`--f1-min-energy` (padrão 0, desligado) adiciona um piso absoluto por cima.
+
+## Relatório de residência
+
+O fim da conversão e `summary.residency` no manifesto respondem à pergunta
+prática: **cabe na máquina alvo?**
+
+```
+Escada de codecs    : compact (int2/g64 -> int4/g64 -> int4/g32 -> raw)
+Degraus escolhidos  : {'int4/g64': 168, 'int2/g64': 14, 'raw': 2}
+F0 médio (bpw)      : 4.108
+Residente (HOT)     : 3.612 GiB (raw exato: 0.180 GiB)
+Paginável (WARM F1) : 0.421 GiB
+Alvo 8.0 GB livres  : CABE residente (reserva de 1.5 GiB p/ KV+runtime)
+Pico de RSS medido  : 0.740 GiB (conversão)
+```
+
+`--target-ram-gb 0` (padrão) deriva o alvo da máquina: `total − 8 GiB`, com piso
+de metade da RAM total (16 GB → 8, 24 GB → 16, 32 GB → 24). Um valor explícito
+sobrescreve. `--ram-budget-mb 0` (padrão) escala a fatia de linhas junto com a
+máquina (16 MB em 8 GiB, teto 128 MB).
