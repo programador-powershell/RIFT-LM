@@ -54,20 +54,23 @@ Pesos calibrados para o objetivo declarado do score: identificar a melhor tecnol
 
 ## :new: Releases Notes
 
-### :up: V.3.7.1
-
-### :pushpin: Fixes
-
-- **Publiquei −5,0% e o medido é −17,7%: errei por um fator de 3,5** (contrato §38.5). No §37.2 colapsei a faixa de gap em ponto único porque "a assimetria desapareceu". O erro de raciocínio: **colapsei uma incerteza de dois lados usando dado de um lado só**. A pergunta era "o llama.cpp degrada com working set grande?" — pergunta sobre o llama.cpp — e eu a respondi observando que o CASCADE parou de degradar. Pior: colapsei na direção que favorecia o projeto. Regra derivada, com asserção no smoke: **faixa criada por incerteza sobre um terceiro só colapsa com medição desse terceiro**; para aceitar o estreitamento, o registro tem de apontar o experimento em `honest_gap_range_pct.measurement_source`.
-- **Minha hipótese de degradação simétrica está refutada por medição** (§38.2): eu supus que o llama.cpp cairia com working set grande pelo mesmo fator do CASCADE. Medido no duelo de working set casado: ele **sobe** — 18,0 GB/s a 1,93 GB contra **19,35 GB/s a 4,38 GB** (+7,5%). O mesmo padrão aparece nas nossas próprias fases (B 18,06 > A 16,24).
-- **Gap real, medido** (§38.1 e §38.4): kernel-vs-kernel com working set casado (~4,6 GB nos dois lados) = **−14,0%** (16,64 contra 19,35 GB/s), e é **piso** porque o lado do llama.cpp inclui o motor dele. Ponta a ponta: **−16% a −18%**. A faixa saiu de −6,1%..−19,7% (premissa) para −14%..−18% (medição).
-- **Correção do teste contra o próprio CASCADE** (§38.3): a Muse é **untied**, então `token_embd` Q6_K (1,10 GB) não é tocado no GEMV — exatamente como o nosso embedding de 0,756 GB não entra no caminho de pesos. Os bytes/token do GGUF estavam superestimados: 15,87 → **14,77 GB**, e o Q4_K_XL projetado sobe de 1,134 para **1,310 tok/s**. Correção que piora nosso gap, feita por quem defende o CASCADE.
+### :up: V.3.8
 
 ### :warning: Latest Changes
 
-- **Onde o gap vive, e é acionável** (§38.6): por fase, contra os 19,35 GB/s do llama.cpp — **fase A 84%**, **fase B 93%**. O gap está concentrado na fase A, que carrega os 80 `k_proj`/`v_proj` de 0,9–1,7 MB; a fase B praticamente empatou. O alvo de kernel restante é fusão por camada + unroll na fase A.
-- **Assimetria residual declarada** (§38.7): working set casado, geometria de tensor **não** — llama.cpp no Qwen7B, CASCADE em 17 camadas da Muse. É o melhor pareamento possível nesta máquina, e o registro diz isso. **Não verificado** (§38.8): o relatório cita "fase-B 19,65 > fase-A 16,19 GB/s", valores que não estão em nenhum artefato recebido (v2.1 traz 13,71/15,34; v2.2 traz 16,24/18,06) — o padrão B > A é correto nos dois, mas os números vêm de uma terceira execução não enviada.
-- **Conclusão de produto inalterada** (§38.9): ambos em ~1 tok/s num 30B de 4 núcleos, os dois não-interativos. O diferencial sem derivação continua sendo cobertura de arquitetura — nesta máquina o CASCADE roda a Muse e o GGUF não. A PPL da Muse segue o item aberto: o gate 627/627 é pré-filtro.
+- **PPL da Muse-Glimmer-30B medida: 10,0118** (contrato §39) — a medição pendente desde o §33. WikiText-2, 12 janelas × 512 (6.132 tokens = 12 × 511, NLL em float64 com labels deslocados), arquitetura `muse_glimmer` **nativa** do transformers 5.15, não reimplementação. **O bundle de 16,30 GB deixa de ser qualidade desconhecida**: lixo de wiring apareceria em ~1,3 M (foi o que os autores viram antes de caçar os bugs) e dano severo de quantização em 20+ — 10,01 exclui os dois, um por cinco ordens de grandeza, o outro por 2×. Nove rodadas de incerteza encerradas.
+- **Dois bugs de integração caçados no percurso**, e eles importam mais que o número (§39.4): **layout q8r intercalado** (saída incorreta antes da correção) e **o embedding da Muse é `TextNormedEmbedding`** — RMSNorm sem escala por linha, que a substituição usada nos testes anteriores dropava; só o código nativo do release revelou. Até este lote **nenhuma medição provava que o executor produzia saída correta**: os cossenos mediam reconstrução de peso, as bandas mediam bytes/tempo, e os dois bugs viviam exatamente nesse ponto cego.
+
+### :pushpin: Fixes
+
+- **Correção ao §36.1**: o embedding continua fora do caminho de **banda** (uma linha por token, pesa em RAM e não em banda), mas **não é lookup puro** — o executor tem de aplicar RMSNorm na linha lida. A conclusão sobre banda se mantém; a caracterização como "lookup" estava incompleta.
+- **Minha asserção do §35.6 travava "PPL da Muse não medida"** e quebrou quando a realidade mudou — o tipo bom de falha. Passou a exigir `end_to_end_measured: true` com `certified: false`, mais a declaração do que a PPL não estabelece.
+- **Minha asserção de tokens estava errada**: usei `janelas × ctx` e o correto é `janelas × (ctx − 1)`, porque o primeiro token de cada janela não tem alvo de predição. O cross-check fecha nos dois testes (12 × 511 = 6.132 na Muse; 24 × 511 = 12.264 no Qwen), confirmando a mesma convenção de NLL com labels deslocados.
+
+### :construction_worker: Refactors
+
+- **O que 10,01 ainda não estabelece, registrado junto com o número** (§39.2): **quanto a quantização custou**. Não existe PPL do BF16 da própria Muse, então 10,01 é absoluto sem comparação. Inferindo do proxy 0.5B, o BF16 estaria entre **~7,8 e ~9,5** — e 10,01 é compatível com toda a faixa. Logo `end_to_end_measured: true` mas `end_to_end_certified: false`: o contrato exige baseline **e** candidato no mesmo protocolo. Duas ressalvas de protocolo obrigatórias: metade do corpus do teste do 0.5B (12 janelas contra 24) e **weight-only** com ativações fp32, enquanto o executor usa int8/g32 (+0,1 a +0,6 pelo proxy).
+- **"Vence o melhor GGUF em qualidade-por-byte" segue sem artefato** (§39.6): com os dados que este projeto tem, a melhor config CASCADE no 0.5B é 21,3122 contra 20,0172 do q4_k_m — o CASCADE **perde 6,5%**. A inversão depende do 19,89, que nunca veio como artefato. O que está medido e sustenta a tese é cobertura de arquitetura, não qualidade-por-byte.
 
 ## :wrench: Instalação
 

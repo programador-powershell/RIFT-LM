@@ -3209,9 +3209,30 @@ if (museReal) {
   assert.match(c.fp32_embedding_status.executor, /NÃO VERIFICADO/);
   assert.match(c.fp32_embedding_status.ppl_cost_of_quantized_embedding, /NÃO MEDIDO/);
   // Qualidade: gate 627/627 NÃO é certificação.
-  assert.equal(museReal.quality.end_to_end_measured, false,
-    "a PPL da Muse não foi medida: end_to_end_measured tem de ser false (§35.6)");
-  assert.equal(museReal.quality.end_to_end_certified, false);
+  // §39 — a PPL da Muse EXISTE agora, mas é candidate-only.
+  assert.equal(museReal.quality.end_to_end_measured, true,
+    "a PPL da Muse foi medida (10,0118): end_to_end_measured tem de ser true (§39)");
+  assert.equal(museReal.quality.end_to_end_certified, false,
+    "CERTIFIED exige baseline E candidato; a PPL do BF16 da Muse não existe (§39.2)");
+  const p = c.perplexity_measured;
+  assert.ok(p && p.label === "MEDIDO" && p.ppl_wikitext2 > 0,
+    "a PPL medida do bundle tem de estar registrada (§39.1)");
+  // janelas × (ctx − 1): o primeiro token de cada janela não tem alvo de
+  // predição. Mesma convenção do teste do Qwen (24 × 511 = 12.264), o que
+  // confirma NLL com labels deslocados nos dois.
+  assert.equal(p.tokens, p.windows * (p.ctx - 1),
+    "tokens da PPL têm de ser janelas x (ctx-1) — NLL com labels deslocados (§39.1)");
+  // O que ela NÃO estabelece tem de vir junto, senão o número vira carimbo.
+  assert.ok(p.does_not_establish && p.does_not_establish.inferred_bf16_range_from_0_5b_proxy,
+    "sem baseline, a PPL tem de declarar que não mede o custo da quantização (§39.2)");
+  assert.match(p.does_not_establish.why, /sem baseline|Sem baseline/i);
+  assert.ok(p.protocol_caveats.corpus_half_of_the_0_5b_test && p.protocol_caveats.weight_only,
+    "as duas ressalvas de protocolo (metade do corpus, fp32 acts) são obrigatórias (§39.3)");
+  // Os dois bugs de integração: eram o ponto cego de cosseno e banda.
+  assert.ok(Array.isArray(p.integration_bugs_found) && p.integration_bugs_found.length === 2,
+    "os dois bugs de integração têm de ficar registrados (§39.4)");
+  assert.ok(p.integration_bugs_found.some((b) => /TextNormedEmbedding/.test(b.bug)),
+    "o bug do TextNormedEmbedding é o que corrige o §36.1 (§39.4)");
   assert.equal(c.quality_measured.all_tensors_passed_gate, true);
 }
 

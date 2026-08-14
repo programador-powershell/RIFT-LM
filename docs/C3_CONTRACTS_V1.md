@@ -1441,3 +1441,69 @@ levantei. Registro atualizado em `P1_CASCADE_WEIGHTPATH_MUSE`.
    dois não-interativos. O diferencial sem derivação continua sendo cobertura de
    arquitetura — nesta máquina o CASCADE roda a Muse e o GGUF não. E a PPL da
    Muse segue o item aberto: o gate 627/627 é pré-filtro.
+
+## 39. PPL da Muse: 10,0118 — o bundle deixa de ser qualidade desconhecida (26º lote)
+
+A medição pendente desde o §33 chegou. `PPL 10,0118` no WikiText-2, 12 janelas ×
+512 (6.132 tokens = 12 × 511, NLL em float64 com labels deslocados), arquitetura
+`muse_glimmer` NATIVA do transformers 5.15 — não reimplementação. Registrada em
+`metrics.converter.perplexity_measured` da conversão integral.
+
+1. O QUE O NÚMERO ESTABELECE, e é o principal: **o bundle não está quebrado.**
+   Lixo de wiring apareceria em ~1,3 M — foi o que os próprios autores viram
+   antes de caçar os bugs — e dano severo de quantização em 20+. 10,01 exclui os
+   dois: um por cinco ordens de grandeza, o outro por 2×. Nove rodadas de
+   "qualidade desconhecida" encerradas.
+
+2. O QUE ELE AINDA NÃO ESTABELECE: **quanto a quantização custou.** Não existe
+   PPL do BF16 da PRÓPRIA Muse (a referência de 55,7 GB não roda na máquina do
+   teste). Sem baseline, 10,01 é absoluto sem comparação. Inferindo do proxy 0.5B:
+
+   | se degradar como | Δ | BF16 da Muse seria |
+   | --- | --- | --- |
+   | receita v2.1 (19,89 — sem artefato) | +5,1% | 9,53 |
+   | piso data-free MEDIDO | +12,6% | 8,89 |
+   | config default MEDIDA | +29,1% | 7,76 |
+
+   A faixa plausível do BF16 é ~7,8 a ~9,5, e **10,01 é compatível com toda
+   ela**. Portanto "a quantização de 4,68 bpw preservou o modelo" é plausível,
+   não medido. `end_to_end_measured: true`, `end_to_end_certified: false` — o
+   contrato exige baseline E candidato no MESMO protocolo.
+
+3. RESSALVAS DE PROTOCOLO, obrigatórias no registro: (a) **12 janelas contra 24**
+   do teste do Qwen2.5-0.5B — metade do corpus, e protocolos diferentes não se
+   comparam entre si; (b) **weight-only, ativações em fp32**, enquanto o executor
+   real usa int8/g32, que pelo proxy 0.5B soma +0,1 a +0,6 de PPL (declarado
+   pelos próprios autores).
+
+   Cross-check que fecha: `tokens = janelas × (ctx − 1)` nos DOIS testes
+   (12 × 511 = 6.132; 24 × 511 = 12.264), confirmando NLL com labels deslocados
+   na mesma convenção. Asserção no smoke.
+
+4. O ACHADO MAIS CONCRETO DO LOTE SÃO OS DOIS BUGS DE INTEGRAÇÃO:
+   - **layout q8r intercalado** — saída incorreta antes da correção;
+   - **o embedding da Muse é `TextNormedEmbedding`**: RMSNorm sem escala por
+     linha, e a substituição usada nos testes anteriores DROPAVA a normalização.
+     Só o código nativo do release revelou.
+
+   Por que isso importa mais que o número: **até este lote nenhuma medição
+   provava que o executor produzia saída correta.** Os cossenos mediam
+   reconstrução de PESO; as bandas mediam bytes/tempo. Os dois bugs viviam
+   exatamente nesse ponto cego. Correção ao §36.1: o embedding continua fora do
+   caminho de BANDA (uma linha por token, pesa em RAM), mas **não é lookup puro**
+   — o executor tem de normalizar a linha lida.
+
+5. O GATE DE 627/627 SEGUE PRÉ-FILTRO. Agora há PPL ao lado dele, mas
+   candidate-only: "aprovado por construção" continua sem sustentação enquanto o
+   baseline não existir.
+
+6. "VENCE O MELHOR GGUF EM QUALIDADE-POR-BYTE" — com os artefatos que este
+   projeto tem, não. A melhor config CASCADE com artefato no 0.5B é 21,3122
+   contra 20,0172 do q4_k_m: o CASCADE **perde 6,5%**. A inversão depende do
+   19,89, que nunca veio como artefato (§35.6 já registrava isso). O que ESTÁ
+   medido e sustenta a tese é outra coisa: cobertura de arquitetura.
+
+7. PRÓXIMOS DOIS EXPERIMENTOS, na ordem que fecha o carimbo: (a) PPL do BF16 da
+   Muse — âncora de 2 janelas por streaming, ou Colab; (b) PPL pelo executor com
+   ativações int8/g32. Sem (a), o custo da quantização fica indeterminado; sem
+   (b), a PPL medida não é a do caminho que roda.
