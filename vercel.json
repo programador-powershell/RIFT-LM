@@ -16,6 +16,10 @@
       "destination": "/vlb.html"
     },
     {
+      "source": "/paper",
+      "destination": "/vlb-paper.html"
+    },
+    {
       "source": "/paper/vlb",
       "destination": "/vlb-paper.html"
     },
