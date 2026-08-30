@@ -4,79 +4,101 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>VLB Native / AMT Lab · RIFT-LM</title>
-<meta name="description" content="Gerador Colab e proof ladder do VLB Native + AMT." />
+<meta name="description" content="Gerador Colab model-agnostic e proof ladder do VLB Native + AMT." />
 <style>
-:root{color-scheme:dark;--bg:#080b11;--card:#101620;--muted:#93a4b8;--line:#253247;--text:#eef5ff;--ok:#73e2ad;--warn:#f7c76b;--accent:#8ab4ff;--accent2:#b7caff}*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0b1019,#080b11 420px);color:var(--text);font:15px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}main{max-width:1080px;margin:auto;padding:42px 22px 90px}a{color:var(--accent)}nav,.row,.badges{display:flex;gap:10px;flex-wrap:wrap;align-items:center}nav{margin-bottom:32px}.button,button{font:inherit;border-radius:10px;border:1px solid var(--line);padding:11px 14px;text-decoration:none;cursor:pointer}.button{display:inline-flex;background:#0e141e;color:var(--text)}button{background:#f2f5f8;color:#0a0d12;font-weight:800}button.secondary{background:#0e141e;color:var(--text)}h1{font-size:clamp(38px,7vw,64px);line-height:1.02;letter-spacing:-.04em;margin:0 0 14px}.lead{color:#c8d7e8;max-width:850px;font-size:19px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;margin-top:22px}.grid{display:grid;grid-template-columns:1.2fr .8fr;gap:18px;align-items:start}.pill{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:5px 10px;color:var(--muted);font-size:12px}.ok{color:var(--ok)}.warn{color:var(--warn)}input{flex:1;min-width:300px;font:inherit;border-radius:10px;border:1px solid var(--line);padding:12px 14px;background:#080c12;color:var(--text)}pre{white-space:pre-wrap;overflow:auto;background:#05070a;border:1px solid var(--line);border-radius:12px;padding:16px;min-height:260px;max-height:620px;font:12.5px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}.status{display:grid;gap:8px}.status div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:7px 0}.status span:last-child{text-align:right}.note{color:var(--muted);font-size:13px}.heroActions{margin:18px 0 2px}code{color:#b9d0ff}@media(max-width:850px){.grid{grid-template-columns:1fr}input{min-width:100%}}
+:root{color-scheme:dark;--bg:#080b11;--card:#101620;--muted:#93a4b8;--line:#253247;--text:#eef5ff;--ok:#73e2ad;--warn:#f7c76b;--bad:#ff8e9b;--accent:#8ab4ff}*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0b1019,#080b11 420px);color:var(--text);font:15px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}main{max-width:1120px;margin:auto;padding:42px 22px 90px}a{color:var(--accent)}nav,.row,.badges{display:flex;gap:10px;flex-wrap:wrap;align-items:center}nav{margin-bottom:32px}.button,button{font:inherit;border-radius:10px;border:1px solid var(--line);padding:11px 14px;text-decoration:none;cursor:pointer}.button{display:inline-flex;background:#0e141e;color:var(--text)}button{background:#f2f5f8;color:#0a0d12;font-weight:800}button.secondary{background:#0e141e;color:var(--text)}h1{font-size:clamp(38px,7vw,64px);line-height:1.02;letter-spacing:-.04em;margin:0 0 14px}.lead{color:#c8d7e8;max-width:900px;font-size:19px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;margin-top:22px}.grid{display:grid;grid-template-columns:1.25fr .75fr;gap:18px;align-items:start}.pill{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:5px 10px;color:var(--muted);font-size:12px}.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}input{width:100%;font:inherit;border-radius:10px;border:1px solid var(--line);padding:12px 14px;background:#080c12;color:var(--text)}pre{white-space:pre-wrap;overflow:auto;background:#05070a;border:1px solid var(--line);border-radius:12px;padding:16px;min-height:300px;max-height:620px;font:12.5px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}.status{display:grid;gap:8px}.status div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:7px 0}.status span:last-child{text-align:right}.note{color:var(--muted);font-size:13px}.heroActions{margin:18px 0 2px}code{color:#b9d0ff}.searchWrap{position:relative;flex:1;min-width:320px}.results{position:absolute;z-index:20;top:calc(100% + 6px);left:0;right:0;max-height:360px;overflow:auto;background:#0b1018;border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 40px #0008}.result{display:block;width:100%;text-align:left;background:#0b1018;color:var(--text);border:0;border-bottom:1px solid var(--line);border-radius:0;padding:11px 13px}.result:hover{background:#131d2b}.result b{display:block}.result small{color:var(--muted)}.results[hidden]{display:none}.modelMeta{margin-top:8px;color:var(--muted);font-size:12px}@media(max-width:850px){.grid{grid-template-columns:1fr}.searchWrap{min-width:100%}}
 </style>
 </head>
 <body>
 <main>
 <nav><a class="button" href="/">← Observatório LLM</a><a class="button" href="/paper/vlb">Paper VLB Native + AMT</a><a class="button" href="https://github.com/programador-powershell/RIFT-LM/tree/main/engines/vlb">Código-fonte</a></nav>
-<p class="note">VLB Native · proof-first · sem fallback para llama.cpp/bitnet.cpp/FreeToken no runtime final</p>
+<p class="note">VLB Native · model-agnostic launcher · proof-first · sem fallback para llama.cpp/bitnet.cpp/FreeToken no runtime final</p>
 <h1>VLB Native / AMT Lab</h1>
-<p class="lead">Conversão em streaming, formato binário VLB1, kernel e server próprios, retenção por contrato congelado e AMT teacher-free. O gerador abaixo produz a célula Colab do primeiro alvo: <code>google/gemma-4-E4B-it</code>.</p>
-<div class="badges"><span class="pill">HTTP Range estrito</span><span class="pill">VLB1</span><span class="pill">Q8_G64</span><span class="pill">kernel C++ próprio</span><span class="pill">vlb-server</span><span class="pill">KR100</span><span class="pill">AMT</span><span class="pill">no teacher</span></div>
+<p class="lead">Qualquer modelo selecionável no Observatório pode gerar uma bateria VLB. O gerador não decide sucesso por nome de família: ele cria o experimento, inspeciona o checkpoint e registra suporte, incompatibilidade ou prova obtida. Gemma 4 é apenas um dos alvos de validação — não é uma dependência da tecnologia.</p>
+<div class="badges"><span class="pill">qualquer org/modelo</span><span class="pill">HTTP Range estrito</span><span class="pill">VLB1</span><span class="pill">Q8_G64 inicial</span><span class="pill">kernel C++ próprio</span><span class="pill">vlb-server</span><span class="pill">KR100</span><span class="pill">AMT</span><span class="pill">no teacher</span></div>
 <div class="row heroActions"><a class="button" href="https://colab.research.google.com/" target="_blank" rel="noopener">Abrir Google Colab</a><a class="button" href="/paper/vlb">Ler o paper</a></div>
 
 <section class="grid">
   <div class="card">
     <h2>Gerador Colab VLB Native</h2>
     <div class="row">
-      <input id="model" value="google/gemma-4-E4B-it" aria-label="Hugging Face model id" />
-      <button id="generate">Gerar</button>
+      <div class="searchWrap">
+        <input id="model" value="google/gemma-4-E4B-it" placeholder="org/modelo ou busque pelo nome" autocomplete="off" aria-label="Hugging Face model id ou busca" />
+        <div id="results" class="results" hidden></div>
+      </div>
+      <button id="generate">Gerar VLB</button>
       <button class="secondary" id="copy">Copiar</button>
     </div>
-    <p class="note">Para modelos gated, configure <code>HF_TOKEN</code> nos Secrets do Colab. Para publicar resultados no Observatório, configure também <code>RIFT_INGEST_TOKEN</code>. Nenhum token entra na URL ou no código gerado.</p>
+    <div id="modelMeta" class="modelMeta">Digite um ID completo ou pesquise qualquer modelo do Hugging Face usado pelo Observatório.</div>
+    <p class="note">O site sempre gera a bateria para um ID válido. Se o formato/arquitetura ainda não tiver executor VLB completo, o teste deve terminar como <code>UNSUPPORTED_* / NOT_CERTIFIED</code>, nunca como PASS presumido. Para modelos gated, configure <code>HF_TOKEN</code>. Para publicar resultados, configure <code>RIFT_INGEST_TOKEN</code>.</p>
     <pre id="code">Carregando launcher VLB Native…</pre>
   </div>
 
   <aside class="card">
-    <h2>Proof ladder</h2>
+    <h2>Proof ladder universal</h2>
     <div class="status">
-      <div><span>P0 · VLB1</span><span class="ok">implementado</span></div>
-      <div><span>P1 · kernel nativo</span><span class="ok">self-test + real tensor path</span></div>
-      <div><span>P2 · full Gemma forward</span><span class="warn">pendente</span></div>
-      <div><span>P3 · Gemma KR100</span><span class="warn">não certificado</span></div>
-      <div><span>P4 · AMT nativo</span><span class="warn">não certificado</span></div>
+      <div><span>P0 · VLB1</span><span class="ok">formato implementado</span></div>
+      <div><span>P1 · kernel nativo</span><span class="ok">operator proof</span></div>
+      <div><span>P2 · full-model native replay</span><span class="warn">por arquitetura</span></div>
+      <div><span>P3 · KR100</span><span class="warn">por modelo/perfil</span></div>
+      <div><span>P4 · AMT nativo</span><span class="warn">por modelo/perfil</span></div>
     </div>
-    <p class="note">O runtime Python/Transformers pode ser usado como referência experimental, mas não conta como certificação nativa. <strong>Sem P2 + P3 não existe claim de “100% da inteligência preservada”.</strong></p>
+    <p class="note">A certificação é por <strong>modelo + revisão + perfil VLB + bateria congelada</strong>. Não existe autorização global porque um único modelo passou.</p>
     <p><a href="/paper/vlb">Metodologia e definição formal de KR100 →</a></p>
   </aside>
 </section>
 
 <section class="card">
-  <h2>O que a célula faz</h2>
-  <p>Baixa apenas o launcher e o código VLB do repositório; o checkpoint fonte é lido por ranges Safetensors, tensor por tensor. A bateria gera o artefato VLB, compila/executa o kernel/server nativos e registra separadamente conversão, kernel proof, runtime de referência e o estado da certificação nativa.</p>
-  <p class="note">Números de compressão, RAM, tok/s ou retenção só entram como resultado quando foram realmente medidos. O paper mantém campos não medidos como pendentes em vez de estimá-los.</p>
+  <h2>Política model-agnostic</h2>
+  <p><strong>Gerar ≠ certificar.</strong> Todo modelo pode entrar no pipeline. O pipeline tenta identificar os arquivos de pesos, converter por streaming e executar cada nível disponível. Um modelo sem Safetensors, com op desconhecida ou arquitetura ainda não implementada continua sendo um resultado útil: o relatório registra exatamente onde a prova parou.</p>
+  <p class="note">Números de compressão, RAM, tok/s, erro numérico e retenção só entram quando foram realmente medidos. Nenhum valor é inferido a partir do nome ou tamanho do modelo.</p>
 </section>
 </main>
 <script>
 const model=document.getElementById('model');
 const code=document.getElementById('code');
+const results=document.getElementById('results');
+const meta=document.getElementById('modelMeta');
 const generateButton=document.getElementById('generate');
 const copyButton=document.getElementById('copy');
+let searchTimer=null,searchSeq=0;
 function validModel(id){return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(id)}
+function normalizeModel(value){
+  const raw=String(value||'').trim();
+  if(validModel(raw))return raw;
+  try{const u=new URL(raw);if(!['huggingface.co','www.huggingface.co','hf.co'].includes(u.hostname.toLowerCase()))return null;const p=u.pathname.split('/').filter(Boolean);const id=`${p[0]||''}/${p[1]||''}`;return validModel(id)?id:null}catch{return null}
+}
+async function searchModels(){
+  const q=model.value.trim();
+  if(normalizeModel(q)||q.length<2){results.hidden=true;return}
+  const seq=++searchSeq;
+  try{
+    const r=await fetch('/api/models?q='+encodeURIComponent(q),{cache:'force-cache'});
+    const body=await r.json();
+    if(seq!==searchSeq)return;
+    const list=Array.isArray(body.models)?body.models:[];
+    results.innerHTML=list.slice(0,20).map(m=>`<button type="button" class="result" data-id="${String(m.id).replace(/"/g,'&quot;')}"><b>${m.id}</b><small>${m.pipeline_tag||'pipeline não informada'}${m.downloads!=null?' · '+Number(m.downloads).toLocaleString('pt-BR')+' downloads':''}${m.gated?' · gated':''}</small></button>`).join('')||'<div class="note" style="padding:12px">Nenhum modelo encontrado.</div>';
+    results.hidden=false;
+  }catch{results.hidden=true}
+}
 async function generate(){
-  const id=model.value.trim();
-  if(!validModel(id)){code.textContent='Modelo inválido; use org/modelo.';return}
-  code.textContent='Carregando launcher VLB Native…';
-  generateButton.disabled=true;
+  const id=normalizeModel(model.value);
+  if(!id){code.textContent='Modelo inválido; use org/modelo, URL do Hugging Face ou selecione um resultado da busca.';return}
+  model.value=id;results.hidden=true;code.textContent='Carregando launcher VLB Native model-agnostic…';generateButton.disabled=true;
   try{
     const path=id.split('/').map(encodeURIComponent).join('/');
     const response=await fetch('/vlb/'+path,{cache:'no-store'});
     const text=await response.text();
     code.textContent=response.ok?text:'Falha ao gerar launcher: '+text;
-  }catch(error){
-    code.textContent='Falha ao gerar launcher: '+error.message;
-  }finally{
-    generateButton.disabled=false;
-  }
+    meta.textContent=`Bateria VLB gerada para ${id}. O resultado do Colab decidirá suporte e nível de prova; nenhum PASS é presumido.`;
+  }catch(error){code.textContent='Falha ao gerar launcher: '+error.message}finally{generateButton.disabled=false}
 }
+model.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(searchModels,280)});
+model.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();generate()}});
+results.addEventListener('click',event=>{const b=event.target.closest('[data-id]');if(!b)return;model.value=b.dataset.id;results.hidden=true;generate()});
+document.addEventListener('click',event=>{if(!event.target.closest('.searchWrap'))results.hidden=true});
 generateButton.addEventListener('click',generate);
-model.addEventListener('keydown',event=>{if(event.key==='Enter')generate()});
-copyButton.addEventListener('click',async()=>{
-  try{await navigator.clipboard.writeText(code.textContent);const old=copyButton.textContent;copyButton.textContent='Copiado!';setTimeout(()=>copyButton.textContent=old,1400)}catch{copyButton.textContent='Selecione e copie manualmente';}
-});
+copyButton.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(code.textContent);const old=copyButton.textContent;copyButton.textContent='Copiado!';setTimeout(()=>copyButton.textContent=old,1400)}catch{copyButton.textContent='Selecione e copie manualmente'}});
 generate();
 </script>
 </body>
