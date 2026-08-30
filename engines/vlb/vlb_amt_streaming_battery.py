@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""VLB/AMT streaming re-quantization + runtime proof battery v1.
+"""VLB native proof battery v2.
 
-The upstream checkpoint is never materialized as a complete local weight file.
-Safetensors headers are read first, then each tensor is fetched by HTTP Range,
-re-quantized, verified and immediately written into VLB-DIR.
+The source checkpoint is streamed tensor-by-tensor. The battery then produces:
+  A. VLB-DIR conversion artifact (conversion-side format)
+  B. VLB1 native binary container (no torch/pickle runtime dependency)
+  C. native C++ VLB Q8_G64 kernel proof on real model matrices
+  D. Python/Transformers VLB reference replay + teacher-free AMT (REFERENCE ONLY)
 
-Proof gates are independent:
-  A. CONVERSION_VERIFIED  — numerical reconstruction gate.
-  B. VLB_RUNTIME_VERIFIED — generation forward executes from VLB-DIR, not HF weights.
-  C. AMT_VERIFIED         — teacher-free residual/gate improves or preserves fresh validation.
-
-Only A+B+C => VLB_AMT_ENGINE_PROOF_PASS.
+The current Python replay can no longer satisfy the final engine certification.
+Final VLB certification additionally requires the complete model forward,
+tokenizer/KV cache/sampling and AMT path to run inside the VLB-owned native
+runtime/server, followed by frozen KR100 replay.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,13 +35,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 def ensure_deps() -> None:
-    # Gemma 4 config declares the Transformers 5.5 generation.
     required = {
         "torch": "torch",
         "requests": "requests>=2.32",
-        "huggingface_hub": "huggingface_hub>=0.27,<2",
+        "huggingface_hub": "huggingface_hub>=0.30,<2",
         "safetensors": "safetensors>=0.5,<1",
-        "transformers": "transformers>=5.5.0",
+        "transformers": "transformers>=5.5.0,<6",
         "accelerate": "accelerate>=1.2,<2",
     }
     missing = []
@@ -61,12 +61,14 @@ import torch
 import torch.nn.functional as F
 from huggingface_hub import HfApi, hf_hub_url, get_hf_file_metadata
 
+from native_kernel_real_proof import build_native, proof as native_kernel_proof
+from vlb1_pack import pack as pack_vlb1
 from vlb_runtime import run_vlb_runtime_and_amt_proof
 
 
-BATTERY_ID = "VLB_AMT_STREAMING_V1"
+BATTERY_ID = "VLB_NATIVE_GEMMA4_PROOF_V2"
 TECHNOLOGY = "VLB"
-ENGINE_VERSION = "vlb-engine/0.1"
+ENGINE_VERSION = "vlb-native/0.2"
 DEFAULT_MODEL = "google/gemma-4-E4B-it"
 DEFAULT_GROUP_SIZE = 64
 DEFAULT_QUANT = "Q8_G64"
@@ -74,13 +76,10 @@ RESULTS_ENDPOINT = os.environ.get("RIFT_RESULTS_ENDPOINT", "https://rift-lm.verc
 SOURCE_REF = os.environ.get("RIFT_SOURCE_REF", "unknown")
 SUPPORTED_QUANTS = {"Q8_G64"}
 
-# Weight reconstruction gate only. This is intentionally not called KR100.
+# Tensor reconstruction is a conversion gate, never a KR100 claim.
 MIN_TENSOR_COSINE = 0.9990
 MAX_TENSOR_NRMSE = 0.0200
 
-# First runtime keeps tied/embedding matrices FP16. That removes tied-weight
-# ambiguity from the first engine proof while still quantizing the expensive
-# Transformer Linear path. Later profiles may independently quantize them.
 FP16_NAME_PATTERNS = (
     "embed_tokens.weight",
     "embedding.weight",
@@ -89,7 +88,8 @@ FP16_NAME_PATTERNS = (
     "shared.weight",
 )
 
-# Teacher-free GOLD examples. The three partitions never overlap.
+# Teacher-free proof partitions. These remain a small development probe and do
+# not replace the final frozen model-level KR100 certification corpus.
 AMT_LEARN = [
     ("2 + 2 =", " 4"),
     ("5 + 5 =", " 10"),
@@ -114,7 +114,6 @@ AMT_FRESH_VALID = [
     ("HTTP status for OK is", " 200"),
     ("The boolean opposite of false is", " true"),
 ]
-
 
 DTYPE_MAP = {
     "F64": torch.float64,
@@ -152,14 +151,19 @@ def safe_name(name: str) -> str:
 
 
 def auth_headers(token: Optional[str]) -> Dict[str, str]:
-    headers = {"User-Agent": "rift-vlb-stream/0.1", "Accept-Encoding": "identity"}
+    headers = {"User-Agent": "rift-vlb-stream/0.2", "Accept-Encoding": "identity"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
     return headers
 
 
 class RangeReader:
-    """Strict byte-range reader; full source responses are rejected."""
+    """Strict HTTP byte-range reader.
+
+    A 200 response is rejected before reading its body. This prevents a server
+    that ignored Range from accidentally streaming a complete multi-GB shard
+    into Colab memory/storage.
+    """
 
     def __init__(self, model_id: str, filename: str, token: Optional[str]):
         url = hf_hub_url(model_id, filename=filename)
@@ -175,16 +179,33 @@ class RangeReader:
     def read(self, start: int, length: int) -> bytes:
         if length <= 0:
             return b""
+        end = start + length - 1
         headers = auth_headers(self.token)
-        headers["Range"] = f"bytes={start}-{start + length - 1}"
-        with requests.get(self.location, headers=headers, stream=True, timeout=180, allow_redirects=True) as response:
-            if response.status_code not in (200, 206):
-                raise RuntimeError(f"Range request HTTP {response.status_code}: {self.filename}")
-            data = response.content
+        headers["Range"] = f"bytes={start}-{end}"
+        with requests.get(
+            self.location,
+            headers=headers,
+            stream=True,
+            timeout=180,
+            allow_redirects=True,
+        ) as response:
+            if response.status_code != 206:
+                raise RuntimeError(
+                    f"Strict streaming contract failed for {self.filename}: "
+                    f"expected HTTP 206 for Range, received {response.status_code}. "
+                    "Body was not consumed."
+                )
+            content_range = str(response.headers.get("Content-Range", ""))
+            expected_prefix = f"bytes {start}-{end}/"
+            if not content_range.startswith(expected_prefix):
+                raise RuntimeError(
+                    f"Invalid Content-Range for {self.filename}: {content_range!r}; "
+                    f"expected prefix {expected_prefix!r}"
+                )
+            data = response.raw.read(length + 1, decode_content=False)
         if len(data) != length:
             raise RuntimeError(
-                f"Range contract failed for {self.filename}: requested {length}, received {len(data)}. "
-                "Refusing a possible full-checkpoint response."
+                f"Range contract failed for {self.filename}: requested {length}, received {len(data)}"
             )
         return data
 
@@ -352,7 +373,7 @@ def stream_convert(model_id: str, output_dir: Path, token: Optional[str], quant:
         raise RuntimeError(f"Unsupported VLB quant {quant}")
     files = resolve_safetensor_files(model_id, token)
     if not files:
-        raise RuntimeError("VLB streaming v1 requires safetensors weights")
+        raise RuntimeError("VLB streaming v2 requires safetensors weights")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     quantizer = VLBQuantizer(output_dir)
@@ -407,7 +428,7 @@ def stream_convert(model_id: str, output_dir: Path, token: Optional[str], quant:
     ]
     artifact_bytes = sum(int(r["artifact_bytes"]) for r in records)
     manifest = {
-        "schema": "VLB-DIR-v1",
+        "schema": "VLB-DIR-v2",
         "engine": ENGINE_VERSION,
         "technology": TECHNOLOGY,
         "model_id": model_id,
@@ -415,7 +436,7 @@ def stream_convert(model_id: str, output_dir: Path, token: Optional[str], quant:
         "streaming": {
             "enabled": True,
             "source_checkpoint_materialized": False,
-            "transport": "HTTP_RANGE",
+            "transport": "STRICT_HTTP_RANGE_206",
             "peak_source_tensor_count": 1,
         },
         "source_weight_bytes": source_bytes,
@@ -436,9 +457,14 @@ def stream_convert(model_id: str, output_dir: Path, token: Optional[str], quant:
         "elapsed_seconds": time.time() - started,
         "verification": {
             "conversion_verified": not failed,
-            "runtime_verified": False,
-            "amt_verified": False,
-            "engine_status": "CONVERSION_VERIFIED_RUNTIME_PENDING" if not failed else "CONVERSION_GATE_FAIL",
+            "vlb1_container_verified": False,
+            "native_kernel_verified": False,
+            "reference_runtime_verified": False,
+            "reference_amt_verified": False,
+            "native_model_runtime_verified": False,
+            "native_kr100_verified": False,
+            "native_amt_verified": False,
+            "engine_status": "CONVERSION_VERIFIED_NATIVE_PROOF_PENDING" if not failed else "CONVERSION_GATE_FAIL",
         },
     }
     manifest_path = output_dir / "vlb_manifest.json"
@@ -462,7 +488,7 @@ def publish_record(record: Dict[str, Any]) -> bool:
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}",
-            "User-Agent": "rift-vlb-battery/0.2",
+            "User-Agent": "rift-vlb-native-battery/0.2",
         },
         timeout=60,
     )
@@ -473,49 +499,64 @@ def publish_record(record: Dict[str, Any]) -> bool:
     return True
 
 
-def build_record(model_id: str, manifest: Dict[str, Any], runtime: Dict[str, Any]) -> Dict[str, Any]:
-    conversion_pass = bool(manifest["verification"]["conversion_verified"])
-    runtime_pass = bool(runtime.get("runtime_verified"))
-    amt_pass = bool(runtime.get("amt_verified"))
-    engine_pass = conversion_pass and runtime_pass and amt_pass
+def build_record(
+    model_id: str,
+    manifest: Dict[str, Any],
+    container_report: Dict[str, Any],
+    kernel_report: Dict[str, Any],
+    reference_runtime: Dict[str, Any],
+) -> Dict[str, Any]:
+    v = manifest["verification"]
+    fully_native_pass = all(
+        bool(v.get(key))
+        for key in (
+            "conversion_verified",
+            "vlb1_container_verified",
+            "native_kernel_verified",
+            "native_model_runtime_verified",
+            "native_kr100_verified",
+            "native_amt_verified",
+        )
+    )
     source_bytes = int(manifest["source_weight_bytes"])
-    artifact_bytes = int(manifest["artifact_weight_bytes"])
+    vlb1_bytes = int(container_report.get("vlb1_bytes") or 0)
     return {
         "schema_version": 1,
         "technology": TECHNOLOGY,
         "model": model_id,
         "battery_id": BATTERY_ID,
-        "benchmark_protocol": "VLB_AMT_PROOF_FIRST_V1",
-        "status": "MEASURED" if conversion_pass else "FAILED",
+        "benchmark_protocol": "VLB_NATIVE_PROOF_LADDER_V1",
+        "status": "MEASURED" if v.get("native_kernel_verified") else "FAILED",
         "source_ref": SOURCE_REF,
         "implementation": {
-            "kind": "EXPERIMENTAL_NATIVE_RUNTIME",
-            "scope": "streaming_requantization_vlb_runtime_amt",
-            "native": runtime_pass,
+            "kind": "NATIVE_KERNEL_PARTIAL_MODEL_RUNTIME_PENDING",
+            "scope": "streaming_conversion_vlb1_native_kernel_server",
+            "native": False,
             "simulated": False,
         },
         "baseline_disk_bytes": source_bytes,
-        "candidate_disk_bytes": artifact_bytes,
-        "disk_reduction_pct": (1.0 - artifact_bytes / max(source_bytes, 1)) * 100.0,
-        "quality_gate_pass": engine_pass,
+        "candidate_disk_bytes": vlb1_bytes or None,
+        "disk_reduction_pct": ((1.0 - vlb1_bytes / source_bytes) * 100.0) if source_bytes and vlb1_bytes else None,
+        "quality_gate_pass": fully_native_pass,
         "metrics": {
-            "vlb": {
-                "engine_version": ENGINE_VERSION,
+            "conversion": {
                 "quant": manifest["quant"],
                 "streaming": manifest["streaming"],
-                "conversion_gate": manifest["conversion_gate"],
-                "compression_ratio": manifest["compression_ratio"],
-                "manifest_sha256": manifest.get("manifest_sha256"),
+                "gate": manifest["conversion_gate"],
             },
-            "runtime_amt": runtime,
+            "vlb1_container": container_report,
+            "native_kernel": kernel_report,
+            "reference_runtime_amt": reference_runtime,
             "proof": {
-                "conversion_verified": conversion_pass,
-                "runtime_verified": runtime_pass,
-                "amt_verified": amt_pass,
-                "engine_status": "VLB_AMT_ENGINE_PROOF_PASS" if engine_pass else "VLB_AMT_ENGINE_NOT_YET_PROVEN",
+                **v,
+                "engine_status": manifest["verification"]["engine_status"],
             },
         },
-        "notes": "VLB can rank only after conversion + native VLB runtime + teacher-free AMT all pass.",
+        "notes": (
+            "Native Q8 kernel results are real measurements on converted model matrices. "
+            "The Python VLB replay is reference-only and cannot satisfy final VLB certification. "
+            "KR100 remains false until the complete model executes in vlb-server/native runtime."
+        ),
     }
 
 
@@ -525,6 +566,7 @@ def main() -> int:
     parser.add_argument("--quant", default=DEFAULT_QUANT, choices=sorted(SUPPORTED_QUANTS))
     parser.add_argument("--output", default=None)
     parser.add_argument("--publish", choices=["on", "off"], default="on")
+    parser.add_argument("--native-tensors", type=int, default=12)
     args = parser.parse_args()
 
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN") or None
@@ -535,17 +577,47 @@ def main() -> int:
     root.mkdir(parents=True, exist_ok=True)
 
     print("=" * 112)
-    print("VLB / AMT STREAMING ENGINE PROOF v1")
+    print("VLB NATIVE PROOF LADDER v2")
     print("=" * 112)
     print("model:", args.model)
     print("quant:", args.quant)
     print("output:", root)
     print("full source checkpoint materialized:", False)
+    print("external LLM runtime accepted for final certification:", False)
 
     manifest = stream_convert(args.model, root, token, args.quant)
+
+    container_report: Dict[str, Any] = {"verified": False}
+    kernel_report: Dict[str, Any] = {"numeric_pass": False}
+    reference_runtime: Dict[str, Any] = {
+        "runtime_verified": False,
+        "amt_verified": False,
+        "classification": "REFERENCE_ONLY_NOT_NATIVE_CERTIFICATION",
+    }
+
     if manifest["verification"]["conversion_verified"]:
-        print("[VLB] conversion gate PASS; starting native VLB runtime proof")
-        runtime = run_vlb_runtime_and_amt_proof(
+        print("[VLB] conversion PASS; packing native VLB1 container")
+        vlb1_path = root / "model.vlb"
+        container_report = pack_vlb1(root, vlb1_path)
+        container_report["verified"] = bool(vlb1_path.exists() and vlb1_path.stat().st_size > 0)
+        manifest["verification"]["vlb1_container_verified"] = bool(container_report["verified"])
+
+        if container_report["verified"]:
+            print("[VLB] VLB1 container PASS; building/testing VLB native kernel")
+            here = Path(__file__).resolve().parent
+            native_dir = here / "native"
+            build_dir = Path(tempfile.gettempdir()) / "vlb-native-gemma4-build"
+            executable = build_native(native_dir, build_dir)
+            kernel_report = native_kernel_proof(root, executable, max(1, args.native_tensors))
+            manifest["verification"]["native_kernel_verified"] = bool(kernel_report.get("numeric_pass"))
+            (root / "native_kernel_proof.json").write_text(
+                json.dumps(kernel_report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+            )
+
+        # Keep current PyTorch VLB runtime only as a bridge/reference during
+        # implementation of the complete native transformer executor.
+        print("[VLB] running reference VLB/AMT replay (NOT native certification)")
+        reference_runtime = run_vlb_runtime_and_amt_proof(
             args.model,
             root,
             token,
@@ -553,45 +625,56 @@ def main() -> int:
             AMT_GATE_DEV,
             AMT_FRESH_VALID,
         )
-    else:
-        runtime = {
-            "runtime_verified": False,
-            "amt_verified": False,
-            "reason": "conversion gate failed; runtime not attempted",
-        }
+        reference_runtime["classification"] = "REFERENCE_ONLY_NOT_NATIVE_CERTIFICATION"
+        manifest["verification"]["reference_runtime_verified"] = bool(reference_runtime.get("runtime_verified"))
+        manifest["verification"]["reference_amt_verified"] = bool(reference_runtime.get("amt_verified"))
 
-    manifest["verification"].update(
-        {
-            "runtime_verified": bool(runtime.get("runtime_verified")),
-            "amt_verified": bool(runtime.get("amt_verified")),
-            "engine_status": (
-                "VLB_AMT_ENGINE_PROOF_PASS"
-                if manifest["verification"]["conversion_verified"]
-                and runtime.get("runtime_verified")
-                and runtime.get("amt_verified")
-                else "VLB_AMT_ENGINE_NOT_YET_PROVEN"
-            ),
-        }
-    )
-    (root / "vlb_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    record = build_record(args.model, manifest, runtime)
+    # Native model forward/KR100/AMT are deliberately false until implemented.
+    manifest["verification"]["native_model_runtime_verified"] = False
+    manifest["verification"]["native_kr100_verified"] = False
+    manifest["verification"]["native_amt_verified"] = False
+
+    if not manifest["verification"]["conversion_verified"]:
+        engine_status = "VLB_CONVERSION_FAIL"
+    elif not manifest["verification"]["vlb1_container_verified"]:
+        engine_status = "VLB1_CONTAINER_FAIL"
+    elif not manifest["verification"]["native_kernel_verified"]:
+        engine_status = "VLB_NATIVE_KERNEL_FAIL"
+    else:
+        engine_status = "VLB_NATIVE_KERNEL_PROVEN_MODEL_RUNTIME_PENDING"
+    manifest["verification"]["engine_status"] = engine_status
+
+    manifest_path = root / "vlb_manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    manifest["manifest_sha256"] = sha256_file(manifest_path)
+
+    record = build_record(args.model, manifest, container_report, kernel_report, reference_runtime)
     (root / "result.json").write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     if args.publish == "on":
         publish_record(record)
 
     print()
-    print("[VLB] source bytes   :", manifest["source_weight_bytes"])
-    print("[VLB] artifact bytes :", manifest["artifact_weight_bytes"])
-    print("[VLB] compression    : %.3fx" % manifest["compression_ratio"])
-    print("[VLB] conversion     :", manifest["verification"]["conversion_verified"])
-    print("[VLB] runtime        :", runtime.get("runtime_verified"))
-    print("[VLB] AMT            :", runtime.get("amt_verified"))
-    print("[VLB] engine status  :", manifest["verification"]["engine_status"])
-    print("[VLB] manifest       :", root / "vlb_manifest.json")
+    print("[VLB] source bytes              :", manifest["source_weight_bytes"])
+    print("[VLB] VLB-DIR bytes             :", manifest["artifact_weight_bytes"])
+    print("[VLB] VLB1 bytes                :", container_report.get("vlb1_bytes"))
+    print("[VLB] conversion                :", manifest["verification"]["conversion_verified"])
+    print("[VLB] VLB1 container            :", manifest["verification"]["vlb1_container_verified"])
+    print("[VLB] native kernel             :", manifest["verification"]["native_kernel_verified"])
+    print("[VLB] reference runtime         :", manifest["verification"]["reference_runtime_verified"])
+    print("[VLB] reference AMT             :", manifest["verification"]["reference_amt_verified"])
+    print("[VLB] native full model runtime :", False)
+    print("[VLB] native KR100              :", False)
+    print("[VLB] FINAL engine status       :", engine_status)
+    print("[VLB] IMPORTANT: kernel PASS is not KR100 and is not full model certification")
 
-    # Failed proof should be visible to the queue as failure; a measured record
-    # was already published when credentials were available.
-    return 0 if manifest["verification"]["engine_status"] == "VLB_AMT_ENGINE_PROOF_PASS" else 2
+    # A successful native-kernel milestone should complete the experiment so
+    # the dashboard receives its measurements. quality_gate_pass remains false.
+    milestone_pass = bool(
+        manifest["verification"]["conversion_verified"]
+        and manifest["verification"]["vlb1_container_verified"]
+        and manifest["verification"]["native_kernel_verified"]
+    )
+    return 0 if milestone_pass else 2
 
 
 if __name__ == "__main__":
