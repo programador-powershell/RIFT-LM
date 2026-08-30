@@ -3,125 +3,111 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>VLB Native + AMT — Paper</title>
-<meta name="description" content="VLB Native + AMT: a proof-first runtime for loss-bounded LLM re-quantization." />
+<title>VLB Native + AMT — Paper & Live Evidence</title>
+<meta name="description" content="VLB Native + AMT: model-agnostic conversion, native x86 execution, KR100 retention and teacher-free AMT with live measured evidence." />
 <style>
-:root{--bg:#080b11;--panel:#101620;--panel2:#0c1119;--line:#253247;--text:#eef5ff;--muted:#93a4b8;--accent:#8ab4ff;--ok:#73e2ad;--warn:#f7c76b;--bad:#ff8495}*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0a0e16,#080b11);color:var(--text);font:16px/1.68 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}main{max-width:930px;margin:auto;padding:42px 22px 90px}a{color:var(--accent)}nav{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:36px}.button{display:inline-flex;padding:9px 12px;border:1px solid var(--line);border-radius:10px;text-decoration:none;background:#0e141e;color:var(--text)}h1{font-size:clamp(34px,6vw,58px);line-height:1.05;letter-spacing:-.035em;margin:0 0 14px}h2{font-size:25px;margin-top:46px;border-top:1px solid var(--line);padding-top:24px}h3{margin-top:30px}.lead{font-size:20px;color:#c9d7e8;max-width:820px}.muted{color:var(--muted)}.pill{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:5px 10px;margin:3px 5px 3px 0;color:var(--muted);font-size:13px}.card{background:var(--panel);border:1px solid var(--line);border-radius:17px;padding:20px;margin:22px 0}.warn{border-color:#725d2f;background:#17130b}.ok{color:var(--ok)}.pending{color:var(--warn)}pre{overflow:auto;padding:17px;border-radius:13px;background:#05070a;border:1px solid var(--line);font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}code{color:#b9d0ff}table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:#c9d7e8;background:#0d131c}blockquote{margin:22px 0;padding:4px 0 4px 18px;border-left:3px solid var(--accent);color:#d7e4f4}.foot{margin-top:50px;color:var(--muted);font-size:13px}@media(max-width:650px){table{font-size:13px;display:block;overflow:auto}}
+:root{--bg:#080b11;--panel:#101620;--panel2:#0c1119;--line:#253247;--text:#eef5ff;--muted:#93a4b8;--accent:#8ab4ff;--ok:#73e2ad;--warn:#f7c76b;--bad:#ff8495}*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#0a0e16,#080b11);color:var(--text);font:16px/1.68 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}main{max-width:1050px;margin:auto;padding:42px 22px 90px}a{color:var(--accent)}nav{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:36px}.button{display:inline-flex;padding:9px 12px;border:1px solid var(--line);border-radius:10px;text-decoration:none;background:#0e141e;color:var(--text)}h1{font-size:clamp(34px,6vw,58px);line-height:1.05;letter-spacing:-.035em;margin:0 0 14px}h2{font-size:25px;margin-top:46px;border-top:1px solid var(--line);padding-top:24px}h3{margin-top:30px}.lead{font-size:20px;color:#c9d7e8;max-width:900px}.muted{color:var(--muted)}.pill{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:5px 10px;margin:3px 5px 3px 0;color:var(--muted);font-size:13px}.card{background:var(--panel);border:1px solid var(--line);border-radius:17px;padding:20px;margin:22px 0}.warn{border-color:#725d2f;background:#17130b}.ok{color:var(--ok)}.pending{color:var(--warn)}.bad{color:var(--bad)}pre{overflow:auto;padding:17px;border-radius:13px;background:#05070a;border:1px solid var(--line);font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}code{color:#b9d0ff}table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:#c9d7e8;background:#0d131c}blockquote{margin:22px 0;padding:4px 0 4px 18px;border-left:3px solid var(--accent);color:#d7e4f4}.foot{margin-top:50px;color:var(--muted);font-size:13px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.metric{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px}.metric strong{display:block;font-size:22px}.status{font-weight:700}.livehead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:7px}.small{font-size:13px}.nowrap{white-space:nowrap}@media(max-width:650px){table{font-size:13px;display:block;overflow:auto}}
 </style>
 </head>
 <body>
 <main>
-<nav><a class="button" href="/">Observatory</a><a class="button" href="/vlb-native">VLB Native Lab</a><a class="button" href="https://github.com/programador-powershell/RIFT-LM/blob/main/docs/VLB_NATIVE_AMT_PAPER_V0_1.md">Markdown source</a></nav>
-<p class="muted">Preprint v0.1 · 2026-08-30 · experimental</p>
+<nav><a class="button" href="/">Observatory</a><a class="button" href="/vlb-native">VLB Native Lab</a><a class="button" href="/paper">Paper</a><a class="button" href="https://github.com/programador-powershell/RIFT-LM">GitHub</a></nav>
+<p class="muted">Living preprint · 2026-08-30 · experimental</p>
 <h1>VLB Native + AMT</h1>
-<p class="lead">A proof-first runtime for loss-bounded LLM re-quantization.</p>
-<div><span class="pill">VLB1</span><span class="pill">native kernel</span><span class="pill">native server</span><span class="pill">KR100</span><span class="pill">AMT</span><span class="pill">adaptive compute</span><span class="pill">no teacher</span></div>
-<section class="card warn"><strong>Claim discipline.</strong> This page does not claim full Gemma 4 retention yet. Native kernel/server infrastructure exists, but complete Gemma 4 forward execution and full-model KR100 remain open proof stages. Unmeasured numbers are intentionally omitted.</section>
+<p class="lead">A model-agnostic VLB pipeline for high-precision import, RAM-aware low-bit deployment, native x86 execution, frozen capability retention and teacher-free Autodidactic Mastery Training.</p>
+<div><span class="pill">VLB container</span><span class="pill">x86 AVX2/FMA</span><span class="pill">RAM-aware precision ladder</span><span class="pill">KR100</span><span class="pill">AMT</span><span class="pill">no teacher</span><span class="pill">real measurements only</span></div>
+<section class="card warn"><strong>Claim discipline.</strong> A converted <code>.vlb</code> artifact is not called verified merely because it is smaller or because cosine/NRMSE are strong. <code>VERIFIED_DEPLOYMENT</code> is reserved for a native VLB executor that passes the frozen behavioral contract and the declared benchmark replay. The live table below intentionally shows incomplete runs as experimental.</section>
 
-<h2>Abstract</h2>
-<p>VLB Native is an experimental model-conversion and inference stack designed to test whether an existing large language model can be re-quantized and executed through an independent runtime while preserving a frozen capability contract. The project separates storage compression, numerical kernel equivalence, complete model replay, capability retention and adaptive post-conversion learning.</p>
-<p>A compressed artifact is never considered verified merely because tensor reconstruction metrics are high or because it occupies fewer bytes. The stack consists of strict streaming conversion, the <code>VLB1</code> binary container, VLB-owned low-bit kernels, a VLB-owned HTTP inference server, a proof ladder for full-model retention, and teacher-free Autodidactic Mastery Training (AMT). The first target is <code>google/gemma-4-E4B-it</code>.</p>
+<h2>Live evidence</h2>
+<div class="livehead"><p class="muted"><span class="dot"></span>Loaded from the repository measurement ledger on <code>main</code>.</p><span id="live-state" class="small muted">loading…</span></div>
+<div id="summary" class="grid"></div>
+<div class="card" style="overflow:auto"><table><thead><tr><th>Time</th><th>Model</th><th>Battery</th><th>Status</th><th>Disk reduction</th><th>Cosine</th><th>NRMSE</th><th>Native / KR</th></tr></thead><tbody id="live-results"><tr><td colspan="8" class="muted">Loading VLB results…</td></tr></tbody></table></div>
 
 <h2>1. Research question</h2>
-<blockquote>What is the smallest executable representation that can preserve every unit of a frozen capability contract under the target runtime?</blockquote>
-<p>Average perplexity, cosine similarity or aggregate accuracy can conceal local capability regressions. VLB therefore treats retention as a gate and efficiency as a property evaluated only after the gate.</p>
+<blockquote>What is the smallest executable representation that preserves every unit of a frozen capability contract under the target VLB runtime?</blockquote>
+<p>Efficiency is optimized only after retention. Aggregate perplexity, cosine or average accuracy may hide local regressions, so VLB separates conversion fidelity, native execution correctness and behavioral certification.</p>
 
-<h2>2. System</h2>
-<pre>Hugging Face safetensors
-        │
-        ▼
-strict HTTP byte-range streaming
-        │
-        ▼
-VLB conversion / profile search
-        │
-        ▼
-VLB1 binary container
-        │
-        ▼
-VLB native kernels
-        │
-        ▼
-VLB model executor + KV cache + tokenizer + sampler
-        │
-        ▼
-VLB server
-        │
-        ▼
-frozen capability replay / KR100
-        │
-        ▼
-AMT + adaptive compute</pre>
-<p>The final inference path is intended to be independent from llama.cpp, bitnet.cpp, FreeToken, GGML/GGUF execution, PyTorch, Transformers, vLLM, ONNX Runtime or another LLM runtime. Reference frameworks remain allowed only on the reference side of validation.</p>
+<h2>2. Standardization pipeline</h2>
+<pre>Hugging Face URL
+      │
+      ▼
+architecture + tensor discovery
+      │
+      ▼
+high-precision source validation
+      │
+      ▼
+RAM-aware precision plan
+Q4 / Q5 / Q8 / exact
+      │
+      ▼
+streaming VLB conversion
+      │
+      ▼
+VLB native x86 kernels
+      │
+      ▼
+architecture-specific VLB executor
+      │
+      ▼
+real benchmark batteries
+      │
+      ▼
+KR100 / VERIFIED_DEPLOYMENT
+      │
+      ▼
+AMT + re-certification</pre>
+<p>The high-precision source may be Safetensors or a high-precision GGUF container, but the final inference path is VLB-owned. GGUF/GGML, llama.cpp, PyTorch, Transformers, vLLM and ONNX Runtime are not accepted as hidden fallback engines in a native VLB certification.</p>
 
-<h2>3. Streaming conversion</h2>
-<p>The converter reads the Safetensors header and requests one tensor byte-range at a time. A real HTTP partial-content response is required. If the host ignores <code>Range</code> and attempts to return a full shard, conversion aborts before accepting the body as a valid tensor read.</p>
-<p>Every converted tensor carries provenance: source file, byte range, shape, source dtype, target codec and artifact hashes.</p>
+<h2>3. RAM-aware precision</h2>
+<p>VLB does not assume that every x86 machine has the same RAM budget. A deployment profile may keep bulk matrices at Q4, sensitive matrices at Q5/Q8 and small state/norm tensors in source precision, then spend available RAM headroom on precision promotion. Lower precision is never accepted merely to make a model fit; the behavioral contract decides whether a profile survives.</p>
 
-<h2>4. VLB1</h2>
-<p><code>VLB1</code> is the native binary container for final VLB execution. Its purpose is to remove pickle and <code>torch.save</code> from the inference path. The model artifact records tensor layout, codec, dimensions, payload/scale offsets and model metadata required by the executor.</p>
+<h2>4. VLB container and native kernels</h2>
+<p>The VLB container stores tensor layout, codec, dimensions, hashes, provenance and model metadata required by the native executor. Low-bit matrix kernels are implemented and tested independently against scalar reference paths on real tensors from the converted artifact. Kernel equivalence is necessary but is not full-model retention.</p>
 
-<h2>5. Initial profile: Q8_G64</h2>
-<p>The first proof profile uses symmetric group-wise 8-bit weights with group size 64:</p>
-<pre>s_g = max(abs(w_g)) / 127
-q_g = clamp(round(w_g / s_g), -127, 127)
-w_hat_g = q_g * s_g</pre>
-<p>Q8_G64 is not assumed lossless. It is a conservative first rung for developing the native stack before exploring lower-bit profiles.</p>
+<h2>5. Model execution</h2>
+<p>VLB is a technology/runtime rather than a requirement that imported weights be rewritten into a single neural topology. The runtime keeps the imported execution graph semantics—such as Qwen3.5 hybrid attention/DeltaNet, MoE routing, or Muse/Glimmer topology—while container, tensor codecs, x86 kernels, memory management, certification and AMT are VLB-owned.</p>
 
-<h2>6. Native kernel</h2>
-<p>The first VLB native operator is Q8_G64 matrix-vector multiplication, with scalar and AVX2/FMA CPU paths. Its proof must execute real matrices from the converted target artifact and record numerical disagreement such as maximum absolute error, RMSE, NRMSE and cosine.</p>
-<p>Passing a kernel proof certifies the tested operator. It does <strong>not</strong> certify full-model intelligence retention.</p>
+<h2>6. KR100</h2>
+<pre>KR100 ⇔ every frozen proof unit passes
 
-<h2>7. VLB server</h2>
-<p>The VLB server must own the complete inference lifecycle: tokenizer, embeddings, normalization, attention, RoPE, feed-forward/expert layers, KV cache, low-bit matrix kernels, logits and decode. Missing native functionality must fail explicitly rather than fall back to another LLM engine.</p>
+no global average may hide a failed unit
+no later gain may compensate for a regression
+no deployment profile is verified before native replay</pre>
+<p>For public reference models, the retention contract may include their published benchmark harnesses. For project-owned models, a frozen reference ledger is used. Numerical conversion metrics remain diagnostics, not substitutes for behavioral evaluation.</p>
 
-<h2>8. KR100</h2>
-<p>Let a frozen validation contract contain <code>N</code> independent units. The candidate VLB runtime is evaluated on the same contract without using those units for training or calibration.</p>
-<pre>KR100 ⇔ passed_units == total_frozen_units</pre>
-<p>KR100 means 100% retention of the <strong>frozen certified contract</strong>. It is not a mathematical proof that every possible neural-network behavior is identical. Aggregate gains cannot compensate for a failed unit.</p>
+<h2>7. Real benchmark publication</h2>
+<p>The VLB desktop pipeline publishes executed measurement records through the repository's authenticated ingest API. The server commits those records to the measurement ledger on <code>main</code>; Vercel then serves the updated paper. Records are marked <code>simulated: false</code>, and a run cannot become primary/verified unless native runtime and proof gates actually pass.</p>
+
+<h2>8. AMT</h2>
+<p>AMT is teacher-free. There are no teacher logits, KL targets or teacher hidden states. Learning modifies model-owned canonical trainable state. Deployment bytes are derived from that canonical state and must be re-certified after learning. Minimum sufficient exposure, fresh validation, rollback and KR100 govern promotion.</p>
 
 <h2>9. Proof ladder</h2>
 <table><thead><tr><th>Stage</th><th>Requirement</th></tr></thead><tbody>
-<tr><td>P0</td><td>VLB1 container integrity</td></tr>
-<tr><td>P1</td><td>Native kernel numerical equivalence on real converted tensors</td></tr>
-<tr><td>P2</td><td>Complete native model forward/decode</td></tr>
-<tr><td>P3</td><td>Frozen full-model KR100</td></tr>
-<tr><td>P4</td><td>Native AMT + adaptive compute without retention regression</td></tr>
+<tr><td>P0</td><td>Source provenance + VLB container integrity</td></tr>
+<tr><td>P1</td><td>Real tensor codec and scalar/native-kernel agreement</td></tr>
+<tr><td>P2</td><td>Complete native architecture executor and deterministic generation/logit replay</td></tr>
+<tr><td>P3</td><td>Frozen behavioral retention contract / published benchmark replay</td></tr>
+<tr><td>P4</td><td>VERIFIED_DEPLOYMENT only if every mandatory gate passes</td></tr>
+<tr><td>P5</td><td>Teacher-free AMT followed by complete re-certification</td></tr>
 </tbody></table>
 
-<h2>10. AMT</h2>
-<p>Autodidactic Mastery Training is teacher-free: no teacher logits, KL target or teacher hidden state. Its rule is minimum sufficient intervention. Validation distinguishes mastered capabilities from compute-limited behavior and likely learning gaps. Training runs in short targeted bursts followed by validation, with automatic commit or rollback.</p>
-<p>The training-token budget is a ceiling, not an obligation.</p>
+<h2>10. Current targets</h2>
+<p>Current experimental imports include BitGlimmer, Ornith/Qwen3.5-class models, Air-1 and larger Qwen3.8-class candidates. Each model may use a different execution adapter, but all adapters terminate in the same VLB container/runtime/proof contract. Unsupported architecture operations must fail explicitly; the test application does not simulate a successful inference path.</p>
 
-<h2>11. Adaptive compute</h2>
-<p>The gate predicts marginal utility, not textual self-confidence: <em>is another compute step expected to improve this state under the validation contract?</em> Candidate features include latent state, latent delta, output entropy, top-1/top-2 margin and recurrence identity. Labels come from measured marginal gain.</p>
-
-<h2>12. Measurement contract</h2>
-<p>Primary results report only physically measured quantities: artifact bytes, peak RSS, accelerator memory where applicable, prefill/decode time, tok/s, per-unit quality metrics, generated tokens, kernel error and KR passed/total. If a quantity has not been measured, it remains absent/null rather than estimated into the primary result.</p>
-
-<h2>13. Current status</h2>
-<table><thead><tr><th>Component</th><th>Status</th></tr></thead><tbody>
-<tr><td>Strict Safetensors byte-range converter</td><td class="ok">implemented</td></tr>
-<tr><td>VLB1 native binary container</td><td class="ok">implemented proof format</td></tr>
-<tr><td>Native Q8_G64 scalar kernel</td><td class="ok">implemented / self-test</td></tr>
-<tr><td>Native Q8_G64 AVX2/FMA path</td><td class="ok">implemented / CI build</td></tr>
-<tr><td>Native HTTP server infrastructure</td><td class="ok">implemented / health self-test</td></tr>
-<tr><td>Real Gemma matrix kernel-proof path</td><td class="ok">integrated</td></tr>
-<tr><td>Complete Gemma 4 forward in VLB server</td><td class="pending">pending proof</td></tr>
-<tr><td>VLB-owned tokenizer / KV cache</td><td class="pending">pending proof</td></tr>
-<tr><td>Gemma 4 full-model KR100</td><td class="pending">not yet certified</td></tr>
-<tr><td>Native AMT after full-model replay</td><td class="pending">not yet certified</td></tr>
-</tbody></table>
-
-<h2>14. Falsification</h2>
-<p>A compression profile is rejected if the native artifact cannot satisfy the frozen retention contract, if retention requires effectively reverting to the canonical representation, if runtime-induced regressions remain after implementation bugs are excluded, or if the profile passes retention but provides no measured efficiency benefit.</p>
-
-<h2>15. First target and next milestone</h2>
-<p>The first full-model target is <code>google/gemma-4-E4B-it</code>. The next decisive milestone is a complete text forward/decode entirely inside <code>vlb-server</code>, followed by frozen full-model replay. Multimodal retention is a separate certification contract and will not be inferred from text-only success.</p>
+<h2>11. Falsification</h2>
+<p>A VLB profile is rejected if it cannot reproduce the frozen behavioral contract, if a native executor needs an undeclared fallback runtime, if compression gains disappear once retention is restored, or if benchmark settings differ materially from the source/reference run.</p>
 
 <h2>Citation</h2>
-<p>RIFT-LM Project. <strong>VLB Native + AMT: A Proof-First Runtime for Loss-Bounded LLM Re-Quantization.</strong> Preprint v0.1, 2026.</p>
-<p class="foot">Source of record: <a href="https://github.com/programador-powershell/RIFT-LM/blob/main/docs/VLB_NATIVE_AMT_PAPER_V0_1.md">docs/VLB_NATIVE_AMT_PAPER_V0_1.md</a>. Results sections will only be extended with executed measurements and frozen ledgers.</p>
+<p>RIFT-LM Project. <strong>VLB Native + AMT: Model-Agnostic Native LLM Standardization with Frozen Retention.</strong> Living preprint, 2026.</p>
+<p class="foot">Source of record and implementation history: <a href="https://github.com/programador-powershell/RIFT-LM">programador-powershell/RIFT-LM</a>. Live measurements are loaded from <code>data/rift_test_batteries.json</code> and are not substituted with estimated scores.</p>
 </main>
+<script>
+const fmtBytes=(n)=>{if(!Number.isFinite(n))return '—';const u=['B','KiB','MiB','GiB','TiB'];let x=n,i=0;while(x>=1024&&i<u.length-1){x/=1024;i++}return `${x.toFixed(i>1?2:0)} ${u[i]}`};
+const fmtPct=(n)=>Number.isFinite(n)?`${n.toFixed(2)}%`:'—';
+const fmtNum=(n,d=5)=>Number.isFinite(n)?n.toFixed(d):'—';
+const esc=(s)=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+(async()=>{const state=document.getElementById('live-state'),body=document.getElementById('live-results'),summary=document.getElementById('summary');try{const r=await fetch(`/data/rift_test_batteries.json?ts=${Date.now()}`,{cache:'no-store'});if(!r.ok)throw new Error(`HTTP ${r.status}`);const all=await r.json();const rows=(Array.isArray(all)?all:[]).filter(x=>String(x.technology||'').toUpperCase()==='VLB').sort((a,b)=>String(b.timestamp_utc||'').localeCompare(String(a.timestamp_utc||'')));const verified=rows.filter(x=>x.eligible_for_primary_ranking===true&&x.status==='PASS').length;const models=new Set(rows.map(x=>x.model_id).filter(Boolean));const latest=rows[0];summary.innerHTML=`<div class="metric"><span class="muted small">VLB runs</span><strong>${rows.length}</strong></div><div class="metric"><span class="muted small">Models measured</span><strong>${models.size}</strong></div><div class="metric"><span class="muted small">Verified deployments</span><strong>${verified}</strong></div><div class="metric"><span class="muted small">Latest candidate</span><strong style="font-size:16px">${esc(latest?.model_id||'—')}</strong></div>`;if(!rows.length){body.innerHTML='<tr><td colspan="8" class="muted">No VLB measurement has been published yet.</td></tr>';state.textContent='ledger reachable · no VLB records';return}body.innerHTML=rows.slice(0,100).map(x=>{const q=x.quality?.output||{};const proof=x.metrics?.proof||{};const kr=x.eligible_for_primary_ranking===true&&x.status==='PASS';const native=proof.runtime_verified===true;const disk=x.gains?.disk_reduction_pct;return `<tr><td class="nowrap">${esc((x.timestamp_utc||'').replace('T',' ').replace('Z',' UTC'))}</td><td>${esc(x.model_id)}</td><td>${esc(x.battery_id)}</td><td class="status ${kr?'ok':x.status==='PASS'?'pending':'bad'}">${esc(x.status||'—')}</td><td>${fmtPct(Number(disk))}</td><td>${fmtNum(Number(q.cosine),7)}</td><td>${fmtNum(Number(q.nrmse),7)}</td><td>${native?'native':'pending'} / ${kr?'<span class="ok">verified</span>':'pending'}</td></tr>`}).join('');state.textContent=`ledger reachable · ${rows.length} VLB record${rows.length===1?'':'s'}`}catch(e){body.innerHTML=`<tr><td colspan="8" class="bad">Could not load live ledger: ${esc(e.message)}</td></tr>`;state.textContent='ledger unavailable'}})();
+</script>
 </body>
 </html>
