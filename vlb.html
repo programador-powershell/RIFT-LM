@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>VLB / AMT Lab · RIFT-LM</title>
+  <style>
+    :root{color-scheme:dark;--bg:#090b10;--card:#11151d;--muted:#8f9baa;--line:#283142;--text:#f3f6fa;--ok:#84f0bc;--accent:#a8c7ff}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif}
+    main{max-width:980px;margin:0 auto;padding:48px 22px 80px}a{color:var(--accent)}h1{font-size:40px;margin:0 0 8px}.lead{color:var(--muted);max-width:760px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;margin-top:24px}.row{display:flex;gap:10px;flex-wrap:wrap}
+    input,button{font:inherit;border-radius:10px;border:1px solid var(--line);padding:12px 14px}input{flex:1;min-width:280px;background:#0b0f15;color:var(--text)}button{background:#f2f5f8;color:#0a0d12;font-weight:700;cursor:pointer}
+    pre{white-space:pre-wrap;overflow:auto;background:#07090d;border:1px solid var(--line);border-radius:12px;padding:16px;min-height:160px}.pill{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:5px 10px;color:var(--muted);margin:3px 4px 3px 0}.ok{color:var(--ok)}small{color:var(--muted)}
+  </style>
+</head>
+<body>
+<main>
+  <a href="/">← Observatório LLM</a>
+  <h1>VLB / AMT Lab</h1>
+  <p class="lead">Conversão experimental model-agnostic. O checkpoint é lido em streaming por tensor, re-quantizado para VLB-DIR e só recebe status verificado depois de passar conversão, runtime VLB e AMT. Quantização isolada não é tratada como prova.</p>
+  <div>
+    <span class="pill">Streaming HTTP Range</span><span class="pill">VLB-DIR</span><span class="pill">Q8_G64 first proof</span><span class="pill">AMT proof gate</span><span class="pill">No teacher</span>
+  </div>
+  <section class="card">
+    <h2>Primeiro alvo</h2>
+    <div class="row">
+      <input id="model" value="google/gemma-4-E4B-it" aria-label="Hugging Face model id" />
+      <button id="generate">Gerar célula Colab</button>
+      <button id="copy">Copiar</button>
+    </div>
+    <p><small>O modelo completo não é salvo no disco do Colab antes da conversão. Cada tensor Safetensors é buscado por byte-range, convertido e liberado.</small></p>
+    <pre id="code">Clique em “Gerar célula Colab”.</pre>
+  </section>
+  <section class="card">
+    <h2>Contrato de prova</h2>
+    <p><b>Gate A</b> · reconstrução dos pesos → <b>Gate B</b> · geração executada pelo runtime VLB → <b>Gate C</b> · AMT teacher-free com validação nova.</p>
+    <p class="ok">Somente A + B + C = VLB_AMT_ENGINE_PROOF_PASS.</p>
+    <p><a href="https://github.com/programador-powershell/RIFT-LM/blob/main/docs/VLB_AMT_ENGINE_V1.md">Especificação completa</a></p>
+  </section>
+</main>
+<script>
+const model=document.getElementById('model');const code=document.getElementById('code');
+async function generate(){const id=model.value.trim();if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(id)){code.textContent='Modelo inválido; use org/modelo.';return}code.textContent='Carregando launcher…';try{const r=await fetch('/vlb/'+id.split('/').map(encodeURIComponent).join('/'));const text=await r.text();code.textContent=r.ok?text:'Falha: '+text}catch(e){code.textContent='Falha: '+e.message}}
+document.getElementById('generate').addEventListener('click',generate);document.getElementById('copy').addEventListener('click',async()=>{await navigator.clipboard.writeText(code.textContent);});
+</script>
+</body>
+</html>
