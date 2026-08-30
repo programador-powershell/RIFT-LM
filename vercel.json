@@ -8,6 +8,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/vlb-lab",
+      "destination": "/vlb.html"
+    },
+    {
       "source": "/runner.py",
       "destination": "/api/runner"
     },
@@ -18,6 +22,10 @@
     {
       "source": "/converter/:model*",
       "destination": "/api/test?battery=converter&model=:model*"
+    },
+    {
+      "source": "/vlb/:model*",
+      "destination": "/api/vlb?model=:model*"
     },
     {
       "source": "/microlm",

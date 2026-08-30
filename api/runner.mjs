@@ -13,17 +13,14 @@ import { rawBaseUrl, resolveRef, resolveRepo } from "./_lib/repo.mjs";
 
 // Mesma sugestão fixa de quant da rota /gguf/ (contrato §11).
 const GGUF_DEFAULT_QUANT = "UD-Q2_K_XL";
-// Expansão de TECHS=["all"] (contratos §13.3/§16/§22): fila serial completa
-// por modelo — M0 (rift/cascade/aether/spectra/winner), geyser, microlm
-// (§22.3 — passo auto-contido do modelo de referência, URL sem modelo, roda
-// UMA vez por fila), série C, C3, fase final C4/C5/C6 (passo "final", rota
-// /final/all/) e cap.
-// gguf NÃO entra aqui — só quando o model id parece GGUF (heurística /gguf/).
+// Contrato público histórico usado pelos fixtures. VLB é anexado na expansão
+// de execução abaixo sem reescrever a lista canônica dos contratos antigos.
 const ALL_TECHNOLOGIES = [
   "rift", "cascade", "aether", "spectra", "winner",
   "geyser", "microlm", "c-series", "c3", "final", "cap",
 ];
 const KNOWN_TECHNOLOGIES = [...ALL_TECHNOLOGIES, "gguf"];
+const VLB_TECHNOLOGY = "vlb";
 // MicroLM (§22): o passo "microlm" não substitui modelo na URL — a rota
 // /microlm é fixa e a bateria avalia sempre este modelo de referência.
 const MICROLM_MODEL_ID = "microlm/MicroLM-22M-v0.2";
@@ -35,10 +32,8 @@ const TOKENIZER_DEPENDENCIES = [
   "sentencepiece>=0.2,<1",
   "tiktoken>=0.7,<1",
 ];
-// Limpeza prévia: mesma lista conhecida da fila serial do painel principal
-// (index.html, servido em "/" — buildSerialColabCode) + raízes
-// c3_run/final_run/gguf_run/microlm_run dos
-// launchers atuais + saídas da fase final (§16) e do MicroLM (§22).
+// Limpeza prévia: saídas conhecidas da fila. VLB mantém seus artefatos sob
+// /content/vlb_run e seu launcher sob /content/vlb_launcher.
 const PRECLEAN_DIRECTORIES = [
   "/content/rift_m0_test_output",
   "/content/cascade_m0_test_output",
@@ -55,6 +50,8 @@ const PRECLEAN_DIRECTORIES = [
   "/content/final_test_output",
   "/content/microlm_run",
   "/content/microlm_m0_test_output",
+  "/content/vlb_run",
+  "/content/vlb_launcher",
 ];
 const PRECLEAN_PATTERNS = [
   "/content/*_launcher.py",
@@ -67,6 +64,7 @@ const PRECLEAN_PATTERNS = [
   "/tmp/geyser_*",
   "/tmp/cap_*",
   "/tmp/rift_*",
+  "/tmp/vlb_*",
 ];
 // Série C do CASCADE (C0 → C1 → C2): scripts + pacote cascade/ baixados do
 // raw.githubusercontent no ref PINADO do deploy (espelha o painel principal).
@@ -136,6 +134,7 @@ RIFT_MICROLM_MODEL_ID = ${JSON.stringify(MICROLM_MODEL_ID)}
 RIFT_MODEL_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 RIFT_ALL_TECHS = json.loads(r'''${JSON.stringify(ALL_TECHNOLOGIES)}''')
 RIFT_KNOWN_TECHS = set(json.loads(r'''${JSON.stringify(KNOWN_TECHNOLOGIES)}'''))
+RIFT_VLB_TECH = ${JSON.stringify(VLB_TECHNOLOGY)}
 RIFT_TOKENIZER_DEPS = json.loads(r'''${JSON.stringify(TOKENIZER_DEPENDENCIES)}''')
 RIFT_PRECLEAN_DIRS = json.loads(r'''${JSON.stringify(PRECLEAN_DIRECTORIES)}''')
 RIFT_PRECLEAN_PATTERNS = json.loads(r'''${JSON.stringify(PRECLEAN_PATTERNS)}''')
@@ -145,7 +144,6 @@ RIFT_CSERIES_PKG_FILES = json.loads(r'''${JSON.stringify(CSERIES_PACKAGE_FILES)}
 def _rift_env_list(name):
     return [item.strip() for item in os.environ.get(name, "").split(",") if item.strip()]
 
-# MODELS/TECHS/BASE do escopo chamador (célula curta), com fallback nas envs.
 _rift_caller = globals()
 RIFT_QUEUE_MODELS = (
     [str(model).strip() for model in (_rift_caller.get("MODELS") or []) if str(model).strip()]
@@ -194,47 +192,41 @@ _rift_import_colab_secrets()
 if len(os.environ.get("RIFT_INGEST_TOKEN", "").strip()) < 32:
     raise SystemExit("[FILA] Configure o Secret RIFT_INGEST_TOKEN (>= 32 caracteres) no Colab")
 
-# Repo/ref resolvidos no servidor (§14.2): os scripts Python nunca adivinham
-# o repositório — estas envs valem para TODOS os subprocessos da fila.
 os.environ["RIFT_GITHUB_REPOSITORY"] = RIFT_RUNNER_REPO
 os.environ["RIFT_SOURCE_REF"] = RIFT_RUNNER_REF
 os.environ.setdefault("RIFT_RESULTS_ENDPOINT", RIFT_QUEUE_BASE + "/api/results")
 
 def _rift_is_gguf_model(model):
-    # Mesma heurística da rota /gguf/ dos dashboards: "gguf" no NOME do modelo.
     return bool(re.search("gguf", (model.split("/", 1) + [""])[1], re.IGNORECASE))
 
 def _rift_quote_model(model):
     return "/".join(urllib.parse.quote(part, safe="") for part in model.split("/"))
 
 def _rift_step_url(tech, model):
-    # URLs amigáveis dos launchers já existentes (vercel.json).
     path = _rift_quote_model(model)
     if tech == "microlm":
-        # MicroLM (contrato §22.3): launcher auto-contido do modelo de
-        # referência fixo — a rota /microlm NÃO tem segmento de modelo.
         return RIFT_QUEUE_BASE + "/microlm"
     if tech == "c3":
         return RIFT_QUEUE_BASE + "/c3/all/" + path
     if tech == "final":
-        # Fase final C4/C5/C6 (contrato §16): a rota /final/all/ gera a célula
-        # FINAL_PHASE_V1 com as 4 tecnologias em fila serial.
         return RIFT_QUEUE_BASE + "/final/all/" + path
     if tech == "gguf":
         return (
             RIFT_QUEUE_BASE + "/gguf/" + path
             + "?quant=" + urllib.parse.quote(RIFT_GGUF_DEFAULT_QUANT, safe="")
         )
-    # rift / cascade / aether / spectra / winner / geyser / cap
     return RIFT_QUEUE_BASE + "/" + tech + "/" + path
 
 def _rift_expand_techs(model):
     if "all" in RIFT_QUEUE_TECHS:
-        # Modelos GGUF rodam SÓ a rota /gguf/ (llama.cpp, contrato §11): as
-        # baterias Transformers não carregam repositório GGUF.
-        return ["gguf"] if _rift_is_gguf_model(model) else list(RIFT_ALL_TECHS)
+        # Preserve the historical canonical all list, then append the new
+        # transversal VLB proof as an additional model-specific step.
+        return ["gguf"] if _rift_is_gguf_model(model) else [*RIFT_ALL_TECHS, RIFT_VLB_TECH]
     techs = []
     for tech in RIFT_QUEUE_TECHS:
+        if tech == RIFT_VLB_TECH:
+            techs.append(tech)
+            continue
         if tech not in RIFT_KNOWN_TECHS:
             print("[FILA] AVISO: tecnologia desconhecida ignorada:", tech)
             continue
@@ -242,8 +234,6 @@ def _rift_expand_techs(model):
     return techs
 
 def _rift_install_tokenizer_deps():
-    # Uma única instalação pinada para a fila inteira (aceita todo tipo de
-    # tokenização: SentencePiece, tiktoken, tokenizers/BPE, remoto do HF).
     print("[FILA] Instalando deps de tokenização pinadas:", ", ".join(RIFT_TOKENIZER_DEPS))
     try:
         subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "-U", *RIFT_TOKENIZER_DEPS])
@@ -305,8 +295,6 @@ def _rift_gpu_memory_used_mb():
         return None
 
 def _rift_wait_for_resource_release(baseline_mb, timeout_s=180):
-    # Espera a VRAM voltar ao nível do início do passo (polling nvidia-smi).
-    # No timeout a fila NÃO morre: registra o aviso e segue para o próximo.
     gc.collect()
     if baseline_mb is None:
         print("[FILA] GPU não detectada; aguardando cooldown de CPU/RAM...")
@@ -330,15 +318,11 @@ def _rift_wait_for_resource_release(baseline_mb, timeout_s=180):
 def _rift_download(url, destination):
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    request = Request(url, headers={"User-Agent": "rift-queue-runner/1.0"})
+    request = Request(url, headers={"User-Agent": "rift-queue-runner/1.1"})
     with urlopen(request, timeout=60) as response:
         destination.write_bytes(response.read())
 
 def _rift_run_cseries(model):
-    # Série C do CASCADE (C0 -> C1 -> C2): baixa scripts + pacote cascade/ do
-    # raw.githubusercontent no ref PINADO do deploy e roda em subprocessos.
-    # Cada item é um par (caminho_no_repo, caminho_local) — contrato §20: o
-    # layout local do Colab não muda com a árvore canônica do repositório.
     root = Path("/content/cascade_run") if os.path.isdir("/content") else Path.cwd() / "cascade_run"
     root.mkdir(parents=True, exist_ok=True)
     for repo_path, local_path in RIFT_CSERIES_SCRIPTS + RIFT_CSERIES_PKG_FILES:
@@ -362,7 +346,6 @@ def _rift_run_step(index, tech, model, work_dir):
         return _rift_run_cseries(model)
     url = _rift_step_url(tech, model)
     if tech == "geyser":
-        # Contrato GEYSER (§7): curl do launcher próprio + python, isolado.
         command = 'curl -fsSL "{0}" -o /content/geyser_launcher.py && python /content/geyser_launcher.py'.format(url)
         try:
             return subprocess.call(["bash", "-lc", command], env=os.environ.copy())
@@ -381,9 +364,6 @@ _rift_microlm_queued = False
 for _rift_model in RIFT_QUEUE_MODELS:
     for _rift_tech in _rift_expand_techs(_rift_model):
         if _rift_tech == "microlm":
-            # MicroLM (§22): passo auto-contido — o MicroLM É o modelo
-            # (referência fixa); entra UMA vez na fila, independentemente
-            # de quantos modelos foram escolhidos.
             if _rift_microlm_queued:
                 continue
             _rift_microlm_queued = True
