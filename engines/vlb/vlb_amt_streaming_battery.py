@@ -448,12 +448,16 @@ def stream_convert(model_id: str, output_dir: Path, token: Optional[str], quant:
 
 
 def publish_record(record: Dict[str, Any]) -> bool:
+    endpoint = str(RESULTS_ENDPOINT).strip()
+    if not endpoint.lower().startswith("https://"):
+        print("[VLB] refusing publish: RIFT_RESULTS_ENDPOINT must use HTTPS")
+        return False
     token = os.environ.get("RIFT_INGEST_TOKEN", "").strip()
     if len(token) < 32:
-        print("[VLB] no valid RIFT_INGEST_TOKEN; result kept locally")
+        print("[VLB] no valid RIFT_INGEST_TOKEN (minimum 32 chars); result kept locally")
         return False
     response = requests.post(
-        RESULTS_ENDPOINT,
+        endpoint,
         data=json.dumps({"records": [record]}, ensure_ascii=False).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
