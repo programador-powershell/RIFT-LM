@@ -20,6 +20,10 @@
       "destination": "/api/test?battery=converter&model=:model*"
     },
     {
+      "source": "/vlb/:model*",
+      "destination": "/api/vlb?model=:model*"
+    },
+    {
       "source": "/microlm",
       "destination": "/api/test?battery=microlm"
     },
