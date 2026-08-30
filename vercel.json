@@ -8,6 +8,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/vlb-lab",
+      "destination": "/vlb.html"
+    },
+    {
       "source": "/runner.py",
       "destination": "/api/runner"
     },
