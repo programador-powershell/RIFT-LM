@@ -77,7 +77,7 @@ def download(url, destination):
     print("[VLB] downloaded", destination.name)
 
 import_colab_secrets()
-os.environ.setdefault("RIFT_RESULTS_ENDPOINT", ${JSON.stringify(`${origin}/api/results`)})
+os.environ.setdefault("RIFT_RESULTS_ENDPOINT", ${JSON.stringify(`${origin}/api/vlb-results`)})
 os.environ.setdefault("RIFT_GITHUB_REPOSITORY", ${JSON.stringify(repo)})
 os.environ.setdefault("RIFT_SOURCE_REF", ${JSON.stringify(ref)})
 print("[VLB] model:", MODEL_ID)
