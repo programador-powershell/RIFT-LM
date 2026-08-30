@@ -4,37 +4,39 @@
 
 VLB is not a checkpoint-specific optimization. It is a **conversion + runtime contract** intended to be applied to arbitrary Hugging Face LLM/VLM checkpoints.
 
-The target flow is:
+The implemented proof flow is:
 
 ```text
-upstream HF checkpoint
+upstream HF safetensors
         |
         v
-streaming tensor reader
+HTTP Range tensor streaming
         |
         v
 VLB re-quantization
         |
-        +--> reconstruction proof
+        +--> per-tensor reconstruction proof
         |
         v
 VLB-DIR artifact
         |
         v
-VLB runtime
+lazy VLB runtime
         |
-        +--> frozen base route
-        +--> adaptive latent/residual compute
-        +--> empirical marginal-gain gate
+        +--> VLBQuantLinear Q8 weights
+        +--> FP16/RAW compatibility tensors
+        +--> no upstream weight fallback
         |
         v
-AMT minimum-sufficient-exposure adaptation
+teacher-free AMT residual
+        |
+        +--> empirical marginal-gain gate
         |
         v
 fresh validation
         |
         v
-VERIFIED VLB/AMT deployment
+VLB_AMT_ENGINE_PROOF_PASS only if every gate passes
 ```
 
 A model does **not** become a verified VLB model merely because its weights were quantized.
@@ -43,7 +45,7 @@ A model does **not** become a verified VLB model merely because its weights were
 
 `google/gemma-4-E4B-it`
 
-Gemma 4 is deliberately the first target because it is small enough for Colab experimentation while still exercising a modern multimodal Transformers architecture.
+Gemma 4 is the first target because it is small enough for a Colab/T4 proof while still exercising a current multimodal Transformers architecture. The proof path is text-only initially; image capability is not claimed until a separate multimodal replay is added.
 
 The launcher is exposed at:
 
@@ -51,17 +53,24 @@ The launcher is exposed at:
 /vlb/google/gemma-4-E4B-it
 ```
 
-The Colab battery is:
+The dedicated site page is:
+
+```text
+/vlb-lab
+```
+
+The implementation lives in:
 
 ```text
 engines/vlb/vlb_amt_streaming_battery.py
+engines/vlb/vlb_runtime.py
 ```
 
 ## Streaming requirement
 
 The source checkpoint must not be downloaded as a complete local weight file before conversion.
 
-VLB v1 reads the Safetensors header first, then requests each tensor's byte range from Hugging Face independently:
+VLB reads the Safetensors header first, then requests each tensor byte range independently:
 
 ```text
 HTTP Range(source tensor)
@@ -72,6 +81,8 @@ HTTP Range(source tensor)
  -> release source tensor
  -> next tensor
 ```
+
+A full source response where a byte range was requested is rejected. The converter therefore does not silently fall back to downloading the full checkpoint.
 
 The manifest records:
 
@@ -85,7 +96,7 @@ The manifest records:
 
 ## VLB-DIR v1
 
-The initial format uses a directory rather than a monolithic file so conversion and resume can remain tensor-granular.
+The first format is directory-based so conversion, audit and future resume can remain tensor-granular:
 
 ```text
 <model>-q8_g64/
@@ -100,86 +111,145 @@ The initial format uses a directory rather than a monolithic file so conversion 
 
 ### Initial precision
 
-The first proof uses `Q8_G64` for eligible 2-D floating-point weights.
+The first proof uses `Q8_G64` for eligible 2-D floating-point weights. Embedding/tied-head tensors are preserved in FP16 in the initial Gemma 4 proof so weight tying is not confused with the quantized Linear runtime problem. Other non-eligible tensors remain FP16 or RAW passthrough.
 
-Non-eligible tensors remain FP16 or RAW passthrough.
+This is intentional. Q4, mixed-bit and more aggressive profiles are later Deployment Profiles and must independently pass the runtime/capability gates.
 
-This is intentional. VLB first proves the engine/runtime contract at a conservative precision. Q4/mixed-bit are later Deployment Profiles and must independently pass the same runtime/capability gates.
-
-## Three independent proof gates
-
-### Gate A — conversion
+## Gate A — conversion
 
 `CONVERSION_VERIFIED`
 
-A tensor quantization pass is accepted only if all quantized tensors satisfy the declared reconstruction limits.
+Every quantized tensor must satisfy the declared numerical reconstruction limits.
 
-This gate proves only numerical reconstruction of weights. It does not prove model behavior.
+This gate proves **weight reconstruction only**. It is not KR100 and it does not prove model behavior.
 
-### Gate B — runtime
+## Gate B — VLB runtime
 
 `VLB_RUNTIME_VERIFIED`
 
-The model must execute **from VLB-DIR**, through VLB runtime modules. Loading the upstream checkpoint with standard Transformers/bitsandbytes and merely attaching a VLB label is forbidden.
+The runtime is implemented in `engines/vlb/vlb_runtime.py`.
 
-The runtime proof must compare deterministic baseline and VLB execution under the same prompts/protocol.
+It:
 
-### Gate C — AMT
+1. instantiates the model architecture from config under `accelerate.init_empty_weights()`;
+2. replaces eligible `nn.Linear` modules with `VLBQuantLinear`;
+3. loads Q8 weights/scales from VLB-DIR;
+4. loads FP16/RAW compatibility tensors from VLB-DIR;
+5. resolves tied weights;
+6. refuses unresolved meta tensors;
+7. never calls `from_pretrained()` for upstream model weights;
+8. executes a deterministic text-forward smoke from the VLB artifact.
+
+The processor/tokenizer may still be obtained from Hugging Face; model weights may not.
+
+If the architecture cannot be bound completely from VLB-DIR, runtime verification fails. There is no standard-weight fallback hidden behind the VLB label.
+
+## Gate C — AMT
 
 `AMT_VERIFIED`
 
-AMT must:
+The first generic AMT proof is intentionally small. It is meant to prove the mechanism, not claim broad post-training mastery.
 
-- keep the VLB base frozen;
-- use GOLD examples, not a teacher model or teacher logits;
-- train only the minimum residual/gate state needed;
-- use separate learn and fresh-validation examples;
-- commit only interventions that preserve or improve validation;
-- rollback regressions automatically;
-- learn STOP/CONTINUE from empirical marginal gain, never textual self-confidence.
+The VLB base is frozen. AMT trains only:
 
-Only `A && B && C` yields:
+- a low-rank residual logits head;
+- a small marginal-gain gate.
+
+The examples are partitioned into three non-overlapping sets:
 
 ```text
+AMT_LEARN
+AMT_GATE_DEV
+AMT_FRESH_VALID
+```
+
+There is no teacher model, teacher logits or KL objective.
+
+Gate labels are empirical:
+
+```text
+residual improves exact target correctness
+        -> CONTINUE
+
+same correctness + lower CE
+        -> CONTINUE
+
+otherwise
+        -> STOP
+```
+
+AMT passes only if, on the fresh validation split, adaptive execution preserves/improves exact correctness **and** does not worsen mean CE.
+
+## Combined status
+
+Only all three proof gates produce:
+
+```text
+conversion_verified = true
+runtime_verified    = true
+amt_verified        = true
+--------------------------------
 VLB_AMT_ENGINE_PROOF_PASS
+quality_gate_pass = true
 ```
 
-## Current implementation status
-
-The first repository change intentionally implements **Gate A first** and returns an explicit blocked runtime status for Gates B/C.
-
-This is not a limitation hidden by the dashboard. A conversion-only record publishes:
+Any failed gate produces:
 
 ```text
+VLB_AMT_ENGINE_NOT_YET_PROVEN
 quality_gate_pass = false
-metrics.proof.engine_status = VLB_AMT_ENGINE_NOT_YET_PROVEN
 ```
 
-Therefore VLB cannot win the normal technology ranking until generation actually runs from VLB-DIR and the AMT gate is validated.
+A failed experiment may still be published to the Observatório as experimental evidence, but it cannot be ranked as a verified VLB result.
 
-## Next runtime milestone
+## Integration with RIFT-LM
 
-Implement a generic lazy Transformers loader:
+VLB is model-specific at execution time but technology-generic at the platform level.
 
-1. instantiate the architecture from `config.json` under `accelerate.init_empty_weights()`;
-2. replace quantized `nn.Linear` modules with `VLBQuantLinear`;
-3. keep Q8 weights/scales compressed in CPU RAM;
-4. dequantize only the active layer/block on demand;
-5. load FP16/RAW passthrough tensors directly from VLB-DIR;
-6. execute deterministic text-only Gemma 4 prompts;
-7. compare upstream baseline vs VLB output;
-8. add RC-LR residual compute + marginal-gain gate;
-9. run teacher-free AMT on a separate development split;
-10. publish only after fresh-validation replay.
+The ordinary queue accepts an explicit:
+
+```text
+TECHS = ["vlb"]
+```
+
+and `TECHS=["all"]` appends the VLB proof after the historical technology list for every non-GGUF Hugging Face model.
+
+VLB results are written through:
+
+```text
+/api/vlb-results
+```
+
+into the same append-only history used by the Observatório. The history validator recognizes `technology=VLB`, but a record is eligible only when its own proof gates pass.
+
+## What this first proof does not establish
+
+Even if Gemma 4 passes, the result proves the VLB/AMT mechanism only for the tested execution contract. It does not automatically prove:
+
+- KR100 across all Gemma capabilities;
+- multimodal/image retention;
+- Q4 or mixed-bit safety;
+- identical quality on every future architecture;
+- that every model benefits from AMT.
+
+Those require additional frozen capability batteries.
 
 ## Generalization contract
 
-Architecture-specific code is permitted only inside adapters/loaders. The converter format, manifest, verification and AMT scheduler must remain model-agnostic.
+Architecture-specific code is permitted only inside adapters/loaders. The following layers remain model-agnostic:
 
-Future targets should require no change to the high-level flow:
+- streaming Safetensors reader;
+- VLB-DIR format;
+- quantization manifest;
+- reconstruction proof;
+- VLB proof statuses;
+- AMT learn/gate/fresh-validation discipline;
+- Observatório publication contract.
+
+Future families should retain the same high-level flow:
 
 ```text
-model adapter -> VLB-DIR -> VLB runtime -> AMT -> proof
+model adapter -> VLB-DIR -> VLB runtime -> AMT -> capability proof
 ```
 
-If a model family needs an architecture adapter, the dashboard should report that explicitly rather than silently falling back to the standard model engine.
+If a model family requires an adapter, the dashboard must report that explicitly rather than silently falling back to the standard model engine.
