@@ -17,11 +17,11 @@
     },
     {
       "source": "/paper",
-      "destination": "/vlb-paper.html"
+      "destination": "/paper.html"
     },
     {
       "source": "/paper/vlb",
-      "destination": "/vlb-paper.html"
+      "destination": "/paper.html"
     },
     {
       "source": "/runner.py",
