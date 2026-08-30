@@ -12,6 +12,14 @@
       "destination": "/vlb.html"
     },
     {
+      "source": "/vlb-native",
+      "destination": "/vlb.html"
+    },
+    {
+      "source": "/paper/vlb",
+      "destination": "/vlb-paper.html"
+    },
+    {
       "source": "/runner.py",
       "destination": "/api/runner"
     },
