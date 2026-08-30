@@ -13,15 +13,14 @@ import { rawBaseUrl, resolveRef, resolveRepo } from "./_lib/repo.mjs";
 
 // Mesma sugestão fixa de quant da rota /gguf/ (contrato §11).
 const GGUF_DEFAULT_QUANT = "UD-Q2_K_XL";
-// Expansão de TECHS=["all"]: fila serial completa por modelo.
-// VLB é uma tecnologia transversal de re-quantização/runtime e recebe o mesmo
-// model id escolhido pelo usuário. GGUF continua fora do all normal e entra só
-// quando o model id parece um repositório GGUF.
+// Contrato público histórico usado pelos fixtures. VLB é anexado na expansão
+// de execução abaixo sem reescrever a lista canônica dos contratos antigos.
 const ALL_TECHNOLOGIES = [
   "rift", "cascade", "aether", "spectra", "winner",
-  "geyser", "microlm", "c-series", "c3", "final", "cap", "vlb",
+  "geyser", "microlm", "c-series", "c3", "final", "cap",
 ];
 const KNOWN_TECHNOLOGIES = [...ALL_TECHNOLOGIES, "gguf"];
+const VLB_TECHNOLOGY = "vlb";
 // MicroLM (§22): o passo "microlm" não substitui modelo na URL — a rota
 // /microlm é fixa e a bateria avalia sempre este modelo de referência.
 const MICROLM_MODEL_ID = "microlm/MicroLM-22M-v0.2";
@@ -135,6 +134,7 @@ RIFT_MICROLM_MODEL_ID = ${JSON.stringify(MICROLM_MODEL_ID)}
 RIFT_MODEL_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 RIFT_ALL_TECHS = json.loads(r'''${JSON.stringify(ALL_TECHNOLOGIES)}''')
 RIFT_KNOWN_TECHS = set(json.loads(r'''${JSON.stringify(KNOWN_TECHNOLOGIES)}'''))
+RIFT_VLB_TECH = ${JSON.stringify(VLB_TECHNOLOGY)}
 RIFT_TOKENIZER_DEPS = json.loads(r'''${JSON.stringify(TOKENIZER_DEPENDENCIES)}''')
 RIFT_PRECLEAN_DIRS = json.loads(r'''${JSON.stringify(PRECLEAN_DIRECTORIES)}''')
 RIFT_PRECLEAN_PATTERNS = json.loads(r'''${JSON.stringify(PRECLEAN_PATTERNS)}''')
@@ -144,7 +144,6 @@ RIFT_CSERIES_PKG_FILES = json.loads(r'''${JSON.stringify(CSERIES_PACKAGE_FILES)}
 def _rift_env_list(name):
     return [item.strip() for item in os.environ.get(name, "").split(",") if item.strip()]
 
-# MODELS/TECHS/BASE do escopo chamador (célula curta), com fallback nas envs.
 _rift_caller = globals()
 RIFT_QUEUE_MODELS = (
     [str(model).strip() for model in (_rift_caller.get("MODELS") or []) if str(model).strip()]
@@ -193,21 +192,17 @@ _rift_import_colab_secrets()
 if len(os.environ.get("RIFT_INGEST_TOKEN", "").strip()) < 32:
     raise SystemExit("[FILA] Configure o Secret RIFT_INGEST_TOKEN (>= 32 caracteres) no Colab")
 
-# Repo/ref resolvidos no servidor (§14.2): os scripts Python nunca adivinham
-# o repositório — estas envs valem para TODOS os subprocessos da fila.
 os.environ["RIFT_GITHUB_REPOSITORY"] = RIFT_RUNNER_REPO
 os.environ["RIFT_SOURCE_REF"] = RIFT_RUNNER_REF
 os.environ.setdefault("RIFT_RESULTS_ENDPOINT", RIFT_QUEUE_BASE + "/api/results")
 
 def _rift_is_gguf_model(model):
-    # Mesma heurística da rota /gguf/ dos dashboards: "gguf" no NOME do modelo.
     return bool(re.search("gguf", (model.split("/", 1) + [""])[1], re.IGNORECASE))
 
 def _rift_quote_model(model):
     return "/".join(urllib.parse.quote(part, safe="") for part in model.split("/"))
 
 def _rift_step_url(tech, model):
-    # URLs amigáveis dos launchers já existentes (vercel.json).
     path = _rift_quote_model(model)
     if tech == "microlm":
         return RIFT_QUEUE_BASE + "/microlm"
@@ -220,14 +215,18 @@ def _rift_step_url(tech, model):
             RIFT_QUEUE_BASE + "/gguf/" + path
             + "?quant=" + urllib.parse.quote(RIFT_GGUF_DEFAULT_QUANT, safe="")
         )
-    # VLB and the ordinary technologies all use /<technology>/<org>/<model>.
     return RIFT_QUEUE_BASE + "/" + tech + "/" + path
 
 def _rift_expand_techs(model):
     if "all" in RIFT_QUEUE_TECHS:
-        return ["gguf"] if _rift_is_gguf_model(model) else list(RIFT_ALL_TECHS)
+        # Preserve the historical canonical all list, then append the new
+        # transversal VLB proof as an additional model-specific step.
+        return ["gguf"] if _rift_is_gguf_model(model) else [*RIFT_ALL_TECHS, RIFT_VLB_TECH]
     techs = []
     for tech in RIFT_QUEUE_TECHS:
+        if tech == RIFT_VLB_TECH:
+            techs.append(tech)
+            continue
         if tech not in RIFT_KNOWN_TECHS:
             print("[FILA] AVISO: tecnologia desconhecida ignorada:", tech)
             continue
