@@ -44,6 +44,31 @@ jobs:
           git ls-files -z '*.py' | xargs -0 --no-run-if-empty python -m py_compile
           echo "py_compile OK ($(git ls-files '*.py' | wc -l) arquivos)"
 
+      - name: Build VLB native kernel/server
+        run: |
+          set -euo pipefail
+          cmake -S engines/vlb/native -B /tmp/vlb-native-ci -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/vlb-native-ci --config Release -j2
+          ctest --test-dir /tmp/vlb-native-ci --output-on-failure
+          /tmp/vlb-native-ci/vlb-server --port 18787 >/tmp/vlb-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          python - <<'PY'
+          import json, time, urllib.request
+          for _ in range(30):
+              try:
+                  body = urllib.request.urlopen('http://127.0.0.1:18787/healthz', timeout=1).read().decode()
+                  obj = json.loads(body)
+                  assert obj['ok'] is True
+                  assert obj['external_llm_runtime'] is False
+                  print(body)
+                  break
+              except Exception:
+                  time.sleep(0.1)
+          else:
+              raise SystemExit('vlb-server healthz did not become ready')
+          PY
+
       - name: Install
         run: npm install --ignore-scripts --no-audit --no-fund
 
