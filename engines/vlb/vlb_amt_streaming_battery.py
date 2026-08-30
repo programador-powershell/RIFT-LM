@@ -1,40 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-VLB/AMT Streaming Conversion Battery v1
-=======================================
+"""VLB/AMT streaming re-quantization + runtime proof battery v1.
 
-Proof-first generic conversion path for Hugging Face safetensors checkpoints.
-The source checkpoint is NEVER materialized as a complete local file. Tensor
-byte ranges are read directly from the Hub, quantized one tensor at a time and
-written to a VLB-DIR artifact.
+The upstream checkpoint is never materialized as a complete local weight file.
+Safetensors headers are read first, then each tensor is fetched by HTTP Range,
+re-quantized, verified and immediately written into VLB-DIR.
 
-This first battery intentionally separates three claims:
+Proof gates are independent:
+  A. CONVERSION_VERIFIED  — numerical reconstruction gate.
+  B. VLB_RUNTIME_VERIFIED — generation forward executes from VLB-DIR, not HF weights.
+  C. AMT_VERIFIED         — teacher-free residual/gate improves or preserves fresh validation.
 
-  CONVERSION_VERIFIED
-      Every source tensor was streamed, hashed/audited and reconstructed within
-      the declared numerical gate.
-
-  VLB_RUNTIME_VERIFIED
-      The VLB package was loaded through the VLB runtime rather than the normal
-      Transformers checkpoint path and produced a deterministic text-forward
-      smoke result.
-
-  AMT_VERIFIED
-      A tiny teacher-free adapter/gate was trained only on embedded GOLD
-      examples and improved or preserved a held-out validation slice.
-
-Only when all three pass is engine_status=VLB_AMT_ENGINE_PROOF_PASS.
-No KR100/general-intelligence claim is made by this battery.
-
-Initial proof target:
-    google/gemma-4-E4B-it
-
-The implementation is architecture-agnostic at the package layer: any HF model
-whose weights are safetensors can be streamed into VLB-DIR. Runtime proof is
-currently enabled for models that Transformers can instantiate from config and
-whose quantized 2-D weights belong to nn.Linear modules; unsupported modules
-remain FP16 passthrough tensors in the package.
+Only A+B+C => VLB_AMT_ENGINE_PROOF_PASS.
 """
 
 from __future__ import annotations
@@ -53,16 +30,17 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def ensure_deps() -> None:
+    # Gemma 4 config declares the Transformers 5.5 generation.
     required = {
         "torch": "torch",
         "requests": "requests>=2.32",
         "huggingface_hub": "huggingface_hub>=0.27,<2",
         "safetensors": "safetensors>=0.5,<1",
-        "transformers": "transformers>=4.56",
+        "transformers": "transformers>=5.5.0",
         "accelerate": "accelerate>=1.2,<2",
     }
     missing = []
@@ -80,9 +58,10 @@ ensure_deps()
 
 import requests
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from huggingface_hub import HfApi, hf_hub_url, get_hf_file_metadata
+
+from vlb_runtime import run_vlb_runtime_and_amt_proof
 
 
 BATTERY_ID = "VLB_AMT_STREAMING_V1"
@@ -93,26 +72,47 @@ DEFAULT_GROUP_SIZE = 64
 DEFAULT_QUANT = "Q8_G64"
 RESULTS_ENDPOINT = os.environ.get("RIFT_RESULTS_ENDPOINT", "https://rift-lm.vercel.app/api/results")
 SOURCE_REF = os.environ.get("RIFT_SOURCE_REF", "unknown")
-
-# Proof-first: Q8 is intentionally the first generic format. Q4 comes only
-# after the end-to-end runtime path is proven on Gemma 4.
 SUPPORTED_QUANTS = {"Q8_G64"}
 
-# Numerical conversion gate. This is NOT KR100. It only certifies weight
-# reconstruction quality for this deployment artifact.
+# Weight reconstruction gate only. This is intentionally not called KR100.
 MIN_TENSOR_COSINE = 0.9990
 MAX_TENSOR_NRMSE = 0.0200
 
-# Tiny AMT set. GOLD is embedded and teacher-free. Train/validation are fixed.
-AMT_TRAIN = [
+# First runtime keeps tied/embedding matrices FP16. That removes tied-weight
+# ambiguity from the first engine proof while still quantizing the expensive
+# Transformer Linear path. Later profiles may independently quantize them.
+FP16_NAME_PATTERNS = (
+    "embed_tokens.weight",
+    "embedding.weight",
+    "embeddings.weight",
+    "lm_head.weight",
+    "shared.weight",
+)
+
+# Teacher-free GOLD examples. The three partitions never overlap.
+AMT_LEARN = [
     ("2 + 2 =", " 4"),
-    ("The capital of France is", " Paris"),
-    ("In Python, a list is", " mutable"),
+    ("5 + 5 =", " 10"),
     ("Binary 10 equals decimal", " 2"),
+    ("The capital of France is", " Paris"),
+    ("The capital of Brazil is", " Brasilia"),
+    ("In Python, a list is", " mutable"),
+    ("HTTP status for Not Found is", " 404"),
+    ("The opposite of true is", " false"),
 ]
-AMT_VALID = [
+AMT_GATE_DEV = [
+    ("7 + 1 =", " 8"),
+    ("The capital of Italy is", " Rome"),
+    ("Binary 11 equals decimal", " 3"),
+    ("A Python tuple is usually", " immutable"),
+]
+AMT_FRESH_VALID = [
     ("3 + 3 =", " 6"),
+    ("9 - 4 =", " 5"),
     ("The capital of Japan is", " Tokyo"),
+    ("The capital of Germany is", " Berlin"),
+    ("HTTP status for OK is", " 200"),
+    ("The boolean opposite of false is", " true"),
 ]
 
 
@@ -159,35 +159,32 @@ def auth_headers(token: Optional[str]) -> Dict[str, str]:
 
 
 class RangeReader:
-    """HTTP byte-range reader. It never writes the source checkpoint to disk."""
+    """Strict byte-range reader; full source responses are rejected."""
 
     def __init__(self, model_id: str, filename: str, token: Optional[str]):
-        self.model_id = model_id
-        self.filename = filename
-        self.token = token
         url = hf_hub_url(model_id, filename=filename)
         meta = get_hf_file_metadata(url, token=token)
         self.location = meta.location
         self.size = int(meta.size or 0)
         self.etag = str(meta.etag or "")
+        self.filename = filename
+        self.token = token
         if self.size <= 0:
             raise RuntimeError(f"Cannot resolve size for {model_id}/{filename}")
 
     def read(self, start: int, length: int) -> bytes:
         if length <= 0:
             return b""
-        end = start + length - 1
         headers = auth_headers(self.token)
-        headers["Range"] = f"bytes={start}-{end}"
-        with requests.get(self.location, headers=headers, stream=True, timeout=120, allow_redirects=True) as r:
-            if r.status_code not in (200, 206):
-                raise RuntimeError(f"Range request failed HTTP {r.status_code} for {self.filename}")
-            data = r.content
-        # A server returning 200 ignored Range. Refuse rather than accidentally
-        # retaining a full 16 GB source response in memory.
+        headers["Range"] = f"bytes={start}-{start + length - 1}"
+        with requests.get(self.location, headers=headers, stream=True, timeout=180, allow_redirects=True) as response:
+            if response.status_code not in (200, 206):
+                raise RuntimeError(f"Range request HTTP {response.status_code}: {self.filename}")
+            data = response.content
         if len(data) != length:
             raise RuntimeError(
-                f"Range contract failed for {self.filename}: requested {length} bytes, received {len(data)}"
+                f"Range contract failed for {self.filename}: requested {length}, received {len(data)}. "
+                "Refusing a possible full-checkpoint response."
             )
         return data
 
@@ -208,45 +205,41 @@ class SafeTensorEntry:
 class SafeTensorRemoteFile:
     def __init__(self, model_id: str, filename: str, token: Optional[str]):
         self.reader = RangeReader(model_id, filename, token)
-        self.model_id = model_id
         self.filename = filename
-        first = self.reader.read(0, 8)
-        header_len = struct.unpack("<Q", first)[0]
+        header_len = struct.unpack("<Q", self.reader.read(0, 8))[0]
         if header_len <= 2 or header_len > 256 * 1024 * 1024:
             raise RuntimeError(f"Invalid safetensors header length: {header_len}")
         header_raw = self.reader.read(8, header_len)
         self.header_sha256 = sha256_bytes(header_raw)
-        self.header = json.loads(header_raw.decode("utf-8"))
-        self.data_start = 8 + header_len
-        self.entries: List[SafeTensorEntry] = []
-        for name, meta in self.header.items():
+        header = json.loads(header_raw.decode("utf-8"))
+        data_start = 8 + header_len
+        entries = []
+        for name, meta in header.items():
             if name == "__metadata__":
                 continue
             offsets = meta.get("data_offsets")
             if not isinstance(offsets, list) or len(offsets) != 2:
-                raise RuntimeError(f"Invalid offsets for tensor {name}")
-            self.entries.append(
+                raise RuntimeError(f"Invalid offsets for {name}")
+            entries.append(
                 SafeTensorEntry(
                     name=name,
                     dtype=str(meta["dtype"]),
                     shape=[int(x) for x in meta["shape"]],
-                    absolute_start=self.data_start + int(offsets[0]),
-                    absolute_end=self.data_start + int(offsets[1]),
+                    absolute_start=data_start + int(offsets[0]),
+                    absolute_end=data_start + int(offsets[1]),
                 )
             )
-        self.entries.sort(key=lambda x: x.absolute_start)
+        self.entries = sorted(entries, key=lambda x: x.absolute_start)
 
     def tensor(self, entry: SafeTensorEntry) -> torch.Tensor:
-        if entry.dtype not in DTYPE_MAP:
+        dtype = DTYPE_MAP.get(entry.dtype)
+        if dtype is None:
             raise RuntimeError(f"Unsupported safetensors dtype {entry.dtype} for {entry.name}")
         raw = self.reader.read(entry.absolute_start, entry.nbytes)
-        # bytearray gives writable backing storage and avoids torch warnings.
-        tensor = torch.frombuffer(bytearray(raw), dtype=DTYPE_MAP[entry.dtype])
+        tensor = torch.frombuffer(bytearray(raw), dtype=dtype)
         expected = math.prod(entry.shape) if entry.shape else 1
         if tensor.numel() != expected:
-            raise RuntimeError(
-                f"Tensor element count mismatch for {entry.name}: {tensor.numel()} != {expected}"
-            )
+            raise RuntimeError(f"Element count mismatch for {entry.name}: {tensor.numel()} != {expected}")
         return tensor.reshape(entry.shape).clone()
 
 
@@ -257,37 +250,32 @@ class VLBQuantizer:
         self.tensor_dir.mkdir(parents=True, exist_ok=True)
         self.group_size = int(group_size)
 
+    @staticmethod
+    def force_fp16(name: str) -> bool:
+        lower = name.lower()
+        return any(pattern in lower for pattern in FP16_NAME_PATTERNS)
+
     def quantize_q8(self, tensor: torch.Tensor) -> Tuple[Dict[str, Any], torch.Tensor]:
         x = tensor.detach().float().contiguous().reshape(-1)
         original_numel = x.numel()
         pad = (-original_numel) % self.group_size
-        if pad:
-            x_work = F.pad(x, (0, pad))
-        else:
-            x_work = x
+        x_work = F.pad(x, (0, pad)) if pad else x
         groups = x_work.reshape(-1, self.group_size)
         max_abs = groups.abs().amax(dim=1)
         scales = torch.where(max_abs > 0, max_abs / 127.0, torch.ones_like(max_abs))
         q = torch.round(groups / scales[:, None]).clamp(-127, 127).to(torch.int8)
         recon = (q.float() * scales[:, None]).reshape(-1)[:original_numel]
-        payload = {
-            "format": "Q8_G64",
-            "group_size": self.group_size,
-            "shape": list(tensor.shape),
-            "numel": original_numel,
-            "qweight": q.cpu(),
-            "scales": scales.to(torch.float16).cpu(),
-        }
-        return payload, recon.reshape(tensor.shape)
-
-    def fp16_passthrough(self, tensor: torch.Tensor) -> Tuple[Dict[str, Any], torch.Tensor]:
-        fp = tensor.detach().to(torch.float16).cpu().contiguous()
-        payload = {
-            "format": "FP16",
-            "shape": list(tensor.shape),
-            "tensor": fp,
-        }
-        return payload, fp.float()
+        return (
+            {
+                "format": "Q8_G64",
+                "group_size": self.group_size,
+                "shape": list(tensor.shape),
+                "numel": original_numel,
+                "qweight": q.cpu(),
+                "scales": scales.to(torch.float16).cpu(),
+            },
+            recon.reshape(tensor.shape),
+        )
 
     @staticmethod
     def metrics(original: torch.Tensor, reconstructed: torch.Tensor) -> Dict[str, float]:
@@ -295,27 +283,38 @@ class VLBQuantizer:
         b = reconstructed.detach().float().reshape(-1)
         if a.numel() == 0:
             return {"cosine": 1.0, "nrmse": 0.0, "max_abs_error": 0.0}
-        denom = float(torch.linalg.vector_norm(a).item())
-        if denom == 0.0:
-            cosine = 1.0 if float(torch.linalg.vector_norm(b).item()) == 0.0 else 0.0
-        else:
-            cosine = float(F.cosine_similarity(a.double(), b.double(), dim=0).item())
+        norm_a = float(torch.linalg.vector_norm(a).item())
+        norm_b = float(torch.linalg.vector_norm(b).item())
+        cosine = 1.0 if norm_a == 0.0 and norm_b == 0.0 else (
+            0.0 if norm_a == 0.0 else float(F.cosine_similarity(a.double(), b.double(), dim=0).item())
+        )
         rmse = float(torch.sqrt(torch.mean((a - b) ** 2)).item())
         rms_ref = float(torch.sqrt(torch.mean(a ** 2)).item())
-        nrmse = rmse / max(rms_ref, 1e-12)
-        max_abs = float((a - b).abs().max().item())
-        return {"cosine": cosine, "nrmse": nrmse, "max_abs_error": max_abs}
+        return {
+            "cosine": cosine,
+            "nrmse": rmse / max(rms_ref, 1e-12),
+            "max_abs_error": float((a - b).abs().max().item()),
+        }
 
     def write_tensor(self, name: str, tensor: torch.Tensor) -> Dict[str, Any]:
-        quantizable = tensor.is_floating_point() and tensor.ndim == 2 and tensor.numel() >= self.group_size
+        quantizable = (
+            tensor.is_floating_point()
+            and tensor.ndim == 2
+            and tensor.numel() >= self.group_size
+            and not self.force_fp16(name)
+        )
         if quantizable:
             payload, recon = self.quantize_q8(tensor)
+        elif tensor.is_floating_point():
+            fp = tensor.detach().to(torch.float16).cpu().contiguous()
+            payload = {"format": "FP16", "shape": list(tensor.shape), "tensor": fp}
+            recon = fp.float()
         else:
-            payload, recon = self.fp16_passthrough(tensor) if tensor.is_floating_point() else (
-                {"format": "RAW", "shape": list(tensor.shape), "tensor": tensor.cpu().contiguous()},
-                tensor.detach().float().cpu(),
-            )
-        metrics = self.metrics(tensor, recon)
+            raw = tensor.detach().cpu().contiguous()
+            payload = {"format": "RAW", "shape": list(tensor.shape), "tensor": raw}
+            recon = raw.float()
+
+        metric = self.metrics(tensor, recon)
         file_name = safe_name(name)
         destination = self.tensor_dir / file_name
         torch.save(payload, destination)
@@ -328,55 +327,51 @@ class VLBQuantizer:
             "source_bytes": tensor.numel() * tensor.element_size(),
             "artifact_bytes": destination.stat().st_size,
             "artifact_sha256": sha256_file(destination),
-            "metrics": metrics,
+            "metrics": metric,
         }
 
 
 def resolve_safetensor_files(model_id: str, token: Optional[str]) -> List[str]:
     info = HfApi(token=token).model_info(model_id, files_metadata=True)
     names = [str(s.rfilename) for s in info.siblings if str(s.rfilename).endswith(".safetensors")]
-    # Exclude adapter/optimizer artifacts if a canonical model file exists.
-    model_files = [n for n in names if Path(n).name.startswith("model")]
-    return sorted(model_files or names)
+    canonical = [n for n in names if Path(n).name.startswith("model")]
+    return sorted(canonical or names)
 
 
 def fetch_small_json(model_id: str, filename: str, token: Optional[str]) -> Optional[Dict[str, Any]]:
-    url = hf_hub_url(model_id, filename=filename)
     try:
-        meta = get_hf_file_metadata(url, token=token)
-        r = requests.get(meta.location, headers=auth_headers(token), timeout=60)
-        if r.status_code != 200:
-            return None
-        return r.json()
+        meta = get_hf_file_metadata(hf_hub_url(model_id, filename=filename), token=token)
+        response = requests.get(meta.location, headers=auth_headers(token), timeout=60)
+        return response.json() if response.status_code == 200 else None
     except Exception:
         return None
 
 
 def stream_convert(model_id: str, output_dir: Path, token: Optional[str], quant: str) -> Dict[str, Any]:
     if quant not in SUPPORTED_QUANTS:
-        raise RuntimeError(f"Unsupported VLB quant {quant}; supported={sorted(SUPPORTED_QUANTS)}")
-    safetensor_files = resolve_safetensor_files(model_id, token)
-    if not safetensor_files:
-        raise RuntimeError("No safetensors weights found; VLB streaming v1 requires safetensors")
+        raise RuntimeError(f"Unsupported VLB quant {quant}")
+    files = resolve_safetensor_files(model_id, token)
+    if not files:
+        raise RuntimeError("VLB streaming v1 requires safetensors weights")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     quantizer = VLBQuantizer(output_dir)
-    tensor_records: List[Dict[str, Any]] = []
+    records: List[Dict[str, Any]] = []
     source_bytes = 0
-    start = time.time()
+    started = time.time()
 
     print(f"[VLB] model={model_id}")
-    print(f"[VLB] source safetensors={len(safetensor_files)}")
-    print("[VLB] source checkpoint will NOT be materialized on disk")
+    print(f"[VLB] safetensors files={len(files)}")
+    print("[VLB] FULL SOURCE CHECKPOINT ON DISK = FALSE")
 
-    for file_index, filename in enumerate(safetensor_files, start=1):
+    for shard_idx, filename in enumerate(files, start=1):
         remote = SafeTensorRemoteFile(model_id, filename, token)
         print(
-            f"[VLB] shard {file_index}/{len(safetensor_files)} {filename} "
-            f"size={remote.reader.size / 1024**3:.2f} GiB tensors={len(remote.entries)}",
+            f"[VLB] shard {shard_idx}/{len(files)} {filename} "
+            f"remote_size={remote.reader.size / 1024**3:.2f}GiB tensors={len(remote.entries)}",
             flush=True,
         )
-        for tensor_index, entry in enumerate(remote.entries, start=1):
+        for tensor_idx, entry in enumerate(remote.entries, start=1):
             tensor = remote.tensor(entry)
             source_bytes += entry.nbytes
             record = quantizer.write_tensor(entry.name, tensor)
@@ -388,35 +383,29 @@ def stream_convert(model_id: str, output_dir: Path, token: Optional[str], quant:
                     "source_header_sha256": remote.header_sha256,
                 }
             )
-            tensor_records.append(record)
-            if tensor_index % 25 == 0 or tensor_index == len(remote.entries):
+            records.append(record)
+            if tensor_idx % 25 == 0 or tensor_idx == len(remote.entries):
                 print(
-                    f"[VLB] {filename}: {tensor_index}/{len(remote.entries)} "
-                    f"last={entry.name} {record['format']} cos={record['metrics']['cosine']:.6f} "
+                    f"[VLB] {tensor_idx}/{len(remote.entries)} {entry.name} "
+                    f"{record['format']} cos={record['metrics']['cosine']:.6f} "
                     f"nrmse={record['metrics']['nrmse']:.6f}",
                     flush=True,
                 )
             del tensor
             gc.collect()
 
-    config = fetch_small_json(model_id, "config.json", token)
-    generation_config = fetch_small_json(model_id, "generation_config.json", token)
-    if config is not None:
-        (output_dir / "config.json").write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    if generation_config is not None:
-        (output_dir / "generation_config.json").write_text(
-            json.dumps(generation_config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-        )
+    for filename in ("config.json", "generation_config.json"):
+        obj = fetch_small_json(model_id, filename, token)
+        if obj is not None:
+            (output_dir / filename).write_text(json.dumps(obj, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
-    worst_cos = min((r["metrics"]["cosine"] for r in tensor_records if r["format"] == "Q8_G64"), default=1.0)
-    worst_nrmse = max((r["metrics"]["nrmse"] for r in tensor_records if r["format"] == "Q8_G64"), default=0.0)
+    qrecords = [r for r in records if r["format"] == "Q8_G64"]
     failed = [
         r["name"]
-        for r in tensor_records
-        if r["format"] == "Q8_G64"
-        and (r["metrics"]["cosine"] < MIN_TENSOR_COSINE or r["metrics"]["nrmse"] > MAX_TENSOR_NRMSE)
+        for r in qrecords
+        if r["metrics"]["cosine"] < MIN_TENSOR_COSINE or r["metrics"]["nrmse"] > MAX_TENSOR_NRMSE
     ]
-    artifact_bytes = sum(int(r["artifact_bytes"]) for r in tensor_records)
+    artifact_bytes = sum(int(r["artifact_bytes"]) for r in records)
     manifest = {
         "schema": "VLB-DIR-v1",
         "engine": ENGINE_VERSION,
@@ -432,25 +421,24 @@ def stream_convert(model_id: str, output_dir: Path, token: Optional[str], quant:
         "source_weight_bytes": source_bytes,
         "artifact_weight_bytes": artifact_bytes,
         "compression_ratio": source_bytes / max(artifact_bytes, 1),
-        "tensor_count": len(tensor_records),
-        "quantized_tensor_count": sum(r["format"] == "Q8_G64" for r in tensor_records),
-        "passthrough_tensor_count": sum(r["format"] != "Q8_G64" for r in tensor_records),
+        "tensor_count": len(records),
+        "quantized_tensor_count": len(qrecords),
+        "passthrough_tensor_count": len(records) - len(qrecords),
         "conversion_gate": {
             "min_tensor_cosine": MIN_TENSOR_COSINE,
             "max_tensor_nrmse": MAX_TENSOR_NRMSE,
-            "observed_worst_cosine": worst_cos,
-            "observed_worst_nrmse": worst_nrmse,
+            "observed_worst_cosine": min((r["metrics"]["cosine"] for r in qrecords), default=1.0),
+            "observed_worst_nrmse": max((r["metrics"]["nrmse"] for r in qrecords), default=0.0),
             "failed_tensors": failed,
             "pass": not failed,
         },
-        "tensor_records": tensor_records,
-        "created_unix": time.time(),
-        "elapsed_seconds": time.time() - start,
+        "tensor_records": records,
+        "elapsed_seconds": time.time() - started,
         "verification": {
             "conversion_verified": not failed,
             "runtime_verified": False,
             "amt_verified": False,
-            "engine_status": "CONVERSION_ONLY_UNVERIFIED_RUNTIME",
+            "engine_status": "CONVERSION_VERIFIED_RUNTIME_PENDING" if not failed else "CONVERSION_GATE_FAIL",
         },
     }
     manifest_path = output_dir / "vlb_manifest.json"
@@ -459,65 +447,23 @@ def stream_convert(model_id: str, output_dir: Path, token: Optional[str], quant:
     return manifest
 
 
-class AMTLogitAdapter(nn.Module):
-    """Tiny model-agnostic logit-space residual used only by the runtime proof.
-
-    It learns a low-rank correction over the top-K vocabulary slice selected by
-    the base model. This keeps the proof adapter tiny and avoids architecture-
-    specific transformer surgery. A gate decides whether the correction is
-    applied. The base model is always frozen.
-    """
-
-    def __init__(self, k: int = 64, rank: int = 8):
-        super().__init__()
-        self.k = k
-        self.down = nn.Linear(k, rank, bias=False)
-        self.up = nn.Linear(rank, k, bias=False)
-        self.gate = nn.Sequential(nn.LayerNorm(4), nn.Linear(4, 1))
-        nn.init.zeros_(self.up.weight)
-
-    def forward(self, top_logits: torch.Tensor, features: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        delta = self.up(F.silu(self.down(top_logits)))
-        p_continue = torch.sigmoid(self.gate(features)).squeeze(-1)
-        refined = top_logits + p_continue.unsqueeze(-1) * delta
-        return refined, p_continue
-
-
-def runtime_and_amt_proof(*args, **kwargs) -> Dict[str, Any]:
-    """Runtime v1 status gate.
-
-    The VLB-DIR converter is real and generic. A fully lazy Transformers loader
-    for Gemma 4 is the next runtime milestone and is intentionally NOT faked in
-    this first commit. Returning an explicit blocked status prevents the
-    dashboard from treating conversion metrics as proof that generation uses
-    VLB weights.
-    """
-    return {
-        "runtime_verified": False,
-        "amt_verified": False,
-        "reason": (
-            "VLB-DIR streaming conversion is implemented, but the generic lazy "
-            "VLBQuantLinear Transformers loader is not certified yet. AMT cannot "
-            "be claimed until generation is executed from VLB-DIR rather than the upstream checkpoint."
-        ),
-        "next_gate": "IMPLEMENT_AND_REPLAY_VLB_LAZY_RUNTIME",
-    }
-
-
 def publish_record(record: Dict[str, Any]) -> bool:
     token = os.environ.get("RIFT_INGEST_TOKEN", "").strip()
     if len(token) < 32:
-        print("[VLB] RIFT_INGEST_TOKEN missing/short; result kept locally only")
+        print("[VLB] no valid RIFT_INGEST_TOKEN; result kept locally")
         return False
-    payload = json.dumps({"records": [record]}, ensure_ascii=False).encode("utf-8")
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}",
-        "User-Agent": "rift-vlb-battery/0.1",
-    }
-    r = requests.post(RESULTS_ENDPOINT, data=payload, headers=headers, timeout=60)
-    if not r.ok:
-        print("[VLB] dashboard publish failed:", r.status_code, r.text[:500])
+    response = requests.post(
+        RESULTS_ENDPOINT,
+        data=json.dumps({"records": [record]}, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+            "User-Agent": "rift-vlb-battery/0.2",
+        },
+        timeout=60,
+    )
+    if not response.ok:
+        print("[VLB] dashboard publish failed:", response.status_code, response.text[:500])
         return False
     print("[VLB] dashboard result published")
     return True
@@ -530,7 +476,6 @@ def build_record(model_id: str, manifest: Dict[str, Any], runtime: Dict[str, Any
     engine_pass = conversion_pass and runtime_pass and amt_pass
     source_bytes = int(manifest["source_weight_bytes"])
     artifact_bytes = int(manifest["artifact_weight_bytes"])
-    reduction = 1.0 - artifact_bytes / max(source_bytes, 1)
     return {
         "schema_version": 1,
         "technology": TECHNOLOGY,
@@ -540,14 +485,14 @@ def build_record(model_id: str, manifest: Dict[str, Any], runtime: Dict[str, Any
         "status": "MEASURED" if conversion_pass else "FAILED",
         "source_ref": SOURCE_REF,
         "implementation": {
-            "kind": "EXPERIMENTAL_NATIVE_FORMAT",
-            "scope": "streaming_requantization_and_engine_proof",
-            "native": False,
+            "kind": "EXPERIMENTAL_NATIVE_RUNTIME",
+            "scope": "streaming_requantization_vlb_runtime_amt",
+            "native": runtime_pass,
             "simulated": False,
         },
         "baseline_disk_bytes": source_bytes,
         "candidate_disk_bytes": artifact_bytes,
-        "disk_reduction_pct": reduction * 100.0,
+        "disk_reduction_pct": (1.0 - artifact_bytes / max(source_bytes, 1)) * 100.0,
         "quality_gate_pass": engine_pass,
         "metrics": {
             "vlb": {
@@ -558,7 +503,7 @@ def build_record(model_id: str, manifest: Dict[str, Any], runtime: Dict[str, Any
                 "compression_ratio": manifest["compression_ratio"],
                 "manifest_sha256": manifest.get("manifest_sha256"),
             },
-            "amt": runtime,
+            "runtime_amt": runtime,
             "proof": {
                 "conversion_verified": conversion_pass,
                 "runtime_verified": runtime_pass,
@@ -566,10 +511,7 @@ def build_record(model_id: str, manifest: Dict[str, Any], runtime: Dict[str, Any
                 "engine_status": "VLB_AMT_ENGINE_PROOF_PASS" if engine_pass else "VLB_AMT_ENGINE_NOT_YET_PROVEN",
             },
         },
-        "notes": (
-            "Streaming VLB-DIR conversion is measured. quality_gate_pass remains false "
-            "until generation is replayed through the VLB runtime and AMT is validated."
-        ),
+        "notes": "VLB can rank only after conversion + native VLB runtime + teacher-free AMT all pass.",
     }
 
 
@@ -588,23 +530,46 @@ def main() -> int:
         shutil.rmtree(root)
     root.mkdir(parents=True, exist_ok=True)
 
-    print("=" * 110)
+    print("=" * 112)
     print("VLB / AMT STREAMING ENGINE PROOF v1")
-    print("=" * 110)
+    print("=" * 112)
     print("model:", args.model)
     print("quant:", args.quant)
     print("output:", root)
-    print("source full checkpoint on disk: NEVER")
+    print("full source checkpoint materialized:", False)
 
     manifest = stream_convert(args.model, root, token, args.quant)
-    runtime = runtime_and_amt_proof(args.model, root, token)
-    manifest["verification"].update(runtime)
-    if manifest["verification"]["conversion_verified"] and runtime.get("runtime_verified") and runtime.get("amt_verified"):
-        manifest["verification"]["engine_status"] = "VLB_AMT_ENGINE_PROOF_PASS"
+    if manifest["verification"]["conversion_verified"]:
+        print("[VLB] conversion gate PASS; starting native VLB runtime proof")
+        runtime = run_vlb_runtime_and_amt_proof(
+            args.model,
+            root,
+            token,
+            AMT_LEARN,
+            AMT_GATE_DEV,
+            AMT_FRESH_VALID,
+        )
     else:
-        manifest["verification"]["engine_status"] = "VLB_AMT_ENGINE_NOT_YET_PROVEN"
-    (root / "vlb_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        runtime = {
+            "runtime_verified": False,
+            "amt_verified": False,
+            "reason": "conversion gate failed; runtime not attempted",
+        }
 
+    manifest["verification"].update(
+        {
+            "runtime_verified": bool(runtime.get("runtime_verified")),
+            "amt_verified": bool(runtime.get("amt_verified")),
+            "engine_status": (
+                "VLB_AMT_ENGINE_PROOF_PASS"
+                if manifest["verification"]["conversion_verified"]
+                and runtime.get("runtime_verified")
+                and runtime.get("amt_verified")
+                else "VLB_AMT_ENGINE_NOT_YET_PROVEN"
+            ),
+        }
+    )
+    (root / "vlb_manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     record = build_record(args.model, manifest, runtime)
     (root / "result.json").write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     if args.publish == "on":
@@ -620,10 +585,9 @@ def main() -> int:
     print("[VLB] engine status  :", manifest["verification"]["engine_status"])
     print("[VLB] manifest       :", root / "vlb_manifest.json")
 
-    # Conversion may pass while engine proof remains intentionally incomplete.
-    # Return 0 so the queue publishes the measured experimental result; the
-    # quality gate remains false and therefore cannot win the technology ranking.
-    return 0 if manifest["verification"]["conversion_verified"] else 2
+    # Failed proof should be visible to the queue as failure; a measured record
+    # was already published when credentials were available.
+    return 0 if manifest["verification"]["engine_status"] == "VLB_AMT_ENGINE_PROOF_PASS" else 2
 
 
 if __name__ == "__main__":
